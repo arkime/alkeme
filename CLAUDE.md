@@ -27,35 +27,40 @@ src/
 - `App` — All mutable state. Passed as `&mut` to handlers and renderers.
 - `Tab` — Enum with `ALL` const array. Tabs: Arkime, Sessions, Stats, Settings.
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
-- `InputMode` — Enum: `Normal` | `Expression`. Controls whether keys go to expression input.
+- `InputMode` — Enum: `Normal` | `Expression`. Controls whether keys go to expression/filter input.
 - `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
+- `StatsTab` — Enum: `Capture` | `DBStats` | `DBIndices`. Sub-tabs within Stats tab.
+- `StatsView` — Enum: `List` | `Detail`. Controls which stats sub-view renders.
+- `StatsDetail` — Holds detail data + scroll position for stats detail overlay.
 - `GraphType` — Enum: `Sessions` | `Packets` | `Bytes`. Selects which histogram to display.
 - `GraphSize` — Enum: `Off` | `Small` (10 rows) | `Large` (20 rows). Three-state graph toggle.
 - `ArkimeClient` — Wraps `reqwest::Client` + `base_url` + auth. All API calls return `Result<T>`.
 - `AuthMode` — Enum: `None` | `Basic` | `Digest`.
 - `GraphData` — Deserialized histogram data from `facets=1` API response.
-- `TableState` — ratatui widget state for session list scrolling.
+- `TableState` — ratatui widget state for session/stats list scrolling.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
+- Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
 ## Current keybindings
 
 | Key | Action |
 |---|---|
 | Tab / Shift+Tab | Switch tabs |
-| j / k / ↑ / ↓ | Navigate sessions |
-| ← / → | Previous/next page |
+| j / k / ↑ / ↓ | Navigate sessions/stats |
+| ← / → | Previous/next page (sessions) |
 | Shift+← / Shift+→ | First/last page |
 | Home | First page |
 | PgUp / PgDn | Scroll detail view |
-| Enter | Open session detail |
+| Enter | Open session/stats detail |
 | Esc | Close overlay |
-| r | Refresh sessions |
-| / | Search expression (Enter to apply, Esc to cancel) |
-| t / T | Cycle time range forward/backward |
+| r | Refresh data |
+| / | Search expression or filter (Enter to apply, Esc to cancel) |
+| t / T | Cycle time range forward/backward (sessions) |
 | s | Next sort column |
 | S | Toggle sort direction (asc/desc) |
-| g | Cycle graph: Off → Small → Large → Off |
-| G | Cycle graph type: Sessions → Packets → Bytes |
+| g | Cycle graph: Off → Small → Large → Off (sessions) |
+| G | Cycle graph type: Sessions → Packets → Bytes (sessions) |
+| 1 / 2 / 3 | Switch stats sub-tab (Capture/DB Stats/DB Indices) |
 | h | Show help overlay |
 | q | Quit |
 
@@ -83,6 +88,37 @@ source.packets, destination.packets, source.bytes, destination.bytes
 - Bottom border shows start/stop times; title shows max value and per-bar duration
 - `GraphData` holds histogram arrays: `sessions_histo`, `src_packets_histo`, `dst_packets_histo`, `src_bytes_histo`, `dst_bytes_histo`
 
+## Stats tab
+
+- Has 3 sub-tabs switchable with `1/2/3` keys: Capture Stats, DB Stats, DB Indices
+- Each sub-tab defines its own columns via `StatsTab::columns()` returning `(field, label, width)` tuples
+- Stats tab has its own layout: no time range picker, no graph — just sub-tab bar + filter + table
+- Filter (`/`) is passed as `filter` query param to the API (server-side filtering)
+- Auto-refreshes every 30 seconds when on the Stats tab
+- Numeric/size columns are right-justified
+- Enter opens a detail overlay showing all fields for the selected row
+
+### Stats columns per sub-tab
+- **Capture Stats**: nodeName, currentTime (formatted date), monitoring (Sessions), freeSpaceM (human-readable + percent), deltaPackets, deltaBytesPerSec (human-readable), deltaSessions, deltaDropped
+- **DB Stats**: name (Node), storeSize (Disk Used, human-readable), docs, searches, searchesTime, version
+- **DB Indices**: index, status, health, docs.count (nested field), store.size (human-readable), pri (Shards)
+
+### Human-readable byte formatting
+- `format_human_bytes()` uses Ki/Mi/Gi/Ti units (1024-based)
+- `format_human_megabytes()` converts MB input to bytes then formats
+- `parse_size_string()` parses strings like "10.2gb" from ES API into bytes
+- `format_epoch_secs()` converts epoch seconds to `YYYY/MM/DD HH:MM:SS`
+
+### Nested field access
+- `get_nested_value()` tries flat key first (e.g., `"store.size"`), then dot-separated path (e.g., `"docs"` → `"count"`)
+
+## Owl animation
+- Arkime and Settings tabs show a 90s "Under Construction" page with animated owl
+- Owl bounces around the content area, flipping direction at edges
+- Two walking frames alternate every 75ms
+- Construction banner cycles through rainbow colors, barricade bars scroll
+- Animation state: `owl_x/y/dx/dy/frame/tick` + `anim_start` (never-reset Instant for color cycling)
+
 ## Date field handling
 
 - At startup, `/api/fields?array=true` is called to identify date fields
@@ -107,11 +143,13 @@ source.packets, destination.packets, source.bytes, destination.bytes
 5. Call from `App` method in `app.rs`, store result in App fields
 
 ### Adding keybindings
-1. Key handling is in `app.rs`: `handle_key()` dispatches to view-specific handlers
-2. List-level keys go in `handle_list_key()`, detail keys in `handle_detail_key()`
-3. Global keys (Ctrl+C, q) are in `main.rs::run_app()`
-4. For new tabs with their own keys, add a `handle_<tab>_key()` method
-5. Update help text in `draw_help()` in `ui.rs`
+1. Key handling is in `app.rs`: `handle_key()` dispatches based on active tab and view
+2. Sessions: `handle_list_key()` for list, `handle_detail_key()` for detail
+3. Stats: `handle_stats_key()` for list, `handle_stats_detail_key()` for detail
+4. Expression/filter input: `handle_expression_key()` is context-aware (sessions vs stats)
+5. Global keys (Ctrl+C, q) are in `main.rs::run_app()`
+6. For new tabs with their own keys, add a `handle_<tab>_key()` method
+7. Update help text in `draw_help()` in `ui.rs`
 
 ### Adding a new view/sub-view
 1. Add draw fn in `ui.rs`: `fn draw_foo(f: &mut Frame, app: &mut App, area: Rect)`
@@ -135,7 +173,9 @@ All endpoints are relative to base_url. Use `flatten=1` to get dot-notation fiel
 | `/api/sessions` | GET/POST | List/search sessions | `fields`, `expression`, `length`, `start`, `flatten`, `date`, `order`, `facets` |
 | `/api/session/:id` | GET | Single session JSON (all fields) | `flatten`, `date` |
 | `/api/session/:nodeName/:id/detail` | GET | Session detail (HTML) | |
-| `/api/stats` | GET | ES stats | |
+| `/api/stats` | GET | Capture node stats | `sortField`, `desc`, `filter` |
+| `/api/esstats` | GET | DB/ES node stats | `sortField`, `desc`, `filter` |
+| `/api/esindices` | GET | DB/ES indices | `sortField`, `desc`, `filter` |
 | `/api/dstats` | GET | Detailed stats over time | `nodeName`, `name`, `start`, `stop`, `step`, `interval` |
 | `/api/files` | GET | PCAP files | `sortField`, `desc`, `filter`, `length`, `start` |
 | `/api/eshealth` | GET | ES cluster health | |

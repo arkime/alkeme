@@ -160,6 +160,48 @@ impl ArkimeClient {
         Ok(parsed)
     }
 
+    pub async fn get_stats(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
+        let dir = if sort_desc { "desc" } else { "asc" };
+        let mut url = format!(
+            "{}/api/stats?sortField={}&desc={}",
+            self.base_url, urlencoding::encode(sort_field), dir
+        );
+        if !filter.is_empty() {
+            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
+        }
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    pub async fn get_esstats(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
+        let dir = if sort_desc { "desc" } else { "asc" };
+        let mut url = format!(
+            "{}/api/esstats?sortField={}&desc={}",
+            self.base_url, urlencoding::encode(sort_field), dir
+        );
+        if !filter.is_empty() {
+            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
+        }
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    pub async fn get_esindices(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
+        let dir = if sort_desc { "desc" } else { "asc" };
+        let mut url = format!(
+            "{}/api/esindices?sortField={}&desc={}",
+            self.base_url, urlencoding::encode(sort_field), dir
+        );
+        if !filter.is_empty() {
+            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
+        }
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
     pub async fn get_fields(&self) -> Result<(Vec<ArkimeField>, HashMap<String, String>)> {
         let url = format!("{}/api/fields?array=true", self.base_url);
         let body = self.authenticated_get(&url).await?;

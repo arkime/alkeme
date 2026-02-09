@@ -1,4 +1,4 @@
-use crate::app::{App, GraphType, InputMode, SessionView, Tab, TimeRange};
+use crate::app::{App, GraphType, InputMode, SessionView, StatsTab, StatsView, Tab, TimeRange};
 use chrono::{DateTime, Local};
 use ratatui::{
     prelude::*,
@@ -31,6 +31,59 @@ fn format_epoch_short(ms: f64) -> String {
     "-".into()
 }
 
+fn format_human_bytes(bytes: f64) -> String {
+    const TI: f64 = 1024.0 * 1024.0 * 1024.0 * 1024.0;
+    const GI: f64 = 1024.0 * 1024.0 * 1024.0;
+    const MI: f64 = 1024.0 * 1024.0;
+    const KI: f64 = 1024.0;
+
+    if bytes >= TI {
+        format!("{:.1}Ti", bytes / TI)
+    } else if bytes >= GI {
+        format!("{:.1}Gi", bytes / GI)
+    } else if bytes >= MI {
+        format!("{:.1}Mi", bytes / MI)
+    } else if bytes >= KI {
+        format!("{:.1}Ki", bytes / KI)
+    } else {
+        format!("{:.0}", bytes)
+    }
+}
+
+fn format_human_megabytes(mb: f64) -> String {
+    format_human_bytes(mb * 1024.0 * 1024.0)
+}
+
+fn format_epoch_secs(val: &serde_json::Value) -> String {
+    let secs = match val {
+        serde_json::Value::Number(n) => n.as_i64().unwrap_or(0),
+        _ => return "-".into(),
+    };
+    if let Some(dt) = DateTime::from_timestamp(secs, 0) {
+        let local: DateTime<Local> = dt.into();
+        return local.format("%Y/%m/%d %H:%M:%S").to_string();
+    }
+    "-".into()
+}
+
+fn parse_size_string(s: &str) -> Option<f64> {
+    let s = s.trim();
+    let (num_str, mult) = if let Some(n) = s.strip_suffix("tb") {
+        (n, 1024.0 * 1024.0 * 1024.0 * 1024.0)
+    } else if let Some(n) = s.strip_suffix("gb") {
+        (n, 1024.0 * 1024.0 * 1024.0)
+    } else if let Some(n) = s.strip_suffix("mb") {
+        (n, 1024.0 * 1024.0)
+    } else if let Some(n) = s.strip_suffix("kb") {
+        (n, 1024.0)
+    } else if let Some(n) = s.strip_suffix('b') {
+        (n, 1.0)
+    } else {
+        (s, 1.0)
+    };
+    num_str.trim().parse::<f64>().ok().map(|v| v * mult)
+}
+
 fn ip_protocol_str(val: &serde_json::Value) -> String {
     let num = match val {
         serde_json::Value::Number(n) => n.as_u64().unwrap_or(0),
@@ -52,6 +105,17 @@ fn ip_protocol_str(val: &serde_json::Value) -> String {
 }
 
 pub fn draw(f: &mut Frame, app: &mut App) {
+    match app.active_tab {
+        Tab::Stats => draw_stats_layout(f, app),
+        _ => draw_default_layout(f, app),
+    }
+
+    if app.show_help {
+        draw_help(f, f.area());
+    }
+}
+
+fn draw_default_layout(f: &mut Frame, app: &mut App) {
     let mut constraints = vec![
         Constraint::Length(3), // tabs
         Constraint::Length(3), // toolbar: time range + expression
@@ -77,21 +141,36 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     match app.active_tab {
         Tab::Sessions => draw_sessions(f, app, chunks[idx]),
-        _ => {
+        Tab::Arkime | Tab::Settings => {
             let block = Block::default()
                 .borders(Borders::ALL)
                 .title(app.active_tab.name());
-            let text = Paragraph::new("Coming soon...").block(block);
-            f.render_widget(text, chunks[idx]);
+            f.render_widget(block, chunks[idx]);
+            draw_under_construction(f, app, chunks[idx]);
+            draw_owl(f, app, chunks[idx]);
         }
+        _ => {}
     }
     idx += 1;
 
     draw_status_bar(f, app, chunks[idx]);
+}
 
-    if app.show_help {
-        draw_help(f, f.area());
-    }
+fn draw_stats_layout(f: &mut Frame, app: &mut App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // tabs
+            Constraint::Length(3), // stats sub-tabs + filter
+            Constraint::Min(0),   // content
+            Constraint::Length(1), // status bar
+        ])
+        .split(f.area());
+
+    draw_tabs(f, app, chunks[0]);
+    draw_stats_toolbar(f, app, chunks[1]);
+    draw_stats(f, app, chunks[2]);
+    draw_status_bar(f, app, chunks[3]);
 }
 
 fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
@@ -461,6 +540,442 @@ fn draw_session_detail(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(paragraph, popup_area);
 }
 
+fn draw_under_construction(f: &mut Frame, app: &App, area: Rect) {
+    let inner = Rect::new(area.x + 1, area.y + 1, area.width.saturating_sub(2), area.height.saturating_sub(2));
+    if inner.width < 40 || inner.height < 12 {
+        return;
+    }
+
+    // Blinking color based on tick
+    let tick = (app.anim_start.elapsed().as_millis() / 300) as usize;
+    let colors = [Color::Yellow, Color::Red, Color::Magenta, Color::Cyan, Color::Green];
+
+    // Animated construction barricade
+    let shift = tick % 6;
+    let barricade: String = (0..inner.width as usize)
+        .map(|i| if (i + shift) % 6 < 3 { '▓' } else { '░' })
+        .collect();
+
+    let cy = inner.y + 1;
+    let buf = f.buffer_mut();
+
+    // Top barricade
+    for (i, ch) in barricade.chars().enumerate() {
+        let x = inner.x + i as u16;
+        if x < inner.x + inner.width {
+            buf[(x, cy)].set_char(ch).set_style(Style::default().fg(Color::Yellow).bg(Color::Black));
+        }
+    }
+
+    let banner = [
+        " ██╗   ██╗███╗   ██╗██████╗ ███████╗██████╗  ",
+        " ██║   ██║████╗  ██║██╔══██╗██╔════╝██╔══██╗ ",
+        " ██║   ██║██╔██╗ ██║██║  ██║█████╗  ██████╔╝ ",
+        " ██║   ██║██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗ ",
+        " ╚██████╔╝██║ ╚████║██████╔╝███████╗██║  ██║ ",
+        "  ╚═════╝ ╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝ ",
+    ];
+
+    let construction = "★ ☆ CONSTRUCTION ☆ ★";
+    let visitor_line = "You are visitor #000,001";
+    let best_viewed = "Best viewed in alkeme TUI";
+
+    // Draw banner
+    let banner_y = cy + 2;
+    for (row, line) in banner.iter().enumerate() {
+        let y = banner_y + row as u16;
+        if y >= inner.y + inner.height { break; }
+        let bx = inner.x + (inner.width.saturating_sub(line.chars().count() as u16)) / 2;
+        let color = colors[(row + tick) % colors.len()];
+        for (col, ch) in line.chars().enumerate() {
+            let x = bx + col as u16;
+            if x < inner.x + inner.width && ch != ' ' {
+                buf[(x, y)].set_char(ch).set_style(Style::default().fg(color));
+            }
+        }
+    }
+
+    // "CONSTRUCTION" line
+    let con_y = banner_y + banner.len() as u16 + 1;
+    if con_y < inner.y + inner.height {
+        let con_x = inner.x + (inner.width.saturating_sub(construction.len() as u16)) / 2;
+        let blink_color = colors[tick % colors.len()];
+        for (col, ch) in construction.chars().enumerate() {
+            let x = con_x + col as u16;
+            if x < inner.x + inner.width {
+                buf[(x, con_y)].set_char(ch).set_style(
+                    Style::default().fg(blink_color).add_modifier(Modifier::BOLD)
+                );
+            }
+        }
+    }
+
+    // Visitor counter
+    let vis_y = con_y + 2;
+    if vis_y < inner.y + inner.height {
+        let vis_x = inner.x + (inner.width.saturating_sub(visitor_line.len() as u16)) / 2;
+        for (col, ch) in visitor_line.chars().enumerate() {
+            let x = vis_x + col as u16;
+            if x < inner.x + inner.width {
+                buf[(x, vis_y)].set_char(ch).set_style(Style::default().fg(Color::Green));
+            }
+        }
+    }
+
+    // Best viewed line
+    let bv_y = vis_y + 1;
+    if bv_y < inner.y + inner.height {
+        let bv_x = inner.x + (inner.width.saturating_sub(best_viewed.len() as u16)) / 2;
+        for (col, ch) in best_viewed.chars().enumerate() {
+            let x = bv_x + col as u16;
+            if x < inner.x + inner.width {
+                buf[(x, bv_y)].set_char(ch).set_style(Style::default().fg(Color::DarkGray));
+            }
+        }
+    }
+
+    // Bottom barricade
+    let bot_y = bv_y + 2;
+    if bot_y < inner.y + inner.height {
+        for (i, ch) in barricade.chars().enumerate() {
+            let x = inner.x + i as u16;
+            if x < inner.x + inner.width {
+                buf[(x, bot_y)].set_char(ch).set_style(Style::default().fg(Color::Yellow).bg(Color::Black));
+            }
+        }
+    }
+}
+
+fn draw_owl(f: &mut Frame, app: &mut App, area: Rect) {
+    let inner = Rect::new(area.x + 1, area.y + 1, area.width.saturating_sub(2), area.height.saturating_sub(2));
+    if inner.width < 12 || inner.height < 6 {
+        return;
+    }
+
+    // Owl walking frames (facing right and left)
+    let owl_right: [&[&str]; 2] = [
+        &[
+            "  ,___,  ",
+            "  (O,O)  ",
+            "  /)  )  ",
+            " / \" \"   ",
+            " _|  |_  ",
+        ],
+        &[
+            "  ,___,  ",
+            "  (O,O)  ",
+            "  /)  )  ",
+            "   \" \"   ",
+            "  _| |_  ",
+        ],
+    ];
+    let owl_left: [&[&str]; 2] = [
+        &[
+            "  ,___,  ",
+            "  (O,O)  ",
+            "  (  (\\  ",
+            "   \" \" \\ ",
+            "  _|  |_ ",
+        ],
+        &[
+            "  ,___,  ",
+            "  (O,O)  ",
+            "  (  (\\  ",
+            "   \" \"   ",
+            "  _| |_  ",
+        ],
+    ];
+
+    let owl_w = 10u16;
+    let owl_h = 5u16;
+
+    // Update position every 150ms
+    if app.owl_tick.elapsed() >= std::time::Duration::from_millis(75) {
+        app.owl_tick = std::time::Instant::now();
+        app.owl_frame = (app.owl_frame + 1) % 2;
+
+        app.owl_x += app.owl_dx;
+        app.owl_y += app.owl_dy;
+
+        let max_x = (inner.width.saturating_sub(owl_w)) as f32;
+        let max_y = (inner.height.saturating_sub(owl_h)) as f32;
+
+        if app.owl_x <= 0.0 {
+            app.owl_x = 0.0;
+            app.owl_dx = app.owl_dx.abs();
+        } else if app.owl_x >= max_x {
+            app.owl_x = max_x;
+            app.owl_dx = -app.owl_dx.abs();
+        }
+
+        if app.owl_y <= 0.0 {
+            app.owl_y = 0.0;
+            app.owl_dy = app.owl_dy.abs();
+        } else if app.owl_y >= max_y {
+            app.owl_y = max_y;
+            app.owl_dy = -app.owl_dy.abs();
+        }
+    }
+
+    let frames = if app.owl_dx > 0.0 { &owl_right } else { &owl_left };
+    let owl = frames[app.owl_frame % 2];
+
+    let ox = inner.x + app.owl_x as u16;
+    let oy = inner.y + app.owl_y as u16;
+    let buf = f.buffer_mut();
+
+    for (row, line) in owl.iter().enumerate() {
+        let y = oy + row as u16;
+        if y >= inner.y + inner.height { break; }
+        for (col, ch) in line.chars().enumerate() {
+            let x = ox + col as u16;
+            if x >= inner.x + inner.width { break; }
+            if ch != ' ' {
+                buf[(x, y)].set_char(ch).set_style(Style::default().fg(Color::Yellow));
+            }
+        }
+    }
+}
+
+fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
+    let toolbar_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(52), // sub-tabs
+            Constraint::Min(0),    // filter
+        ])
+        .split(area);
+
+    // Sub-tab selector
+    let titles: Vec<Line> = StatsTab::ALL
+        .iter()
+        .enumerate()
+        .map(|(i, t)| Line::from(format!("{} {}", i + 1, t.name())))
+        .collect();
+    let tabs = Tabs::new(titles)
+        .block(Block::default().borders(Borders::ALL).title(" Stats "))
+        .select(StatsTab::ALL.iter().position(|&t| t == app.stats_tab).unwrap_or(0))
+        .style(Style::default().fg(Color::White))
+        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+    f.render_widget(tabs, toolbar_chunks[0]);
+
+    // Filter input
+    let filter_display = if app.input_mode == InputMode::Expression {
+        &app.stats_filter_edit
+    } else {
+        &app.stats_filter
+    };
+    let filter_style = if app.input_mode == InputMode::Expression {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let filter_widget = Paragraph::new(Span::styled(filter_display.as_str(), filter_style))
+        .block(Block::default().borders(Borders::ALL).title(" Filter (/) "));
+    f.render_widget(filter_widget, toolbar_chunks[1]);
+
+    if app.input_mode == InputMode::Expression {
+        f.set_cursor_position((
+            toolbar_chunks[1].x + app.stats_filter_edit.len() as u16 + 1,
+            toolbar_chunks[1].y + 1,
+        ));
+    }
+}
+
+fn draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
+    draw_stats_list(f, app, area);
+    if app.stats_view == StatsView::Detail {
+        draw_stats_detail(f, app, area);
+    }
+}
+
+fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let columns = app.stats_tab.columns();
+
+    let header_cells = columns.iter().enumerate().map(|(i, (field, label, _))| {
+        let text = if i == app.stats_sort_column {
+            let arrow = if app.stats_sort_desc { "▼" } else { "▲" };
+            format!("{label}{arrow}")
+        } else {
+            label.to_string()
+        };
+        let style = if i == app.stats_sort_column {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        };
+        let line = if is_numeric_field(field) {
+            Line::from(text).alignment(Alignment::Right)
+        } else {
+            Line::from(text)
+        };
+        Cell::from(line).style(style)
+    });
+    let header = Row::new(header_cells).height(1);
+
+    let rows: Vec<Row> = app.stats_data.iter().map(|item| {
+        let cells = columns.iter().map(|(field, _, _)| {
+            let val = get_nested_value(item, field);
+            let text = format_stats_cell(field, val, item, app.stats_tab);
+            if is_numeric_field(field) {
+                Cell::from(Line::from(text).alignment(Alignment::Right))
+            } else {
+                Cell::from(text)
+            }
+        });
+        Row::new(cells)
+    }).collect();
+
+    let widths: Vec<Constraint> = columns.iter()
+        .map(|(_, _, w)| Constraint::Length(*w))
+        .collect();
+
+    let title = format!(
+        " {} [{} items] ",
+        app.stats_tab.name(),
+        app.stats_data.len()
+    );
+
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title),
+        )
+        .row_highlight_style(Style::default().bg(Color::DarkGray));
+
+    f.render_stateful_widget(table, area, &mut app.stats_table_state);
+}
+
+fn is_numeric_field(field: &str) -> bool {
+    matches!(field,
+        "monitoring" | "freeSpaceM" | "deltaPackets" | "deltaBytesPerSec" |
+        "deltaSessions" | "deltaDropped" | "storeSize" | "docs" |
+        "searches" | "searchesTime" | "docs.count" | "store.size" | "pri"
+    )
+}
+
+fn get_nested_value<'a>(item: &'a serde_json::Value, field: &str) -> &'a serde_json::Value {
+    // Try flat key first (handles keys like "store.size" that contain dots)
+    if let Some(v) = item.get(field) {
+        return v;
+    }
+    // Only try dot-separated path if flat key didn't match
+    if field.contains('.') {
+        let mut current = item;
+        for part in field.split('.') {
+            match current.get(part) {
+                Some(v) => current = v,
+                None => return &serde_json::Value::Null,
+            }
+        }
+        return current;
+    }
+    &serde_json::Value::Null
+}
+
+fn format_stats_cell(field: &str, val: &serde_json::Value, item: &serde_json::Value, tab: StatsTab) -> String {
+    match (tab, field) {
+        (StatsTab::Capture, "currentTime") => format_epoch_secs(val),
+        (StatsTab::Capture, "freeSpaceM") => {
+            let size = val.as_f64().map(|v| format_human_megabytes(v)).unwrap_or_else(|| "-".into());
+            let pct = item.get("freeSpaceP")
+                .and_then(|v| v.as_f64())
+                .map(|v| format!(" ({:.0}%)", v))
+                .unwrap_or_default();
+            format!("{size}{pct}")
+        }
+        (StatsTab::Capture, "deltaBytesPerSec") => {
+            val.as_f64().map(|v| format_human_bytes(v)).unwrap_or_else(|| "-".into())
+        }
+        (StatsTab::DBStats, "storeSize") => {
+            val.as_f64().map(|v| format_human_bytes(v)).unwrap_or_else(|| "-".into())
+        }
+        (StatsTab::DBIndices, "store.size") => {
+            // Value may be a string like "10.2gb" or a number in bytes
+            match val {
+                serde_json::Value::Number(n) => {
+                    n.as_f64().map(|v| format_human_bytes(v)).unwrap_or_else(|| "-".into())
+                }
+                serde_json::Value::String(s) => {
+                    parse_size_string(s).map(|v| format_human_bytes(v)).unwrap_or_else(|| s.clone())
+                }
+                _ => "-".into(),
+            }
+        }
+        _ => format_stats_value(val),
+    }
+}
+
+fn format_stats_value(val: &serde_json::Value) -> String {
+    match val {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => {
+            if let Some(f) = n.as_f64() {
+                if f == f.floor() && f.abs() < 1e15 {
+                    format!("{}", f as i64)
+                } else {
+                    format!("{:.1}", f)
+                }
+            } else {
+                n.to_string()
+            }
+        }
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Null => "-".into(),
+        serde_json::Value::Array(arr) => arr.iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(","),
+        other => other.to_string(),
+    }
+}
+
+fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
+    let detail = match &app.stats_detail {
+        Some(d) => d,
+        None => return,
+    };
+
+    let popup_width = (area.width as f32 * 0.8) as u16;
+    let popup_height = (area.height as f32 * 0.8) as u16;
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    if let Some(obj) = detail.data.as_object() {
+        let mut keys: Vec<&String> = obj.keys().collect();
+        keys.sort();
+        for key in keys {
+            let val = &obj[key];
+            let val_str = format_stats_value(val);
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("{key:>30}: "),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(val_str),
+            ]));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(format!(" {} Detail (Esc to close) ", app.stats_tab.name())),
+        )
+        .scroll((detail.scroll, 0));
+
+    f.render_widget(paragraph, popup_area);
+}
+
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let status = Paragraph::new(Line::from(vec![
         Span::styled(" ", Style::default()),
@@ -496,6 +1011,13 @@ fn draw_help(f: &mut Frame, area: Rect) {
         Line::from(vec![Span::styled("  S                ", Style::default().fg(Color::Yellow)), Span::raw("Toggle sort direction")]),
         Line::from(vec![Span::styled("  g                ", Style::default().fg(Color::Yellow)), Span::raw("Toggle graph")]),
         Line::from(vec![Span::styled("  G                ", Style::default().fg(Color::Yellow)), Span::raw("Cycle graph type")]),
+        Line::from(""),
+        Line::from(Span::styled("Stats Tab", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(""),
+        Line::from(vec![Span::styled("  1 / 2 / 3       ", Style::default().fg(Color::Yellow)), Span::raw("Switch stats sub-tab")]),
+        Line::from(""),
+        Line::from(Span::styled("General", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(""),
         Line::from(vec![Span::styled("  h                ", Style::default().fg(Color::Yellow)), Span::raw("Show this help")]),
         Line::from(vec![Span::styled("  q                ", Style::default().fg(Color::Yellow)), Span::raw("Quit")]),
         Line::from(""),

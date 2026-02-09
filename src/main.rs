@@ -87,6 +87,14 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
 
+        // Auto-refresh stats every 30 seconds when on Stats tab
+        if app.active_tab == app::Tab::Stats
+            && app.input_mode == app::InputMode::Normal
+            && app.stats_last_refresh.elapsed() >= Duration::from_secs(30)
+        {
+            app.fetch_stats().await;
+        }
+
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {

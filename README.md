@@ -15,7 +15,7 @@ This project was entirely created by Claude — code, architecture, and document
 - **Expression search** — filter sessions using Arkime's expression syntax (e.g. `ip.src == 10.0.0.1 && protocols == tls`)
 - **Time range selection** — quickly switch between preset time ranges (15 min to all time)
 - **Histograms** — toggle session/packet/byte graphs rendered with block characters
-- **Stats & settings tabs** — view Elasticsearch cluster stats and connection settings
+- **Stats tab** — view capture stats, DB stats, and DB indices with sortable tables, filtering, and detail view
 - **Authentication** — supports no-auth, HTTP Basic, and HTTP Digest authentication
 - **Keyboard-driven** — fully navigable with keyboard shortcuts
 
@@ -23,6 +23,7 @@ This project was entirely created by Claude — code, architecture, and document
 
 - [Rust](https://www.rust-lang.org/tools/install) (edition 2024)
 - A running [Arkime](https://arkime.com) viewer instance
+- [Arkime 6](https://arkime.com) or later recommended for full functionality
 
 ## Installation
 
@@ -70,13 +71,14 @@ alkeme http://viewer.example.com:8005 --auth basic
 | `PgUp` / `PgDn` | Scroll detail view |
 | `Enter` | Open session detail |
 | `Esc` | Close overlay / cancel search |
-| `r` | Refresh sessions |
-| `/` | Search expression (`Enter` to apply, `Esc` to cancel) |
+| `r` | Refresh data |
+| `/` | Search expression or filter (`Enter` to apply, `Esc` to cancel) |
 | `t` / `T` | Cycle time range forward / backward |
 | `s` | Next sort column |
 | `S` | Toggle sort direction (asc / desc) |
 | `g` | Cycle graph size: Off → Small → Large → Off |
 | `G` | Cycle graph type: Sessions → Packets → Bytes |
+| `1` / `2` / `3` | Switch stats sub-tab (Capture / DB Stats / DB Indices) |
 | `h` | Show help overlay |
 | `q` | Quit |
 
