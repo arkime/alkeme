@@ -34,6 +34,10 @@ struct Cli {
     /// Credentials as user:pass (prompts if omitted with --auth)
     #[arg(long)]
     user: Option<String>,
+
+    /// Default search expression for sessions
+    #[arg(long)]
+    search: Option<String>,
 }
 
 #[tokio::main]
@@ -67,6 +71,10 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(&cli.url, auth_mode, username, password);
+    if let Some(search) = cli.search {
+        app.expression = search.clone();
+        app.expression_edit = search;
+    }
     app.fetch_fields().await;
     app.fetch_sessions().await;
 

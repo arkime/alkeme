@@ -11,10 +11,13 @@ This project was entirely created by Claude — code, architecture, and document
 ## Features
 
 - **Session browsing** — paginated session list with configurable columns and sort order
-- **Session detail** — drill into any session to view all captured fields
+- **Session detail** — drill into any session to view all captured fields with friendly names
+- **Expression builder** — select any field in session detail to add it to the search expression (AND/AND NOT/OR/OR NOT)
 - **Expression search** — filter sessions using Arkime's expression syntax (e.g. `ip.src == 10.0.0.1 && protocols == tls`)
 - **Time range selection** — quickly switch between preset time ranges (15 min to all time)
 - **Histograms** — toggle session/packet/byte graphs rendered with block characters
+- **Session actions** — download PCAP, add/remove tags for single or all sessions
+- **Export** — export all matching sessions as CSV
 - **Stats tab** — view capture stats, DB stats, and DB indices with sortable tables, filtering, and detail view
 - **Authentication** — supports no-auth, HTTP Basic, and HTTP Digest authentication
 - **Keyboard-driven** — fully navigable with keyboard shortcuts
@@ -58,6 +61,7 @@ alkeme http://viewer.example.com:8005 --auth basic
 | `<URL>` | Arkime viewer URL (default: `http://localhost:8005`) |
 | `--auth <MODE>` | Authentication mode: `basic` or `digest` |
 | `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`) |
+| `--search <EXPR>` | Default search expression for sessions |
 
 ## Keybindings
 
@@ -65,11 +69,12 @@ alkeme http://viewer.example.com:8005 --auth basic
 |---|---|
 | `Tab` / `Shift+Tab` | Switch tabs |
 | `j` / `k` / `↑` / `↓` | Navigate sessions |
+| `Shift+↑` / `Shift+↓` | Page up / down in list |
 | `←` / `→` | Previous / next page |
 | `Shift+←` / `Shift+→` | First / last page |
 | `Home` | First page |
-| `PgUp` / `PgDn` | Scroll detail view |
-| `Enter` | Open session detail |
+| `PgUp` / `PgDn` | Page up / down in detail view |
+| `Enter` | Open session detail; in detail, add field to expression |
 | `Esc` | Close overlay / cancel search |
 | `r` | Refresh data |
 | `/` | Search expression or filter (`Enter` to apply, `Esc` to cancel) |
@@ -78,6 +83,8 @@ alkeme http://viewer.example.com:8005 --auth basic
 | `S` | Toggle sort direction (asc / desc) |
 | `g` | Cycle graph size: Off → Small → Large → Off |
 | `G` | Cycle graph type: Sessions → Packets → Bytes |
+| `a` | Session actions (download PCAP, add/remove tags) |
+| `A` | All sessions actions (download PCAP, export CSV, add/remove tags) |
 | `1` / `2` / `3` | Switch stats sub-tab (Capture / DB Stats / DB Indices) |
 | `h` | Show help overlay |
 | `q` | Quit |

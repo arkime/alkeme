@@ -13,6 +13,10 @@ pub struct SessionsResponse {
     pub records_filtered: u64,
     #[serde(default)]
     pub graph: Option<GraphData>,
+    #[serde(default, rename = "bsqErr")]
+    pub bsq_err: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Default)]
@@ -35,6 +39,10 @@ pub struct ArkimeField {
     pub db_field: String,
     #[serde(default, rename = "type")]
     pub field_type: String,
+    #[serde(default)]
+    pub exp: String,
+    #[serde(default, rename = "friendlyName")]
+    pub friendly_name: String,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -130,6 +138,134 @@ impl ArkimeClient {
         }
     }
 
+    async fn authenticated_post(&self, url: &str, form: &[(&str, &str)]) -> Result<String> {
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => {
+                let resp = self.client.post(url).form(form).send().await?;
+                return Ok(resp.text().await?);
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        match self.auth_mode {
+            AuthMode::None => {
+                let resp = self.client.post(url).form(form).send().await?;
+                Ok(resp.text().await?)
+            }
+            AuthMode::Basic => {
+                let resp = self.client.post(url)
+                    .basic_auth(username, Some(password))
+                    .form(form)
+                    .send()
+                    .await?;
+                if !resp.status().is_success() {
+                    anyhow::bail!("HTTP {}: Authentication failed", resp.status());
+                }
+                Ok(resp.text().await?)
+            }
+            AuthMode::Digest => {
+                let resp = self.client.post(url).form(form).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    return Ok(resp.text().await?);
+                }
+
+                let www_auth = resp
+                    .headers()
+                    .get("www-authenticate")
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header in 401 response"))?
+                    .to_string();
+
+                let parsed_url = reqwest::Url::parse(url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else {
+                    parsed_url.path().to_string()
+                };
+                let context = digest_auth::AuthContext::new_post::<_, _, _, &[u8]>(username, password, &uri, None);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+
+                let resp = self.client
+                    .post(url)
+                    .header("Authorization", auth_header)
+                    .form(form)
+                    .send()
+                    .await?;
+
+                if !resp.status().is_success() {
+                    anyhow::bail!("HTTP {}: Authentication failed", resp.status());
+                }
+
+                Ok(resp.text().await?)
+            }
+        }
+    }
+
+    async fn authenticated_get_bytes(&self, url: &str) -> Result<Vec<u8>> {
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => {
+                let resp = self.client.get(url).send().await?;
+                return Ok(resp.bytes().await?.to_vec());
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        match self.auth_mode {
+            AuthMode::None => {
+                let resp = self.client.get(url).send().await?;
+                Ok(resp.bytes().await?.to_vec())
+            }
+            AuthMode::Basic => {
+                let resp = self.client.get(url)
+                    .basic_auth(username, Some(password))
+                    .send()
+                    .await?;
+                if !resp.status().is_success() {
+                    anyhow::bail!("HTTP {}: Authentication failed", resp.status());
+                }
+                Ok(resp.bytes().await?.to_vec())
+            }
+            AuthMode::Digest => {
+                let resp = self.client.get(url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    return Ok(resp.bytes().await?.to_vec());
+                }
+
+                let www_auth = resp
+                    .headers()
+                    .get("www-authenticate")
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header in 401 response"))?
+                    .to_string();
+
+                let parsed_url = reqwest::Url::parse(url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else {
+                    parsed_url.path().to_string()
+                };
+                let context = digest_auth::AuthContext::new(username, password, &uri);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+
+                let resp = self.client
+                    .get(url)
+                    .header("Authorization", auth_header)
+                    .send()
+                    .await?;
+
+                if !resp.status().is_success() {
+                    anyhow::bail!("HTTP {}: Authentication failed", resp.status());
+                }
+
+                Ok(resp.bytes().await?.to_vec())
+            }
+        }
+    }
+
     pub async fn get_sessions(&self, fields: &[String], expression: &str, date: &str, sort_field: &str, sort_desc: bool, facets: bool, start: u64, length: u64) -> Result<SessionsResponse> {
         let fields_str = fields.join(",");
         let dir = if sort_desc { "desc" } else { "asc" };
@@ -202,7 +338,7 @@ impl ArkimeClient {
         Ok(parsed)
     }
 
-    pub async fn get_fields(&self) -> Result<(Vec<ArkimeField>, HashMap<String, String>)> {
+    pub async fn get_fields(&self) -> Result<(Vec<ArkimeField>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>)> {
         let url = format!("{}/api/fields?array=true", self.base_url);
         let body = self.authenticated_get(&url).await?;
         let fields: Vec<ArkimeField> = serde_json::from_str(&body)?;
@@ -211,6 +347,67 @@ impl ArkimeClient {
             .filter(|f| f.field_type == "seconds" || f.field_type == "date")
             .map(|f| (f.db_field.clone(), f.field_type.clone()))
             .collect();
-        Ok((fields, date_fields))
+        let field_exp_map: HashMap<String, String> = fields
+            .iter()
+            .filter(|f| !f.exp.is_empty())
+            .map(|f| (f.db_field.clone(), f.exp.clone()))
+            .collect();
+        let field_friendly_map: HashMap<String, String> = fields
+            .iter()
+            .filter(|f| !f.friendly_name.is_empty())
+            .map(|f| (f.db_field.clone(), f.friendly_name.clone()))
+            .collect();
+        Ok((fields, date_fields, field_exp_map, field_friendly_map))
+    }
+
+    pub async fn download_session_pcap(&self, node: &str, id: &str) -> Result<Vec<u8>> {
+        let url = format!(
+            "{}/api/session/{}/{}.pcap?date=-1",
+            self.base_url, urlencoding::encode(node), urlencoding::encode(id)
+        );
+        self.authenticated_get_bytes(&url).await
+    }
+
+    pub async fn download_sessions_pcap(&self, expression: &str, date: &str) -> Result<Vec<u8>> {
+        let mut url = format!("{}/api/sessions.pcap?date={}", self.base_url, urlencoding::encode(date));
+        if !expression.is_empty() {
+            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
+        }
+        self.authenticated_get_bytes(&url).await
+    }
+
+    pub async fn export_sessions_csv(&self, expression: &str, date: &str, fields: &[String]) -> Result<Vec<u8>> {
+        let fields_str = fields.join(",");
+        let mut url = format!("{}/api/sessions/csv?date={}&fields={}", self.base_url, urlencoding::encode(date), urlencoding::encode(&fields_str));
+        if !expression.is_empty() {
+            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
+        }
+        self.authenticated_get_bytes(&url).await
+    }
+
+    pub async fn add_session_tags(&self, id: &str, tags: &str) -> Result<String> {
+        let url = format!("{}/api/sessions/addtags", self.base_url);
+        self.authenticated_post(&url, &[("tags", tags), ("ids", id)]).await
+    }
+
+    pub async fn add_sessions_tags(&self, expression: &str, date: &str, tags: &str) -> Result<String> {
+        let mut url = format!("{}/api/sessions/addtags?date={}", self.base_url, urlencoding::encode(date));
+        if !expression.is_empty() {
+            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
+        }
+        self.authenticated_post(&url, &[("tags", tags)]).await
+    }
+
+    pub async fn remove_session_tags(&self, id: &str, tags: &str) -> Result<String> {
+        let url = format!("{}/api/sessions/removetags", self.base_url);
+        self.authenticated_post(&url, &[("tags", tags), ("ids", id)]).await
+    }
+
+    pub async fn remove_sessions_tags(&self, expression: &str, date: &str, tags: &str) -> Result<String> {
+        let mut url = format!("{}/api/sessions/removetags?date={}", self.base_url, urlencoding::encode(date));
+        if !expression.is_empty() {
+            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
+        }
+        self.authenticated_post(&url, &[("tags", tags)]).await
     }
 }

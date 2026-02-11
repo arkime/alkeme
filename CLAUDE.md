@@ -35,9 +35,11 @@ src/
 - `GraphType` — Enum: `Sessions` | `Packets` | `Bytes`. Selects which histogram to display.
 - `GraphSize` — Enum: `Off` | `Small` (10 rows) | `Large` (20 rows). Three-state graph toggle.
 - `ArkimeClient` — Wraps `reqwest::Client` + `base_url` + auth. All API calls return `Result<T>`.
+- `ArkimeField` — Deserialized field definition with `dbField`, `type`, `exp` (expression name), `friendlyName`.
 - `AuthMode` — Enum: `None` | `Basic` | `Digest`.
 - `GraphData` — Deserialized histogram data from `facets=1` API response.
 - `TableState` — ratatui widget state for session/stats list scrolling.
+- `DetailActionMenu` — Popup for adding a field/value to expression from session detail. Options: AND/AND NOT/OR/OR NOT. Stores `field` (exp name for expressions), `display` (friendlyName for UI), `value`, and `selected` index.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
@@ -47,11 +49,12 @@ src/
 |---|---|
 | Tab / Shift+Tab | Switch tabs |
 | j / k / ↑ / ↓ | Navigate sessions/stats |
+| Shift+↑ / Shift+↓ | Page up/down in list or detail |
 | ← / → | Previous/next page (sessions) |
 | Shift+← / Shift+→ | First/last page |
 | Home | First page |
-| PgUp / PgDn | Scroll detail view |
-| Enter | Open session/stats detail |
+| PgUp / PgDn | Page up/down in detail view |
+| Enter | Open session/stats detail; in detail, open expression menu |
 | Esc | Close overlay |
 | r | Refresh data |
 | / | Search expression or filter (Enter to apply, Esc to cancel) |
@@ -60,6 +63,8 @@ src/
 | S | Toggle sort direction (asc/desc) |
 | g | Cycle graph: Off → Small → Large → Off (sessions) |
 | G | Cycle graph type: Sessions → Packets → Bytes (sessions) |
+| a | Session action menu (download pcap, add/remove tags) |
+| A | All sessions action menu (download pcap, export csv, add/remove tags) |
 | 1 / 2 / 3 | Switch stats sub-tab (Capture/DB Stats/DB Indices) |
 | h | Show help overlay |
 | q | Quit |
@@ -119,6 +124,20 @@ source.packets, destination.packets, source.bytes, destination.bytes
 - Construction banner cycles through rainbow colors, barricade bars scroll
 - Animation state: `owl_x/y/dx/dy/frame/tick` + `anim_start` (never-reset Instant for color cycling)
 
+## Session detail expression builder
+
+- In session detail view, rows are selectable with ↑/↓ arrows (highlighted in yellow)
+- Auto-scrolls to keep selected row visible
+- Enter opens an action menu with 4 options: AND value, AND NOT value, OR value, OR NOT value
+- If expression is empty, adds `field == value` directly
+- If expression is non-empty, prepends `&&` or `||` connector
+- String values are quoted, numeric values are not
+- Esc closes the action menu without modifying the expression
+- `DetailActionMenu` holds `field` (exp name), `display` (friendlyName), value string, and selected menu index
+- `field_exp_map` maps dbField → exp name, `field_friendly_map` maps dbField → friendlyName
+- Session detail labels show friendlyName; expressions use exp name
+- Fields ending in `Cnt` and `packetPos`/`packetRange` are hidden from session detail
+
 ## Date field handling
 
 - At startup, `/api/fields?array=true` is called to identify date fields
@@ -137,10 +156,11 @@ source.packets, destination.packets, source.bytes, destination.bytes
 
 ### Adding a new API call
 1. Add method to `ArkimeClient` in `api.rs`
-2. Use `self.authenticated_get(&url).await?` for GET requests (handles auth automatically)
-3. Parse with `serde_json::from_str` — use `Value` for dynamic data, typed structs for fixed schemas
-4. Add response struct with `#[derive(Deserialize)]` if needed, use `#[serde(rename = "camelCase")]` for JS field names
-5. Call from `App` method in `app.rs`, store result in App fields
+2. Use `self.authenticated_get(&url).await?` for GET requests, `self.authenticated_post(&url, &form).await?` for POST
+3. Use `authenticated_get_bytes`/`authenticated_post_bytes` for binary responses (pcap, csv)
+4. Parse with `serde_json::from_str` — use `Value` for dynamic data, typed structs for fixed schemas
+5. Add response struct with `#[derive(Deserialize)]` if needed, use `#[serde(rename = "camelCase")]` for JS field names
+6. Call from `App` method in `app.rs`, store result in App fields
 
 ### Adding keybindings
 1. Key handling is in `app.rs`: `handle_key()` dispatches based on active tab and view

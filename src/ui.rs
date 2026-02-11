@@ -1,4 +1,4 @@
-use crate::app::{App, GraphType, InputMode, SessionView, StatsTab, StatsView, Tab, TimeRange};
+use crate::app::{App, DetailActionMenu, GraphType, InputMode, SessionView, StatsTab, StatsView, Tab, TimeRange, is_hidden_detail_field};
 use chrono::{DateTime, Local};
 use ratatui::{
     prelude::*,
@@ -113,9 +113,21 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.show_help {
         draw_help(f, f.area());
     }
+    if app.action_menu.is_some() {
+        draw_action_menu(f, app, f.area());
+    }
+    if app.input_mode == InputMode::ActionPrompt {
+        draw_action_prompt(f, app, f.area());
+    }
+}
+
+fn status_bar_height(app: &App) -> u16 {
+    let lines = app.status_msg.chars().filter(|&c| c == '\n').count() + 1;
+    lines as u16
 }
 
 fn draw_default_layout(f: &mut Frame, app: &mut App) {
+    let status_h = status_bar_height(app);
     let mut constraints = vec![
         Constraint::Length(3), // tabs
         Constraint::Length(3), // toolbar: time range + expression
@@ -124,7 +136,7 @@ fn draw_default_layout(f: &mut Frame, app: &mut App) {
         constraints.push(Constraint::Length(app.graph_size.height())); // graph
     }
     constraints.push(Constraint::Min(0));   // content
-    constraints.push(Constraint::Length(1)); // status bar
+    constraints.push(Constraint::Length(status_h)); // status bar
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -157,13 +169,14 @@ fn draw_default_layout(f: &mut Frame, app: &mut App) {
 }
 
 fn draw_stats_layout(f: &mut Frame, app: &mut App) {
+    let status_h = status_bar_height(app);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // tabs
             Constraint::Length(3), // stats sub-tabs + filter
             Constraint::Min(0),   // content
-            Constraint::Length(1), // status bar
+            Constraint::Length(status_h), // status bar
         ])
         .split(f.area());
 
@@ -387,10 +400,15 @@ fn draw_sessions(f: &mut Frame, app: &mut App, area: Rect) {
     draw_session_list(f, app, area);
     if app.session_view == SessionView::Detail {
         draw_session_detail(f, app, area);
+        if app.detail_action_menu.is_some() {
+            draw_detail_action_menu(f, app, area);
+        }
     }
 }
 
 fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
+    // header row + borders = 3 lines overhead
+    app.visible_rows = area.height.saturating_sub(3) as usize;
     let labels = [
         "IP", "First Packet", "Last Packet", "Src IP", "SrcPort",
         "Dst IP", "DstPort", "Protocols", "Src Pkts", "Dst Pkts",
@@ -477,7 +495,7 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_stateful_widget(table, area, &mut app.table_state);
 }
 
-fn draw_session_detail(f: &mut Frame, app: &App, area: Rect) {
+fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
     let detail = match &app.session_detail {
         Some(d) => d,
         None => return,
@@ -496,11 +514,13 @@ fn draw_session_detail(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
 
     if let Some(obj) = detail.data.as_object() {
-        let mut keys: Vec<&String> = obj.keys().collect();
+        let mut keys: Vec<&String> = obj.keys()
+            .filter(|k| !is_hidden_detail_field(k))
+            .collect();
         keys.sort();
-        for key in keys {
-            let val = &obj[key];
-            let val_str = if let Some(field_type) = app.date_fields.get(key.as_str()) {
+        for (i, db_field) in keys.iter().enumerate() {
+            let val = &obj[*db_field];
+            let val_str = if let Some(field_type) = app.date_fields.get(db_field.as_str()) {
                 format_epoch(val, field_type)
             } else {
                 match val {
@@ -518,14 +538,44 @@ fn draw_session_detail(f: &mut Frame, app: &App, area: Rect) {
                     other => other.to_string(),
                 }
             };
+            let display_name = app.field_friendly_map.get(db_field.as_str())
+                .map(|s| s.as_str())
+                .unwrap_or(db_field.as_str());
+            let is_selected = i == detail.selected;
+            let key_style = if is_selected {
+                Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Yellow)
+            };
+            let val_style = if is_selected {
+                Style::default().fg(Color::Black).bg(Color::Yellow)
+            } else {
+                Style::default()
+            };
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("{key:>30}: "),
-                    Style::default().fg(Color::Yellow),
+                    format!("{display_name:>30}: "),
+                    key_style,
                 ),
-                Span::raw(val_str),
+                Span::styled(val_str, val_style),
             ]));
         }
+    }
+
+    // Auto-scroll to keep selected row visible
+    let visible_rows = popup_height.saturating_sub(2) as usize;
+    let selected = detail.selected;
+    let mut scroll = detail.scroll;
+    if visible_rows > 0 {
+        if selected < scroll as usize {
+            scroll = selected as u16;
+        } else if selected >= scroll as usize + visible_rows {
+            scroll = (selected - visible_rows + 1) as u16;
+        }
+    }
+    // Write back the computed scroll
+    if let Some(ref mut d) = app.session_detail {
+        d.scroll = scroll;
     }
 
     let paragraph = Paragraph::new(lines)
@@ -533,10 +583,54 @@ fn draw_session_detail(f: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
-                .title(" Session Detail (Esc to close) "),
+                .title(" Session Detail (↑↓ navigate, Enter add to expression, Esc close) "),
         )
-        .scroll((detail.scroll, 0));
+        .scroll((scroll, 0));
 
+    f.render_widget(paragraph, popup_area);
+}
+
+fn draw_detail_action_menu(f: &mut Frame, app: &App, area: Rect) {
+    let menu = match &app.detail_action_menu {
+        Some(m) => m,
+        None => return,
+    };
+
+    let popup_width = 40u16;
+    let popup_height = (DetailActionMenu::OPTIONS.len() as u16) + 4; // borders + title + field line
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(" {} ", menu.display),
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+    )));
+
+    for (i, option) in DetailActionMenu::OPTIONS.iter().enumerate() {
+        let is_selected = i == menu.selected;
+        let style = if is_selected {
+            Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let prefix = if is_selected { "▸ " } else { "  " };
+        lines.push(Line::from(Span::styled(
+            format!("{prefix}{option}"),
+            style,
+        )));
+    }
+
+    let paragraph = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow))
+                .title(" Add to Expression "),
+        );
     f.render_widget(paragraph, popup_area);
 }
 
@@ -977,16 +1071,94 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let status = Paragraph::new(Line::from(vec![
-        Span::styled(" ", Style::default()),
-        Span::raw(&app.status_msg),
-        Span::styled(
+    let mut lines: Vec<Line> = app.status_msg.split('\n')
+        .map(|l| Line::from(vec![
+            Span::styled(" ", Style::default()),
+            Span::raw(l.to_string()),
+        ]))
+        .collect();
+    if let Some(last) = lines.last_mut() {
+        last.spans.push(Span::styled(
             "  Tab/Shift+Tab: switch tabs | j/k: navigate | Enter: open | r: refresh | q: quit ",
             Style::default().fg(Color::DarkGray),
-        ),
-    ]))
-    .style(Style::default().bg(Color::Blue).fg(Color::White));
+        ));
+    }
+    let status = Paragraph::new(lines)
+        .style(Style::default().bg(Color::Blue).fg(Color::White));
     f.render_widget(status, area);
+}
+
+fn draw_action_menu(f: &mut Frame, app: &App, area: Rect) {
+    let menu = match &app.action_menu {
+        Some(m) => m,
+        None => return,
+    };
+
+    let options = menu.options();
+    let title = match menu.target {
+        crate::app::ActionTarget::Single => " Session Action ",
+        crate::app::ActionTarget::All => " All Sessions Action ",
+    };
+
+    let popup_width = 30u16;
+    let popup_height = options.len() as u16 + 2;
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let lines: Vec<Line> = options.iter().enumerate().map(|(i, kind)| {
+        let is_selected = i == menu.selected;
+        let style = if is_selected {
+            Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let prefix = if is_selected { "▸ " } else { "  " };
+        Line::from(Span::styled(format!("{prefix}{}", kind.label()), style))
+    }).collect();
+
+    let paragraph = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow))
+                .title(title),
+        );
+    f.render_widget(paragraph, popup_area);
+}
+
+fn draw_action_prompt(f: &mut Frame, app: &App, area: Rect) {
+    let prompt = match &app.action_prompt {
+        Some(p) => p,
+        None => return,
+    };
+
+    let label = prompt.kind.prompt_label();
+    let popup_width = 50u16;
+    let popup_height = 3u16;
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let line = Line::from(vec![
+        Span::styled(label, Style::default().fg(Color::Yellow)),
+        Span::styled(&prompt.input, Style::default().fg(Color::White)),
+        Span::styled("█", Style::default().fg(Color::Gray)),
+    ]);
+
+    let title = format!(" {} ", prompt.kind.label());
+    let paragraph = Paragraph::new(line)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(title),
+        );
+    f.render_widget(paragraph, popup_area);
 }
 
 fn draw_help(f: &mut Frame, area: Rect) {
@@ -1002,7 +1174,7 @@ fn draw_help(f: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from(Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
         Line::from(""),
-        Line::from(vec![Span::styled("  Enter            ", Style::default().fg(Color::Yellow)), Span::raw("Open session detail")]),
+        Line::from(vec![Span::styled("  Enter            ", Style::default().fg(Color::Yellow)), Span::raw("Open session detail / add to expression")]),
         Line::from(vec![Span::styled("  Esc              ", Style::default().fg(Color::Yellow)), Span::raw("Close overlay")]),
         Line::from(vec![Span::styled("  r                ", Style::default().fg(Color::Yellow)), Span::raw("Refresh sessions")]),
         Line::from(vec![Span::styled("  /                ", Style::default().fg(Color::Yellow)), Span::raw("Search expression")]),
@@ -1011,6 +1183,8 @@ fn draw_help(f: &mut Frame, area: Rect) {
         Line::from(vec![Span::styled("  S                ", Style::default().fg(Color::Yellow)), Span::raw("Toggle sort direction")]),
         Line::from(vec![Span::styled("  g                ", Style::default().fg(Color::Yellow)), Span::raw("Toggle graph")]),
         Line::from(vec![Span::styled("  G                ", Style::default().fg(Color::Yellow)), Span::raw("Cycle graph type")]),
+        Line::from(vec![Span::styled("  a                ", Style::default().fg(Color::Yellow)), Span::raw("Session actions (pcap/tags)")]),
+        Line::from(vec![Span::styled("  A                ", Style::default().fg(Color::Yellow)), Span::raw("All sessions actions")]),
         Line::from(""),
         Line::from(Span::styled("Stats Tab", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
         Line::from(""),
@@ -1024,7 +1198,7 @@ fn draw_help(f: &mut Frame, area: Rect) {
         Line::from(Span::styled("Press any key to close", Style::default().fg(Color::DarkGray))),
     ];
 
-    let popup_width = 44;
+    let popup_width = 62;
     let popup_height = help_text.len() as u16 + 2; // +2 for borders
     let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;

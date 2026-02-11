@@ -4,6 +4,14 @@ use ratatui::widgets::TableState;
 use serde_json::Value;
 use std::collections::HashMap;
 
+pub fn is_hidden_detail_field(key: &str) -> bool {
+    key == "packetPos" || key == "packetRange" || key.ends_with("Cnt")
+}
+
+pub fn is_non_actionable_field(key: &str) -> bool {
+    key == "@timestamp"
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tab {
     Arkime,
@@ -209,11 +217,88 @@ pub struct StatsDetail {
 pub enum InputMode {
     Normal,
     Expression,
+    ActionPrompt,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ActionTarget {
+    Single,
+    All,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ActionKind {
+    DownloadPcap,
+    ExportCsv,
+    AddTags,
+    RemoveTags,
+}
+
+pub struct ActionMenu {
+    pub target: ActionTarget,
+    pub selected: usize,
+    pub session_id: Option<String>,
+    pub session_node: Option<String>,
+}
+
+impl ActionMenu {
+    pub fn options(&self) -> &[ActionKind] {
+        match self.target {
+            ActionTarget::Single => &[ActionKind::DownloadPcap, ActionKind::AddTags, ActionKind::RemoveTags],
+            ActionTarget::All => &[ActionKind::DownloadPcap, ActionKind::ExportCsv, ActionKind::AddTags, ActionKind::RemoveTags],
+        }
+    }
+}
+
+impl ActionKind {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ActionKind::DownloadPcap => "Download PCAP",
+            ActionKind::ExportCsv => "Export CSV",
+            ActionKind::AddTags => "Add Tags",
+            ActionKind::RemoveTags => "Remove Tags",
+        }
+    }
+
+    pub fn prompt_label(&self) -> &'static str {
+        match self {
+            ActionKind::DownloadPcap => "Filename: ",
+            ActionKind::ExportCsv => "Filename: ",
+            ActionKind::AddTags => "Tags (comma separated): ",
+            ActionKind::RemoveTags => "Tags (comma separated): ",
+        }
+    }
+}
+
+pub struct ActionPrompt {
+    pub kind: ActionKind,
+    pub target: ActionTarget,
+    pub session_id: Option<String>,
+    pub session_node: Option<String>,
+    pub input: String,
+}
+
+pub struct DetailActionMenu {
+    pub field: String,       // exp name for expression building
+    pub display: String,     // friendlyName for display
+    pub value: String,
+    pub selected: usize,
+}
+
+impl DetailActionMenu {
+    pub const OPTIONS: [&'static str; 4] = [
+        "AND value",
+        "AND NOT value",
+        "OR value",
+        "OR NOT value",
+    ];
 }
 
 pub struct SessionDetail {
     pub data: Value,
     pub scroll: u16,
+    pub selected: usize,
+    pub total_rows: usize,
 }
 
 pub struct App {
@@ -224,7 +309,11 @@ pub struct App {
     pub expression_edit: String,
     pub input_mode: InputMode,
     pub show_help: bool,
+    pub action_menu: Option<ActionMenu>,
+    pub action_prompt: Option<ActionPrompt>,
     pub date_fields: HashMap<String, String>, // dbField -> type ("seconds" or "date")
+    pub field_exp_map: HashMap<String, String>, // dbField -> exp (expression field name)
+    pub field_friendly_map: HashMap<String, String>, // dbField -> friendlyName
     pub sessions: Vec<Value>,
     pub sessions_total: u64,
     pub sessions_filtered: u64,
@@ -235,6 +324,7 @@ pub struct App {
     pub table_state: TableState,
     pub session_view: SessionView,
     pub session_detail: Option<SessionDetail>,
+    pub detail_action_menu: Option<DetailActionMenu>,
     pub sort_column: usize,
     pub sort_desc: bool,
     pub graph_size: GraphSize,
@@ -255,6 +345,7 @@ pub struct App {
     pub stats_sort_column: usize,
     pub stats_sort_desc: bool,
     pub stats_last_refresh: std::time::Instant,
+    pub visible_rows: usize,
     // Owl animation
     pub owl_x: f32,
     pub owl_y: f32,
@@ -275,7 +366,11 @@ impl App {
             expression_edit: String::new(),
             input_mode: InputMode::Normal,
             show_help: false,
+            action_menu: None,
+            action_prompt: None,
             date_fields: HashMap::new(),
+            field_exp_map: HashMap::new(),
+            field_friendly_map: HashMap::new(),
             sessions: Vec::new(),
             sessions_total: 0,
             sessions_filtered: 0,
@@ -299,7 +394,8 @@ impl App {
             table_state: TableState::default().with_selected(0),
             session_view: SessionView::List,
             session_detail: None,
-            sort_column: 0,
+            detail_action_menu: None,
+            sort_column: 2,
             sort_desc: true,
             graph_size: GraphSize::Off,
             graph_type: GraphType::Sessions,
@@ -319,6 +415,7 @@ impl App {
             stats_sort_column: 0,
             stats_sort_desc: false,
             stats_last_refresh: std::time::Instant::now(),
+            visible_rows: 20,
             // Owl animation
             owl_x: 5.0,
             owl_y: 3.0,
@@ -336,8 +433,10 @@ impl App {
 
     pub async fn fetch_fields(&mut self) {
         match self.client.get_fields().await {
-            Ok((_fields, date_fields)) => {
+            Ok((_fields, date_fields, field_exp_map, field_friendly_map)) => {
                 self.date_fields = date_fields;
+                self.field_exp_map = field_exp_map;
+                self.field_friendly_map = field_friendly_map;
             }
             Err(e) => {
                 self.status_msg = format!("Error fetching fields: {e}");
@@ -352,6 +451,10 @@ impl App {
             .unwrap_or_else(|| "firstPacket".into());
         match self.client.get_sessions(&self.session_fields, &self.expression, self.time_range.date_value(), &sort_field, self.sort_desc, self.graph_size.is_visible(), self.page_start, self.page_size).await {
             Ok(response) => {
+                if let Some(err) = response.bsq_err.as_ref().or(response.error.as_ref()) {
+                    self.status_msg = format!("Expression error: {err}");
+                    return;
+                }
                 self.sessions = response.data;
                 self.sessions_total = response.records_total;
                 self.sessions_filtered = response.records_filtered;
@@ -380,7 +483,10 @@ impl App {
             self.status_msg = "Fetching session detail...".into();
             match self.client.get_session(id).await {
                 Ok(data) => {
-                    self.session_detail = Some(SessionDetail { data, scroll: 0 });
+                    let total_rows = data.as_object()
+                        .map(|o| o.keys().filter(|k| !is_hidden_detail_field(k)).count())
+                        .unwrap_or(0);
+                    self.session_detail = Some(SessionDetail { data, scroll: 0, selected: 0, total_rows });
                     self.session_view = SessionView::Detail;
                     self.status_msg = "Session detail loaded".into();
                 }
@@ -437,9 +543,53 @@ impl App {
         }
     }
 
+    fn open_action_menu(&mut self, target: ActionTarget) {
+        let (session_id, session_node) = match target {
+            ActionTarget::Single => {
+                let (id, node) = if self.session_view == SessionView::Detail {
+                    let detail = self.session_detail.as_ref();
+                    (
+                        detail.and_then(|d| d.data.get("id")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        detail.and_then(|d| d.data.get("node")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    )
+                } else {
+                    let session = self.sessions.get(self.selected_session);
+                    (
+                        session.and_then(|s| s.get("id")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        session.and_then(|s| s.get("node")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    )
+                };
+                if id.is_none() {
+                    self.status_msg = "No session selected".into();
+                    return;
+                }
+                (id, node)
+            }
+            ActionTarget::All => (None, None),
+        };
+        self.action_menu = Some(ActionMenu {
+            target,
+            selected: 0,
+            session_id,
+            session_node,
+        });
+    }
+
     pub async fn handle_key(&mut self, key: KeyEvent) {
         if self.show_help {
             self.show_help = false;
+            return;
+        }
+        if self.action_menu.is_some() {
+            self.handle_action_menu_key(key);
+            return;
+        }
+        if self.input_mode == InputMode::ActionPrompt {
+            self.handle_action_prompt_key(key).await;
+            return;
+        }
+        if self.detail_action_menu.is_some() {
+            self.handle_detail_action_key(key);
             return;
         }
         if self.input_mode == InputMode::Expression {
@@ -518,6 +668,16 @@ impl App {
                 if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
                     self.fetch_stats().await;
                 }
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if !self.sessions.is_empty() {
+                    self.selected_session = (self.selected_session + self.visible_rows).min(self.sessions.len() - 1);
+                    self.table_state.select(Some(self.selected_session));
+                }
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.selected_session = self.selected_session.saturating_sub(self.visible_rows);
+                self.table_state.select(Some(self.selected_session));
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.sessions.is_empty() {
@@ -610,6 +770,12 @@ impl App {
             KeyCode::Char('h') => {
                 self.show_help = true;
             }
+            KeyCode::Char('a') => {
+                self.open_action_menu(ActionTarget::Single);
+            }
+            KeyCode::Char('A') => {
+                self.open_action_menu(ActionTarget::All);
+            }
             _ => {}
         }
     }
@@ -620,24 +786,302 @@ impl App {
                 self.session_view = SessionView::List;
                 self.session_detail = None;
             }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if let Some(ref mut detail) = self.session_detail {
+                    detail.selected = (detail.selected + self.visible_rows).min(detail.total_rows.saturating_sub(1));
+                }
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if let Some(ref mut detail) = self.session_detail {
+                    detail.selected = detail.selected.saturating_sub(self.visible_rows);
+                }
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(ref mut detail) = self.session_detail {
-                    detail.scroll = detail.scroll.saturating_add(1);
+                    if detail.total_rows > 0 && detail.selected < detail.total_rows - 1 {
+                        detail.selected += 1;
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(ref mut detail) = self.session_detail {
-                    detail.scroll = detail.scroll.saturating_sub(1);
+                    if detail.selected > 0 {
+                        detail.selected -= 1;
+                    }
                 }
             }
             KeyCode::PageDown => {
                 if let Some(ref mut detail) = self.session_detail {
-                    detail.scroll = detail.scroll.saturating_add(20);
+                    detail.selected = (detail.selected + self.visible_rows).min(detail.total_rows.saturating_sub(1));
                 }
             }
             KeyCode::PageUp => {
                 if let Some(ref mut detail) = self.session_detail {
-                    detail.scroll = detail.scroll.saturating_sub(20);
+                    detail.selected = detail.selected.saturating_sub(self.visible_rows);
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(ref detail) = self.session_detail {
+                    if let Some(obj) = detail.data.as_object() {
+                        let mut keys: Vec<&String> = obj.keys()
+                            .filter(|k| !is_hidden_detail_field(k))
+                            .collect();
+                        keys.sort();
+                        if let Some(db_field) = keys.get(detail.selected) {
+                            if is_non_actionable_field(db_field) {
+                                return;
+                            }
+                            let val = &obj[*db_field];
+                            let val_str = match val {
+                                serde_json::Value::String(s) => s.clone(),
+                                serde_json::Value::Array(arr) => {
+                                    arr.iter()
+                                        .map(|v| match v {
+                                            serde_json::Value::String(s) => s.clone(),
+                                            other => other.to_string(),
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                }
+                                serde_json::Value::Null => "-".into(),
+                                other => other.to_string(),
+                            };
+                            let exp_name = self.field_exp_map.get(db_field.as_str())
+                                .cloned()
+                                .unwrap_or_else(|| (*db_field).clone());
+                            let friendly = self.field_friendly_map.get(db_field.as_str())
+                                .cloned()
+                                .unwrap_or_else(|| (*db_field).clone());
+                            self.detail_action_menu = Some(DetailActionMenu {
+                                field: exp_name,
+                                display: friendly,
+                                value: val_str,
+                                selected: 0,
+                            });
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('a') => {
+                self.open_action_menu(ActionTarget::Single);
+            }
+            KeyCode::Char('A') => {
+                self.open_action_menu(ActionTarget::All);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_action_menu_key(&mut self, key: KeyEvent) {
+        let menu = match &mut self.action_menu {
+            Some(m) => m,
+            None => return,
+        };
+        match key.code {
+            KeyCode::Esc => {
+                self.action_menu = None;
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let len = menu.options().len();
+                menu.selected = (menu.selected + 1).min(len - 1);
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if menu.selected > 0 {
+                    menu.selected -= 1;
+                }
+            }
+            KeyCode::Enter => {
+                let kind = menu.options()[menu.selected];
+                let target = menu.target;
+                let session_id = menu.session_id.clone();
+                let session_node = menu.session_node.clone();
+                let default_input = match kind {
+                    ActionKind::DownloadPcap => {
+                        match target {
+                            ActionTarget::Single => {
+                                format!("{}.pcap", session_id.as_deref().unwrap_or("session"))
+                            }
+                            ActionTarget::All => "sessions.pcap".to_string(),
+                        }
+                    }
+                    ActionKind::ExportCsv => "sessions.csv".to_string(),
+                    ActionKind::AddTags | ActionKind::RemoveTags => String::new(),
+                };
+                self.action_menu = None;
+                self.action_prompt = Some(ActionPrompt {
+                    kind,
+                    target,
+                    session_id,
+                    session_node,
+                    input: default_input,
+                });
+                self.input_mode = InputMode::ActionPrompt;
+            }
+            _ => {}
+        }
+    }
+
+    async fn handle_action_prompt_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.action_prompt = None;
+                self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Enter => {
+                let prompt = match self.action_prompt.take() {
+                    Some(p) => p,
+                    None => return,
+                };
+                self.input_mode = InputMode::Normal;
+                if prompt.input.is_empty() {
+                    self.status_msg = "No input provided".into();
+                    return;
+                }
+                self.execute_action(prompt).await;
+            }
+            KeyCode::Char(c) => {
+                if let Some(ref mut prompt) = self.action_prompt {
+                    prompt.input.push(c);
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(ref mut prompt) = self.action_prompt {
+                    prompt.input.pop();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    async fn execute_action(&mut self, prompt: ActionPrompt) {
+        let date = self.time_range.date_value();
+        match (prompt.kind, prompt.target) {
+            (ActionKind::DownloadPcap, ActionTarget::Single) => {
+                let id = prompt.session_id.as_deref().unwrap_or("");
+                let node = prompt.session_node.as_deref().unwrap_or("");
+                self.status_msg = "Downloading PCAP...".into();
+                match self.client.download_session_pcap(node, id).await {
+                    Ok(data) => {
+                        match std::fs::write(&prompt.input, &data) {
+                            Ok(_) => self.status_msg = format!("Saved {} ({} bytes)", prompt.input, data.len()),
+                            Err(e) => self.status_msg = format!("Error writing file: {e}"),
+                        }
+                    }
+                    Err(e) => self.status_msg = format!("Error: {e}"),
+                }
+            }
+            (ActionKind::DownloadPcap, ActionTarget::All) => {
+                self.status_msg = "Downloading PCAP...".into();
+                match self.client.download_sessions_pcap(&self.expression, date).await {
+                    Ok(data) => {
+                        match std::fs::write(&prompt.input, &data) {
+                            Ok(_) => self.status_msg = format!("Saved {} ({} bytes)", prompt.input, data.len()),
+                            Err(e) => self.status_msg = format!("Error writing file: {e}"),
+                        }
+                    }
+                    Err(e) => self.status_msg = format!("Error: {e}"),
+                }
+            }
+            (ActionKind::ExportCsv, ActionTarget::All) => {
+                self.status_msg = "Exporting CSV...".into();
+                match self.client.export_sessions_csv(&self.expression, date, &self.session_fields).await {
+                    Ok(data) => {
+                        match std::fs::write(&prompt.input, &data) {
+                            Ok(_) => self.status_msg = format!("Saved {} ({} bytes)", prompt.input, data.len()),
+                            Err(e) => self.status_msg = format!("Error writing file: {e}"),
+                        }
+                    }
+                    Err(e) => self.status_msg = format!("Error: {e}"),
+                }
+            }
+            (ActionKind::AddTags, ActionTarget::Single) => {
+                let id = prompt.session_id.as_deref().unwrap_or("");
+                self.status_msg = "Adding tags...".into();
+                match self.client.add_session_tags(id, &prompt.input).await {
+                    Ok(_) => {
+                        self.status_msg = format!("Tags added: {}", prompt.input);
+                        self.fetch_sessions().await;
+                    }
+                    Err(e) => self.status_msg = format!("Error: {e}"),
+                }
+            }
+            (ActionKind::AddTags, ActionTarget::All) => {
+                self.status_msg = "Adding tags...".into();
+                match self.client.add_sessions_tags(&self.expression, date, &prompt.input).await {
+                    Ok(_) => {
+                        self.status_msg = format!("Tags added: {}", prompt.input);
+                        self.fetch_sessions().await;
+                    }
+                    Err(e) => self.status_msg = format!("Error: {e}"),
+                }
+            }
+            (ActionKind::RemoveTags, ActionTarget::Single) => {
+                let id = prompt.session_id.as_deref().unwrap_or("");
+                self.status_msg = "Removing tags...".into();
+                match self.client.remove_session_tags(id, &prompt.input).await {
+                    Ok(_) => {
+                        self.status_msg = format!("Tags removed: {}", prompt.input);
+                        self.fetch_sessions().await;
+                    }
+                    Err(e) => self.status_msg = format!("Error: {e}"),
+                }
+            }
+            (ActionKind::RemoveTags, ActionTarget::All) => {
+                self.status_msg = "Removing tags...".into();
+                match self.client.remove_sessions_tags(&self.expression, date, &prompt.input).await {
+                    Ok(_) => {
+                        self.status_msg = format!("Tags removed: {}", prompt.input);
+                        self.fetch_sessions().await;
+                    }
+                    Err(e) => self.status_msg = format!("Error: {e}"),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_detail_action_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.detail_action_menu = None;
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(ref mut menu) = self.detail_action_menu {
+                    menu.selected = (menu.selected + 1).min(DetailActionMenu::OPTIONS.len() - 1);
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(ref mut menu) = self.detail_action_menu {
+                    if menu.selected > 0 {
+                        menu.selected -= 1;
+                    }
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(menu) = self.detail_action_menu.take() {
+                    let needs_quotes = menu.value.parse::<f64>().is_err();
+                    let quoted_val = if needs_quotes {
+                        format!("\"{}\"", menu.value)
+                    } else {
+                        menu.value.clone()
+                    };
+
+                    let (connector, op) = match menu.selected {
+                        0 => ("&&", "=="),
+                        1 => ("&&", "!="),
+                        2 => ("||", "=="),
+                        3 => ("||", "!="),
+                        _ => ("&&", "=="),
+                    };
+
+                    let clause = format!("{} {} {}", menu.field, op, quoted_val);
+
+                    if self.expression.is_empty() {
+                        self.expression = clause;
+                    } else {
+                        self.expression = format!("{} {} {}", self.expression, connector, clause);
+                    }
+                    self.expression_edit = self.expression.clone();
                 }
             }
             _ => {}
