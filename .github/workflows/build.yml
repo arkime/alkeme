@@ -28,8 +28,21 @@ jobs:
           source $HOME/.cargo/env
           cargo build --release
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@69320dbe05506a9a39fc8ae11030b214ec2d1f87
         with:
-          name: alkeme-linux-x86_64
-          path: target/release/alkeme
+          tag_name: "v${{ steps.version.outputs.version }}"
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            target/release/alkeme
+          body: |
+            Alkeme - The Arkime TUI
