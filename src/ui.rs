@@ -246,7 +246,7 @@ fn draw_toolbar(f: &mut Frame, app: &App, area: Rect) {
     // Show cursor in expression field when editing
     if app.input_mode == InputMode::Expression {
         f.set_cursor_position((
-            toolbar_chunks[1].x + app.expression_edit.len() as u16 + 1,
+            toolbar_chunks[1].x + app.expression_cursor as u16 + 1,
             toolbar_chunks[1].y + 1,
         ));
     }
@@ -512,10 +512,21 @@ fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(Clear, popup_area);
 
     let mut lines: Vec<Line> = Vec::new();
+    let filter_lower = detail.filter.to_lowercase();
 
     if let Some(obj) = detail.data.as_object() {
         let mut keys: Vec<&String> = obj.keys()
             .filter(|k| !is_hidden_detail_field(k))
+            .filter(|k| {
+                if filter_lower.is_empty() {
+                    return true;
+                }
+                let friendly = app.field_friendly_map.get(k.as_str())
+                    .map(|s| s.as_str())
+                    .unwrap_or(k.as_str());
+                k.to_lowercase().contains(&filter_lower)
+                    || friendly.to_lowercase().contains(&filter_lower)
+            })
             .collect();
         keys.sort();
         for (i, db_field) in keys.iter().enumerate() {
@@ -566,6 +577,7 @@ fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_rows = popup_height.saturating_sub(2) as usize;
     let selected = detail.selected;
     let mut scroll = detail.scroll;
+    let detail_filter = detail.filter.clone();
     if visible_rows > 0 {
         if selected < scroll as usize {
             scroll = selected as u16;
@@ -578,12 +590,20 @@ fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
         d.scroll = scroll;
     }
 
+    let title = if !detail_filter.is_empty() {
+        format!(" Session Detail [filter: {}] ", detail_filter)
+    } else if app.input_mode == crate::app::InputMode::DetailFilter {
+        " Session Detail [filter: ] ".to_string()
+    } else {
+        " Session Detail (↑↓ navigate, Enter add to expression, / filter, a action menu, Esc close) ".to_string()
+    };
+
     let paragraph = Paragraph::new(lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
-                .title(" Session Detail (↑↓ navigate, Enter add to expression, Esc close) "),
+                .title(title.as_str()),
         )
         .scroll((scroll, 0));
 
@@ -596,6 +616,47 @@ fn draw_detail_action_menu(f: &mut Frame, app: &App, area: Rect) {
         None => return,
     };
 
+    if let Some(ref values) = menu.values {
+        // Value selection sub-menu
+        let popup_width = 40u16;
+        let popup_height = (values.len() as u16) + 3;
+        let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+        let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+        let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+        f.render_widget(Clear, popup_area);
+
+        let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from(Span::styled(
+            format!(" {} ", menu.display),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )));
+
+        for (i, val) in values.iter().enumerate() {
+            let is_selected = i == menu.value_selected;
+            let style = if is_selected {
+                Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let prefix = if is_selected { "▸ " } else { "  " };
+            lines.push(Line::from(Span::styled(
+                format!("{prefix}{val}"),
+                style,
+            )));
+        }
+
+        let paragraph = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Yellow))
+                    .title(" Select Value "),
+            );
+        f.render_widget(paragraph, popup_area);
+        return;
+    }
+
     let popup_width = 40u16;
     let popup_height = (DetailActionMenu::OPTIONS.len() as u16) + 4; // borders + title + field line
     let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
@@ -606,7 +667,7 @@ fn draw_detail_action_menu(f: &mut Frame, app: &App, area: Rect) {
 
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(Span::styled(
-        format!(" {} ", menu.display),
+        format!(" {} = {} ", menu.display, menu.value),
         Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
     )));
 
@@ -870,7 +931,7 @@ fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
 
     if app.input_mode == InputMode::Expression {
         f.set_cursor_position((
-            toolbar_chunks[1].x + app.stats_filter_edit.len() as u16 + 1,
+            toolbar_chunks[1].x + app.expression_cursor as u16 + 1,
             toolbar_chunks[1].y + 1,
         ));
     }
@@ -1094,7 +1155,43 @@ fn draw_action_menu(f: &mut Frame, app: &App, area: Rect) {
         None => return,
     };
 
-    let options = menu.options();
+    if menu.scope.is_some() {
+        // Scope selection sub-menu
+        let kind_label = menu.pending_kind.map(|k| k.label()).unwrap_or("");
+        let title = format!(" {} ", kind_label);
+        let scope_options = ["Visible", "Matching"];
+
+        let popup_width = 30u16;
+        let popup_height = scope_options.len() as u16 + 2;
+        let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+        let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+        let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+        f.render_widget(Clear, popup_area);
+
+        let lines: Vec<Line> = scope_options.iter().enumerate().map(|(i, label)| {
+            let is_selected = i == menu.selected;
+            let style = if is_selected {
+                Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let prefix = if is_selected { "▸ " } else { "  " };
+            Line::from(Span::styled(format!("{prefix}{label}"), style))
+        }).collect();
+
+        let paragraph = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Yellow))
+                    .title(title.as_str()),
+            );
+        f.render_widget(paragraph, popup_area);
+        return;
+    }
+
+    let options = menu.options(app.remove_enabled());
     let title = match menu.target {
         crate::app::ActionTarget::Single => " Session Action ",
         crate::app::ActionTarget::All => " All Sessions Action ",

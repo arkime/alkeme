@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 pub fn is_hidden_detail_field(key: &str) -> bool {
-    key == "packetPos" || key == "packetRange" || key.ends_with("Cnt")
+    key == "packetPos" || key == "packetRange" || key == "packetLen" || key.ends_with("Cnt")
 }
 
 pub fn is_non_actionable_field(key: &str) -> bool {
@@ -218,12 +218,19 @@ pub enum InputMode {
     Normal,
     Expression,
     ActionPrompt,
+    DetailFilter,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ActionTarget {
     Single,
     All,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ActionScope {
+    Visible,
+    Matching,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -239,14 +246,20 @@ pub struct ActionMenu {
     pub selected: usize,
     pub session_id: Option<String>,
     pub session_node: Option<String>,
+    pub scope: Option<ActionScope>,
+    pub pending_kind: Option<ActionKind>,
 }
 
 impl ActionMenu {
-    pub fn options(&self) -> &[ActionKind] {
-        match self.target {
-            ActionTarget::Single => &[ActionKind::DownloadPcap, ActionKind::AddTags, ActionKind::RemoveTags],
-            ActionTarget::All => &[ActionKind::DownloadPcap, ActionKind::ExportCsv, ActionKind::AddTags, ActionKind::RemoveTags],
+    pub fn options(&self, remove_enabled: bool) -> Vec<ActionKind> {
+        let mut opts = match self.target {
+            ActionTarget::Single => vec![ActionKind::DownloadPcap, ActionKind::AddTags],
+            ActionTarget::All => vec![ActionKind::DownloadPcap, ActionKind::ExportCsv, ActionKind::AddTags],
+        };
+        if remove_enabled {
+            opts.push(ActionKind::RemoveTags);
         }
+        opts
     }
 }
 
@@ -273,6 +286,7 @@ impl ActionKind {
 pub struct ActionPrompt {
     pub kind: ActionKind,
     pub target: ActionTarget,
+    pub scope: ActionScope,
     pub session_id: Option<String>,
     pub session_node: Option<String>,
     pub input: String,
@@ -283,6 +297,8 @@ pub struct DetailActionMenu {
     pub display: String,     // friendlyName for display
     pub value: String,
     pub selected: usize,
+    pub values: Option<Vec<String>>,  // populated for array fields
+    pub value_selected: usize,
 }
 
 impl DetailActionMenu {
@@ -299,14 +315,17 @@ pub struct SessionDetail {
     pub scroll: u16,
     pub selected: usize,
     pub total_rows: usize,
+    pub filter: String,
 }
 
 pub struct App {
     pub client: ArkimeClient,
+    pub user: Value,
     pub active_tab: Tab,
     pub time_range: TimeRange,
     pub expression: String,
     pub expression_edit: String,
+    pub expression_cursor: usize,
     pub input_mode: InputMode,
     pub show_help: bool,
     pub action_menu: Option<ActionMenu>,
@@ -360,10 +379,12 @@ impl App {
     pub fn new(base_url: &str, auth_mode: crate::api::AuthMode, username: Option<String>, password: Option<String>) -> Self {
         Self {
             client: ArkimeClient::new(base_url, auth_mode, username, password),
+            user: Value::Null,
             active_tab: Tab::Sessions,
             time_range: TimeRange::All,
             expression: String::new(),
             expression_edit: String::new(),
+            expression_cursor: 0,
             input_mode: InputMode::Normal,
             show_help: false,
             action_menu: None,
@@ -431,6 +452,21 @@ impl App {
         self.session_view == SessionView::Detail || self.stats_view == StatsView::Detail
     }
 
+    pub fn remove_enabled(&self) -> bool {
+        self.user.get("removeEnabled").and_then(|v| v.as_bool()).unwrap_or(false)
+    }
+
+    pub async fn fetch_user(&mut self) {
+        match self.client.get_user().await {
+            Ok(user) => {
+                self.user = user;
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching user: {e}");
+            }
+        }
+    }
+
     pub async fn fetch_fields(&mut self) {
         match self.client.get_fields().await {
             Ok((_fields, date_fields, field_exp_map, field_friendly_map)) => {
@@ -486,7 +522,7 @@ impl App {
                     let total_rows = data.as_object()
                         .map(|o| o.keys().filter(|k| !is_hidden_detail_field(k)).count())
                         .unwrap_or(0);
-                    self.session_detail = Some(SessionDetail { data, scroll: 0, selected: 0, total_rows });
+                    self.session_detail = Some(SessionDetail { data, scroll: 0, selected: 0, total_rows, filter: String::new() });
                     self.session_view = SessionView::Detail;
                     self.status_msg = "Session detail loaded".into();
                 }
@@ -572,6 +608,8 @@ impl App {
             selected: 0,
             session_id,
             session_node,
+            scope: None,
+            pending_kind: None,
         });
     }
 
@@ -586,6 +624,10 @@ impl App {
         }
         if self.input_mode == InputMode::ActionPrompt {
             self.handle_action_prompt_key(key).await;
+            return;
+        }
+        if self.input_mode == InputMode::DetailFilter {
+            self.handle_detail_filter_key(key);
             return;
         }
         if self.detail_action_menu.is_some() {
@@ -614,6 +656,7 @@ impl App {
 
     async fn handle_expression_key(&mut self, key: KeyEvent) {
         let is_stats = self.active_tab == Tab::Stats;
+        let edit = if is_stats { &mut self.stats_filter_edit } else { &mut self.expression_edit };
         match key.code {
             KeyCode::Enter => {
                 if is_stats {
@@ -635,18 +678,35 @@ impl App {
                 }
                 self.input_mode = InputMode::Normal;
             }
-            KeyCode::Char(c) => {
-                if is_stats {
-                    self.stats_filter_edit.push(c);
-                } else {
-                    self.expression_edit.push(c);
+            KeyCode::Left => {
+                if self.expression_cursor > 0 {
+                    self.expression_cursor -= 1;
                 }
             }
+            KeyCode::Right => {
+                if self.expression_cursor < edit.len() {
+                    self.expression_cursor += 1;
+                }
+            }
+            KeyCode::Home => {
+                self.expression_cursor = 0;
+            }
+            KeyCode::End => {
+                self.expression_cursor = edit.len();
+            }
+            KeyCode::Char(c) => {
+                edit.insert(self.expression_cursor, c);
+                self.expression_cursor += 1;
+            }
             KeyCode::Backspace => {
-                if is_stats {
-                    self.stats_filter_edit.pop();
-                } else {
-                    self.expression_edit.pop();
+                if self.expression_cursor > 0 {
+                    self.expression_cursor -= 1;
+                    edit.remove(self.expression_cursor);
+                }
+            }
+            KeyCode::Delete => {
+                if self.expression_cursor < edit.len() {
+                    edit.remove(self.expression_cursor);
                 }
             }
             _ => {}
@@ -699,6 +759,7 @@ impl App {
             }
             KeyCode::Char('/') => {
                 self.expression_edit = self.expression.clone();
+                self.expression_cursor = self.expression_edit.len();
                 self.input_mode = InputMode::Expression;
             }
             KeyCode::Char('t') => {
@@ -823,8 +884,19 @@ impl App {
             KeyCode::Enter => {
                 if let Some(ref detail) = self.session_detail {
                     if let Some(obj) = detail.data.as_object() {
+                        let filter_lower = detail.filter.to_lowercase();
                         let mut keys: Vec<&String> = obj.keys()
                             .filter(|k| !is_hidden_detail_field(k))
+                            .filter(|k| {
+                                if filter_lower.is_empty() {
+                                    return true;
+                                }
+                                let friendly = self.field_friendly_map.get(k.as_str())
+                                    .map(|s| s.as_str())
+                                    .unwrap_or(k.as_str());
+                                k.to_lowercase().contains(&filter_lower)
+                                    || friendly.to_lowercase().contains(&filter_lower)
+                            })
                             .collect();
                         keys.sort();
                         if let Some(db_field) = keys.get(detail.selected) {
@@ -832,19 +904,23 @@ impl App {
                                 return;
                             }
                             let val = &obj[*db_field];
-                            let val_str = match val {
-                                serde_json::Value::String(s) => s.clone(),
+                            let (val_str, values) = match val {
+                                serde_json::Value::String(s) => (s.clone(), None),
                                 serde_json::Value::Array(arr) => {
-                                    arr.iter()
+                                    let items: Vec<String> = arr.iter()
                                         .map(|v| match v {
                                             serde_json::Value::String(s) => s.clone(),
                                             other => other.to_string(),
                                         })
-                                        .collect::<Vec<_>>()
-                                        .join(", ")
+                                        .collect();
+                                    if items.len() == 1 {
+                                        (items[0].clone(), None)
+                                    } else {
+                                        (items[0].clone(), Some(items))
+                                    }
                                 }
-                                serde_json::Value::Null => "-".into(),
-                                other => other.to_string(),
+                                serde_json::Value::Null => ("-".into(), None),
+                                other => (other.to_string(), None),
                             };
                             let exp_name = self.field_exp_map.get(db_field.as_str())
                                 .cloned()
@@ -857,6 +933,8 @@ impl App {
                                 display: friendly,
                                 value: val_str,
                                 selected: 0,
+                                values,
+                                value_selected: 0,
                             });
                         }
                     }
@@ -868,22 +946,90 @@ impl App {
             KeyCode::Char('A') => {
                 self.open_action_menu(ActionTarget::All);
             }
+            KeyCode::Char('/') => {
+                self.input_mode = InputMode::DetailFilter;
+            }
             _ => {}
         }
     }
 
+    fn handle_detail_filter_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                if let Some(ref mut detail) = self.session_detail {
+                    detail.filter.clear();
+                    self.recalc_detail_rows();
+                }
+                self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Enter => {
+                self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Char(c) => {
+                if let Some(ref mut detail) = self.session_detail {
+                    detail.filter.push(c);
+                    detail.selected = 0;
+                    detail.scroll = 0;
+                    self.recalc_detail_rows();
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(ref mut detail) = self.session_detail {
+                    detail.filter.pop();
+                    detail.selected = 0;
+                    detail.scroll = 0;
+                    self.recalc_detail_rows();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn recalc_detail_rows(&mut self) {
+        if let Some(ref mut detail) = self.session_detail {
+            if let Some(obj) = detail.data.as_object() {
+                let filter_lower = detail.filter.to_lowercase();
+                detail.total_rows = obj.keys()
+                    .filter(|k| !is_hidden_detail_field(k))
+                    .filter(|k| {
+                        if filter_lower.is_empty() {
+                            return true;
+                        }
+                        let friendly = self.field_friendly_map.get(k.as_str())
+                            .map(|s| s.as_str())
+                            .unwrap_or(k.as_str());
+                        k.to_lowercase().contains(&filter_lower)
+                            || friendly.to_lowercase().contains(&filter_lower)
+                    })
+                    .count();
+            }
+        }
+    }
+
     fn handle_action_menu_key(&mut self, key: KeyEvent) {
+        let remove_enabled = self.remove_enabled();
         let menu = match &mut self.action_menu {
             Some(m) => m,
             None => return,
         };
+        let in_scope = menu.scope.is_some();
         match key.code {
             KeyCode::Esc => {
-                self.action_menu = None;
+                if in_scope {
+                    let menu = self.action_menu.as_mut().unwrap();
+                    menu.scope = None;
+                    menu.selected = 0;
+                } else {
+                    self.action_menu = None;
+                }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                let len = menu.options().len();
-                menu.selected = (menu.selected + 1).min(len - 1);
+                if in_scope {
+                    menu.selected = (menu.selected + 1).min(1);
+                } else {
+                    let len = menu.options(remove_enabled).len();
+                    menu.selected = (menu.selected + 1).min(len - 1);
+                }
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if menu.selected > 0 {
@@ -891,10 +1037,47 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                let kind = menu.options()[menu.selected];
+                if in_scope {
+                    let scope = if menu.selected == 0 { ActionScope::Visible } else { ActionScope::Matching };
+                    let kind = menu.pending_kind.unwrap();
+                    let target = menu.target;
+                    let session_id = menu.session_id.clone();
+                    let session_node = menu.session_node.clone();
+                    let default_input = match kind {
+                        ActionKind::DownloadPcap => "sessions.pcap".to_string(),
+                        ActionKind::ExportCsv => "sessions.csv".to_string(),
+                        _ => String::new(),
+                    };
+                    self.action_menu = None;
+                    self.action_prompt = Some(ActionPrompt {
+                        kind,
+                        target,
+                        scope,
+                        session_id,
+                        session_node,
+                        input: default_input,
+                    });
+                    self.input_mode = InputMode::ActionPrompt;
+                    return;
+                }
+
+                let options = menu.options(remove_enabled);
+                let kind = options[menu.selected];
                 let target = menu.target;
                 let session_id = menu.session_id.clone();
                 let session_node = menu.session_node.clone();
+
+                // For ALL PCAP/CSV, show scope selector first
+                if target == ActionTarget::All
+                    && (kind == ActionKind::DownloadPcap || kind == ActionKind::ExportCsv)
+                {
+                    let menu = self.action_menu.as_mut().unwrap();
+                    menu.pending_kind = Some(kind);
+                    menu.scope = Some(ActionScope::Visible);
+                    menu.selected = 0;
+                    return;
+                }
+
                 let default_input = match kind {
                     ActionKind::DownloadPcap => {
                         match target {
@@ -911,6 +1094,7 @@ impl App {
                 self.action_prompt = Some(ActionPrompt {
                     kind,
                     target,
+                    scope: ActionScope::Matching,
                     session_id,
                     session_node,
                     input: default_input,
@@ -953,6 +1137,12 @@ impl App {
         }
     }
 
+    fn visible_session_ids(&self) -> Vec<String> {
+        self.sessions.iter()
+            .filter_map(|s| s.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .collect()
+    }
+
     async fn execute_action(&mut self, prompt: ActionPrompt) {
         let date = self.time_range.date_value();
         match (prompt.kind, prompt.target) {
@@ -972,7 +1162,13 @@ impl App {
             }
             (ActionKind::DownloadPcap, ActionTarget::All) => {
                 self.status_msg = "Downloading PCAP...".into();
-                match self.client.download_sessions_pcap(&self.expression, date).await {
+                let result = if prompt.scope == ActionScope::Visible {
+                    let ids = self.visible_session_ids();
+                    self.client.download_sessions_pcap_ids(&ids).await
+                } else {
+                    self.client.download_sessions_pcap(&self.expression, date).await
+                };
+                match result {
                     Ok(data) => {
                         match std::fs::write(&prompt.input, &data) {
                             Ok(_) => self.status_msg = format!("Saved {} ({} bytes)", prompt.input, data.len()),
@@ -984,7 +1180,13 @@ impl App {
             }
             (ActionKind::ExportCsv, ActionTarget::All) => {
                 self.status_msg = "Exporting CSV...".into();
-                match self.client.export_sessions_csv(&self.expression, date, &self.session_fields).await {
+                let result = if prompt.scope == ActionScope::Visible {
+                    let ids = self.visible_session_ids();
+                    self.client.export_sessions_csv_ids(&ids, &self.session_fields).await
+                } else {
+                    self.client.export_sessions_csv(&self.expression, date, &self.session_fields).await
+                };
+                match result {
                     Ok(data) => {
                         match std::fs::write(&prompt.input, &data) {
                             Ok(_) => self.status_msg = format!("Saved {} ({} bytes)", prompt.input, data.len()),
@@ -1041,24 +1243,46 @@ impl App {
     }
 
     fn handle_detail_action_key(&mut self, key: KeyEvent) {
+        let in_values = self.detail_action_menu.as_ref()
+            .map(|m| m.values.is_some()).unwrap_or(false);
+
         match key.code {
             KeyCode::Esc => {
                 self.detail_action_menu = None;
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(ref mut menu) = self.detail_action_menu {
-                    menu.selected = (menu.selected + 1).min(DetailActionMenu::OPTIONS.len() - 1);
+                    if in_values {
+                        let len = menu.values.as_ref().unwrap().len();
+                        menu.value_selected = (menu.value_selected + 1).min(len - 1);
+                    } else {
+                        menu.selected = (menu.selected + 1).min(DetailActionMenu::OPTIONS.len() - 1);
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(ref mut menu) = self.detail_action_menu {
-                    if menu.selected > 0 {
-                        menu.selected -= 1;
+                    if in_values {
+                        if menu.value_selected > 0 {
+                            menu.value_selected -= 1;
+                        }
+                    } else {
+                        if menu.selected > 0 {
+                            menu.selected -= 1;
+                        }
                     }
                 }
             }
             KeyCode::Enter => {
-                if let Some(menu) = self.detail_action_menu.take() {
+                if in_values {
+                    // Pick the selected value, then show AND/OR options
+                    if let Some(ref mut menu) = self.detail_action_menu {
+                        let chosen = menu.values.as_ref().unwrap()[menu.value_selected].clone();
+                        menu.value = chosen;
+                        menu.values = None;
+                        menu.selected = 0;
+                    }
+                } else if let Some(menu) = self.detail_action_menu.take() {
                     let needs_quotes = menu.value.parse::<f64>().is_err();
                     let quoted_val = if needs_quotes {
                         format!("\"{}\"", menu.value)
@@ -1142,6 +1366,7 @@ impl App {
             }
             KeyCode::Char('/') => {
                 self.stats_filter_edit = self.stats_filter.clone();
+                self.expression_cursor = self.stats_filter_edit.len();
                 self.input_mode = InputMode::Expression;
             }
             KeyCode::Char('s') => {

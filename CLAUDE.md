@@ -27,7 +27,7 @@ src/
 - `App` — All mutable state. Passed as `&mut` to handlers and renderers.
 - `Tab` — Enum with `ALL` const array. Tabs: Arkime, Sessions, Stats, Settings.
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
-- `InputMode` — Enum: `Normal` | `Expression`. Controls whether keys go to expression/filter input.
+- `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter`. Controls where key input is routed.
 - `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
 - `StatsTab` — Enum: `Capture` | `DBStats` | `DBIndices`. Sub-tabs within Stats tab.
 - `StatsView` — Enum: `List` | `Detail`. Controls which stats sub-view renders.
@@ -39,7 +39,9 @@ src/
 - `AuthMode` — Enum: `None` | `Basic` | `Digest`.
 - `GraphData` — Deserialized histogram data from `facets=1` API response.
 - `TableState` — ratatui widget state for session/stats list scrolling.
-- `DetailActionMenu` — Popup for adding a field/value to expression from session detail. Options: AND/AND NOT/OR/OR NOT. Stores `field` (exp name for expressions), `display` (friendlyName for UI), `value`, and `selected` index.
+- `DetailActionMenu` — Popup for adding a field/value to expression from session detail. Options: AND/AND NOT/OR/OR NOT. Stores `field` (exp name for expressions), `display` (friendlyName for UI), `value`, `selected` index, `values` (for array value picker), and `value_selected`.
+- `ActionScope` — Enum: `Visible` | `Matching`. For ALL PCAP/CSV actions, selects between visible session IDs or all matching sessions.
+- `SessionDetail` — Holds detail data, scroll position, selected row, total_rows, and `filter` string for live field filtering.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
@@ -50,21 +52,21 @@ src/
 | Tab / Shift+Tab | Switch tabs |
 | j / k / ↑ / ↓ | Navigate sessions/stats |
 | Shift+↑ / Shift+↓ | Page up/down in list or detail |
-| ← / → | Previous/next page (sessions) |
+| ← / → | Previous/next page (sessions); in expression input, move cursor |
 | Shift+← / Shift+→ | First/last page |
-| Home | First page |
+| Home / End | First page; in expression input, cursor to start/end |
 | PgUp / PgDn | Page up/down in detail view |
 | Enter | Open session/stats detail; in detail, open expression menu |
 | Esc | Close overlay |
 | r | Refresh data |
-| / | Search expression or filter (Enter to apply, Esc to cancel) |
+| / | Search expression or filter (Enter to apply, Esc to cancel); in session detail, live-filter fields |
 | t / T | Cycle time range forward/backward (sessions) |
 | s | Next sort column |
 | S | Toggle sort direction (asc/desc) |
 | g | Cycle graph: Off → Small → Large → Off (sessions) |
 | G | Cycle graph type: Sessions → Packets → Bytes (sessions) |
 | a | Session action menu (download pcap, add/remove tags) |
-| A | All sessions action menu (download pcap, export csv, add/remove tags) |
+| A | All sessions action menu (download pcap, export csv, add/remove tags) — pcap/csv show Visible/Matching scope selector |
 | 1 / 2 / 3 | Switch stats sub-tab (Capture/DB Stats/DB Indices) |
 | h | Show help overlay |
 | q | Quit |
@@ -129,14 +131,31 @@ source.packets, destination.packets, source.bytes, destination.bytes
 - In session detail view, rows are selectable with ↑/↓ arrows (highlighted in yellow)
 - Auto-scrolls to keep selected row visible
 - Enter opens an action menu with 4 options: AND value, AND NOT value, OR value, OR NOT value
+- For array fields with multiple values, a "Select Value" picker appears first before the AND/OR menu
+- Single-element arrays skip the picker and go straight to AND/OR options
+- The AND/OR menu title shows `fieldName = value` for the selected value
 - If expression is empty, adds `field == value` directly
 - If expression is non-empty, prepends `&&` or `||` connector
 - String values are quoted, numeric values are not
-- Esc closes the action menu without modifying the expression
-- `DetailActionMenu` holds `field` (exp name), `display` (friendlyName), value string, and selected menu index
+- Esc closes the action menu and returns to session detail
+- `DetailActionMenu` holds `field` (exp name), `display` (friendlyName), value string, selected menu index, `values` (Option<Vec<String>> for array picker), and `value_selected`
 - `field_exp_map` maps dbField → exp name, `field_friendly_map` maps dbField → friendlyName
 - Session detail labels show friendlyName; expressions use exp name
-- Fields ending in `Cnt` and `packetPos`/`packetRange` are hidden from session detail
+- Fields ending in `Cnt` and `packetPos`/`packetRange`/`packetLen` are hidden from session detail
+- `/` activates a live field filter (case-insensitive substring match on dbField and friendlyName)
+- Filter text shown in title bar; Esc clears filter, Enter keeps filter active
+
+## User API
+
+- At startup, `/api/user` is called and the response stored as `serde_json::Value` in `App.user`
+- `removeEnabled` controls whether "Remove Tags" appears in action menus
+- `App::remove_enabled()` helper checks `user["removeEnabled"]`
+
+## Expression input
+
+- Expression and stats filter inputs support full cursor movement (Left/Right/Home/End/Delete)
+- `expression_cursor` tracks cursor position within the edit string
+- Characters insert at cursor position; Backspace deletes before cursor; Delete deletes at cursor
 
 ## Date field handling
 
@@ -191,6 +210,8 @@ All endpoints are relative to base_url. Use `flatten=1` to get dot-notation fiel
 | Endpoint | Method | Purpose | Key params |
 |---|---|---|---|
 | `/api/sessions` | GET/POST | List/search sessions | `fields`, `expression`, `length`, `start`, `flatten`, `date`, `order`, `facets` |
+| `/api/sessions.pcap` | GET | Download PCAP | `expression`, `date`, `ids` |
+| `/api/sessions/csv` | GET | Export CSV | `expression`, `date`, `fields`, `ids` |
 | `/api/session/:id` | GET | Single session JSON (all fields) | `flatten`, `date` |
 | `/api/session/:nodeName/:id/detail` | GET | Session detail (HTML) | |
 | `/api/stats` | GET | Capture node stats | `sortField`, `desc`, `filter` |
@@ -200,6 +221,7 @@ All endpoints are relative to base_url. Use `flatten=1` to get dot-notation fiel
 | `/api/files` | GET | PCAP files | `sortField`, `desc`, `filter`, `length`, `start` |
 | `/api/eshealth` | GET | ES cluster health | |
 | `/api/fields` | GET | Available session fields | `array=true` for array format |
+| `/api/user` | GET | Current user profile | returns `removeEnabled`, etc. |
 | `/api/valueactions` | GET | Right-click actions | |
 | `/api/reversedns` | GET | Reverse DNS | `ip` |
 | `/api/users` | GET/POST | User management | |

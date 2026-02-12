@@ -338,6 +338,13 @@ impl ArkimeClient {
         Ok(parsed)
     }
 
+    pub async fn get_user(&self) -> Result<Value> {
+        let url = format!("{}/api/user", self.base_url);
+        let body = self.authenticated_get(&url).await?;
+        let user: Value = serde_json::from_str(&body)?;
+        Ok(user)
+    }
+
     pub async fn get_fields(&self) -> Result<(Vec<ArkimeField>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>)> {
         let url = format!("{}/api/fields?array=true", self.base_url);
         let body = self.authenticated_get(&url).await?;
@@ -376,12 +383,25 @@ impl ArkimeClient {
         self.authenticated_get_bytes(&url).await
     }
 
+    pub async fn download_sessions_pcap_ids(&self, ids: &[String]) -> Result<Vec<u8>> {
+        let ids_str = ids.join(",");
+        let url = format!("{}/api/sessions.pcap?date=-1&ids={}", self.base_url, urlencoding::encode(&ids_str));
+        self.authenticated_get_bytes(&url).await
+    }
+
     pub async fn export_sessions_csv(&self, expression: &str, date: &str, fields: &[String]) -> Result<Vec<u8>> {
         let fields_str = fields.join(",");
         let mut url = format!("{}/api/sessions/csv?date={}&fields={}", self.base_url, urlencoding::encode(date), urlencoding::encode(&fields_str));
         if !expression.is_empty() {
             url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
         }
+        self.authenticated_get_bytes(&url).await
+    }
+
+    pub async fn export_sessions_csv_ids(&self, ids: &[String], fields: &[String]) -> Result<Vec<u8>> {
+        let fields_str = fields.join(",");
+        let ids_str = ids.join(",");
+        let url = format!("{}/api/sessions/csv?date=-1&fields={}&ids={}", self.base_url, urlencoding::encode(&fields_str), urlencoding::encode(&ids_str));
         self.authenticated_get_bytes(&url).await
     }
 

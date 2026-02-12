@@ -75,6 +75,7 @@ async fn main() -> Result<()> {
         app.expression = search.clone();
         app.expression_edit = search;
     }
+    app.fetch_user().await;
     app.fetch_fields().await;
     app.fetch_sessions().await;
 

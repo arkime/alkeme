@@ -12,14 +12,16 @@ This project was entirely created by Claude — code, architecture, and document
 
 - **Session browsing** — paginated session list with configurable columns and sort order
 - **Session detail** — drill into any session to view all captured fields with friendly names
-- **Expression builder** — select any field in session detail to add it to the search expression (AND/AND NOT/OR/OR NOT)
-- **Expression search** — filter sessions using Arkime's expression syntax (e.g. `ip.src == 10.0.0.1 && protocols == tls`)
+- **Expression builder** — select any field in session detail to add it to the search expression (AND/AND NOT/OR/OR NOT); array fields show a value picker
+- **Expression search** — filter sessions using Arkime's expression syntax with full cursor support (e.g. `ip.src == 10.0.0.1 && protocols == tls`)
 - **Time range selection** — quickly switch between preset time ranges (15 min to all time)
 - **Histograms** — toggle session/packet/byte graphs rendered with block characters
-- **Session actions** — download PCAP, add/remove tags for single or all sessions
-- **Export** — export all matching sessions as CSV
+- **Session actions** — download PCAP, add/remove tags for single or all sessions; all-session PCAP/CSV supports visible vs matching scope
+- **Export** — export all matching or visible sessions as CSV
+- **Session detail filter** — press `/` to live-filter fields by name
 - **Stats tab** — view capture stats, DB stats, and DB indices with sortable tables, filtering, and detail view
 - **Authentication** — supports no-auth, HTTP Basic, and HTTP Digest authentication
+- **User permissions** — respects `removeEnabled` from the Arkime user profile
 - **Keyboard-driven** — fully navigable with keyboard shortcuts
 
 ## Requirements
@@ -70,21 +72,21 @@ alkeme http://viewer.example.com:8005 --auth basic
 | `Tab` / `Shift+Tab` | Switch tabs |
 | `j` / `k` / `↑` / `↓` | Navigate sessions |
 | `Shift+↑` / `Shift+↓` | Page up / down in list |
-| `←` / `→` | Previous / next page |
+| `←` / `→` | Previous / next page; in expression input, move cursor |
 | `Shift+←` / `Shift+→` | First / last page |
-| `Home` | First page |
+| `Home` / `End` | First page; in expression input, move cursor to start / end |
 | `PgUp` / `PgDn` | Page up / down in detail view |
 | `Enter` | Open session detail; in detail, add field to expression |
 | `Esc` | Close overlay / cancel search |
 | `r` | Refresh data |
-| `/` | Search expression or filter (`Enter` to apply, `Esc` to cancel) |
+| `/` | Search expression or filter (`Enter` to apply, `Esc` to cancel); in session detail, live-filter fields |
 | `t` / `T` | Cycle time range forward / backward |
 | `s` | Next sort column |
 | `S` | Toggle sort direction (asc / desc) |
 | `g` | Cycle graph size: Off → Small → Large → Off |
 | `G` | Cycle graph type: Sessions → Packets → Bytes |
 | `a` | Session actions (download PCAP, add/remove tags) |
-| `A` | All sessions actions (download PCAP, export CSV, add/remove tags) |
+| `A` | All sessions actions (download PCAP, export CSV, add/remove tags) with visible/matching selector |
 | `1` / `2` / `3` | Switch stats sub-tab (Capture / DB Stats / DB Indices) |
 | `h` | Show help overlay |
 | `q` | Quit |
