@@ -33,7 +33,7 @@ This project was entirely created by Claude — code, architecture, and document
 ## Installation
 
 ```bash
-git clone https://github.com/ArkimeAdmin/alkeme.git
+git clone https://github.com/arkime/alkeme.git
 cd alkeme
 cargo build --release
 ```

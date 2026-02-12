@@ -27,6 +27,7 @@ jobs:
         run: |
           source $HOME/.cargo/env
           cargo build --release
+          cp target/release/alkeme target/release/alkeme-linux-x86_64
 
       - name: Get version
         id: version
@@ -43,6 +44,8 @@ jobs:
           prerelease: true
           generate_release_notes: true
           files: |
-            target/release/alkeme
+            target/release/alkeme-linux-x86_64
           body: |
             Alkeme - The Arkime TUI
+
+            Download the binary and run it with: `./alkeme-linux-x86_64 {VIEWER_URL}` see `./alkeme-linux-x86_64 --help` and https://github.com/arkime/alkeme for more info.
