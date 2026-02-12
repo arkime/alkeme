@@ -211,6 +211,7 @@ pub enum StatsView {
 pub struct StatsDetail {
     pub data: Value,
     pub scroll: u16,
+    pub filter: String,
 }
 
 #[derive(PartialEq)]
@@ -574,7 +575,7 @@ impl App {
 
     pub fn open_stats_detail(&mut self) {
         if let Some(item) = self.stats_data.get(self.stats_selected) {
-            self.stats_detail = Some(StatsDetail { data: item.clone(), scroll: 0 });
+            self.stats_detail = Some(StatsDetail { data: item.clone(), scroll: 0, filter: String::new() });
             self.stats_view = StatsView::Detail;
         }
     }
@@ -954,11 +955,21 @@ impl App {
     }
 
     fn handle_detail_filter_key(&mut self, key: KeyEvent) {
+        let is_stats = self.active_tab == Tab::Stats;
         match key.code {
             KeyCode::Esc => {
-                if let Some(ref mut detail) = self.session_detail {
-                    detail.filter.clear();
-                    self.recalc_detail_rows();
+                if is_stats {
+                    if let Some(ref mut detail) = self.stats_detail {
+                        detail.filter.clear();
+                        detail.scroll = 0;
+                    }
+                } else {
+                    if let Some(ref mut detail) = self.session_detail {
+                        detail.filter.clear();
+                        detail.selected = 0;
+                        detail.scroll = 0;
+                        self.recalc_detail_rows();
+                    }
                 }
                 self.input_mode = InputMode::Normal;
             }
@@ -966,19 +977,33 @@ impl App {
                 self.input_mode = InputMode::Normal;
             }
             KeyCode::Char(c) => {
-                if let Some(ref mut detail) = self.session_detail {
-                    detail.filter.push(c);
-                    detail.selected = 0;
-                    detail.scroll = 0;
-                    self.recalc_detail_rows();
+                if is_stats {
+                    if let Some(ref mut detail) = self.stats_detail {
+                        detail.filter.push(c);
+                        detail.scroll = 0;
+                    }
+                } else {
+                    if let Some(ref mut detail) = self.session_detail {
+                        detail.filter.push(c);
+                        detail.selected = 0;
+                        detail.scroll = 0;
+                        self.recalc_detail_rows();
+                    }
                 }
             }
             KeyCode::Backspace => {
-                if let Some(ref mut detail) = self.session_detail {
-                    detail.filter.pop();
-                    detail.selected = 0;
-                    detail.scroll = 0;
-                    self.recalc_detail_rows();
+                if is_stats {
+                    if let Some(ref mut detail) = self.stats_detail {
+                        detail.filter.pop();
+                        detail.scroll = 0;
+                    }
+                } else {
+                    if let Some(ref mut detail) = self.session_detail {
+                        detail.filter.pop();
+                        detail.selected = 0;
+                        detail.scroll = 0;
+                        self.recalc_detail_rows();
+                    }
                 }
             }
             _ => {}
@@ -1410,6 +1435,9 @@ impl App {
                 if let Some(ref mut detail) = self.stats_detail {
                     detail.scroll = detail.scroll.saturating_sub(20);
                 }
+            }
+            KeyCode::Char('/') => {
+                self.input_mode = InputMode::DetailFilter;
             }
             _ => {}
         }

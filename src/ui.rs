@@ -1102,9 +1102,17 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, popup_area);
 
     let mut lines: Vec<Line> = Vec::new();
+    let filter_lower = detail.filter.to_lowercase();
 
     if let Some(obj) = detail.data.as_object() {
-        let mut keys: Vec<&String> = obj.keys().collect();
+        let mut keys: Vec<&String> = obj.keys()
+            .filter(|k| {
+                if filter_lower.is_empty() {
+                    return true;
+                }
+                k.to_lowercase().contains(&filter_lower)
+            })
+            .collect();
         keys.sort();
         for key in keys {
             let val = &obj[key];
@@ -1119,12 +1127,20 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
         }
     }
 
+    let title = if !detail.filter.is_empty() {
+        format!(" {} Detail [filter: {}] ", app.stats_tab.name(), detail.filter)
+    } else if app.input_mode == crate::app::InputMode::DetailFilter {
+        format!(" {} Detail [filter: ] ", app.stats_tab.name())
+    } else {
+        format!(" {} Detail (/ filter, Esc close) ", app.stats_tab.name())
+    };
+
     let paragraph = Paragraph::new(lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
-                .title(format!(" {} Detail (Esc to close) ", app.stats_tab.name())),
+                .title(title.as_str()),
         )
         .scroll((detail.scroll, 0));
 
