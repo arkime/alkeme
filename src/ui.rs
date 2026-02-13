@@ -1,4 +1,4 @@
-use crate::app::{App, DetailActionMenu, GraphType, InputMode, SessionView, StatsTab, StatsView, SummaryMetric, Tab, TimeRange, is_hidden_detail_field};
+use crate::app::{App, DetailActionMenu, GraphType, InputMode, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, is_hidden_detail_field};
 use chrono::{DateTime, Local};
 use ratatui::{
     prelude::*,
@@ -764,7 +764,7 @@ fn draw_summary_bar_chart(f: &mut Frame, app: &App, area: Rect) {
 
     let bar_width = if data.is_empty() { 1 } else {
         let w = (area.width.saturating_sub(2)) / data.len() as u16;
-        w.max(1).min(12)
+        w.clamp(1, 12)
     };
 
     let bars: Vec<Bar> = data.iter()
@@ -796,15 +796,15 @@ fn draw_summary_bar_chart(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_summary_table(f: &mut Frame, app: &mut App, area: Rect) {
     let arrow = if app.summary_sort_desc { "▼" } else { "▲" };
-    let sort_indicator = |metric: SummaryMetric, label: &str| -> String {
-        if app.summary_sort == metric { format!("{label} {arrow}") } else { label.to_string() }
+    let sort_indicator = |sort: SummarySort, label: &str| -> String {
+        if app.summary_sort == sort { format!("{label} {arrow}") } else { label.to_string() }
     };
 
     let header = Row::new(vec![
-        Cell::from("Value").style(Style::default().fg(Color::Yellow)),
-        Cell::from(sort_indicator(SummaryMetric::Sessions, "Sessions")).style(Style::default().fg(Color::Yellow)),
-        Cell::from(sort_indicator(SummaryMetric::Packets, "Packets")).style(Style::default().fg(Color::Yellow)),
-        Cell::from(sort_indicator(SummaryMetric::Bytes, "Bytes")).style(Style::default().fg(Color::Yellow)),
+        Cell::from(sort_indicator(SummarySort::Value, "Value")).style(Style::default().fg(Color::Yellow)),
+        Cell::from(sort_indicator(SummarySort::Sessions, "Sessions")).style(Style::default().fg(Color::Yellow)),
+        Cell::from(sort_indicator(SummarySort::Packets, "Packets")).style(Style::default().fg(Color::Yellow)),
+        Cell::from(sort_indicator(SummarySort::Bytes, "Bytes")).style(Style::default().fg(Color::Yellow)),
     ])
     .height(1)
     .bottom_margin(0);
@@ -1234,7 +1234,7 @@ fn format_stats_cell(field: &str, val: &serde_json::Value, item: &serde_json::Va
     match (tab, field) {
         (StatsTab::Capture, "currentTime") => format_epoch_secs(val),
         (StatsTab::Capture, "freeSpaceM") => {
-            let size = val.as_f64().map(|v| format_human_megabytes(v)).unwrap_or_else(|| "-".into());
+            let size = val.as_f64().map(format_human_megabytes).unwrap_or_else(|| "-".into());
             let pct = item.get("freeSpaceP")
                 .and_then(|v| v.as_f64())
                 .map(|v| format!(" ({:.0}%)", v))
@@ -1242,19 +1242,19 @@ fn format_stats_cell(field: &str, val: &serde_json::Value, item: &serde_json::Va
             format!("{size}{pct}")
         }
         (StatsTab::Capture, "deltaBytesPerSec") => {
-            val.as_f64().map(|v| format_human_bytes(v)).unwrap_or_else(|| "-".into())
+            val.as_f64().map(format_human_bytes).unwrap_or_else(|| "-".into())
         }
         (StatsTab::DBStats, "storeSize") => {
-            val.as_f64().map(|v| format_human_bytes(v)).unwrap_or_else(|| "-".into())
+            val.as_f64().map(format_human_bytes).unwrap_or_else(|| "-".into())
         }
         (StatsTab::DBIndices, "store.size") => {
             // Value may be a string like "10.2gb" or a number in bytes
             match val {
                 serde_json::Value::Number(n) => {
-                    n.as_f64().map(|v| format_human_bytes(v)).unwrap_or_else(|| "-".into())
+                    n.as_f64().map(format_human_bytes).unwrap_or_else(|| "-".into())
                 }
                 serde_json::Value::String(s) => {
-                    parse_size_string(s).map(|v| format_human_bytes(v)).unwrap_or_else(|| s.clone())
+                    parse_size_string(s).map(format_human_bytes).unwrap_or_else(|| s.clone())
                 }
                 _ => "-".into(),
             }

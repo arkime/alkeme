@@ -11,6 +11,7 @@ This project was entirely created by Claude — code, architecture, and document
 ## Features
 
 - **Session browsing** — paginated session list with configurable columns and sort order
+- **Summary tab** — select any field to see top values with bar chart and table showing sessions, packets, and bytes; cycle metrics and sort columns
 - **Session detail** — drill into any session to view all captured fields with friendly names
 - **Expression builder** — select any field in session detail to add it to the search expression (AND/AND NOT/OR/OR NOT); array fields show a value picker
 - **Expression search** — filter sessions using Arkime's expression syntax with full cursor support (e.g. `ip.src == 10.0.0.1 && protocols == tls`)
@@ -84,11 +85,12 @@ alkeme http://viewer.example.com:8005 --auth basic
 | `s` | Next sort column |
 | `S` | Toggle sort direction (asc / desc) |
 | `g` | Cycle graph size: Off → Small → Large → Off |
-| `G` | Cycle graph type: Sessions → Packets → Bytes |
+| `G` | Cycle graph type: Sessions → Packets → Bytes; cycle bar chart metric (summary tab) |
 | `a` | Session actions (download PCAP, add/remove tags) |
 | `A` | All sessions actions (download PCAP, export CSV, add/remove tags) with visible/matching selector |
+| `f` | Open field selector (summary tab) |
 | `1` / `2` / `3` | Switch stats sub-tab (Capture / DB Stats / DB Indices) |
-| `h` | Show help overlay |
+| `h` / `?` | Show help overlay |
 | `q` | Quit |
 
 ## License

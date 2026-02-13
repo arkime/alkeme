@@ -27,7 +27,7 @@ src/
 - `App` — All mutable state. Passed as `&mut` to handlers and renderers.
 - `Tab` — Enum with `ALL` const array. Tabs: Arkime, Sessions, Stats, Settings.
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
-- `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter`. Controls where key input is routed.
+- `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
 - `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
 - `StatsTab` — Enum: `Capture` | `DBStats` | `DBIndices`. Sub-tabs within Stats tab.
 - `StatsView` — Enum: `List` | `Detail`. Controls which stats sub-view renders.
@@ -41,6 +41,8 @@ src/
 - `TableState` — ratatui widget state for session/stats list scrolling.
 - `DetailActionMenu` — Popup for adding a field/value to expression from session detail. Options: AND/AND NOT/OR/OR NOT. Stores `field` (exp name for expressions), `display` (friendlyName for UI), `value`, `selected` index, `values` (for array value picker), and `value_selected`.
 - `ActionScope` — Enum: `Visible` | `Matching`. For ALL PCAP/CSV actions, selects between visible session IDs or all matching sessions.
+- `SummaryMetric` — Enum: `Sessions` | `Packets` | `Bytes`. Selects which metric to display in Arkime summary bar chart and sort column.
+- `SummaryItem` — Deserialized summary API item with `item` (Value), `sessions`, `packets`, `bytes` (u64).
 - `SessionDetail` — Holds detail data, scroll position, selected row, total_rows, and `filter` string for live field filtering.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
@@ -63,12 +65,13 @@ src/
 | t / T | Cycle time range forward/backward (sessions) |
 | s | Next sort column |
 | S | Toggle sort direction (asc/desc) |
-| g | Cycle graph: Off → Small → Large → Off (sessions) |
-| G | Cycle graph type: Sessions → Packets → Bytes (sessions) |
+| g | Cycle graph: Off → Small → Large → Off (sessions tab only) |
+| G | Cycle graph type: Sessions → Packets → Bytes (sessions); cycle bar chart metric (arkime) |
 | a | Session action menu (download pcap, add/remove tags) |
 | A | All sessions action menu (download pcap, export csv, add/remove tags) — pcap/csv show Visible/Matching scope selector |
 | 1 / 2 / 3 | Switch stats sub-tab (Capture/DB Stats/DB Indices) |
-| h | Show help overlay |
+| f | Open field selector (arkime tab) |
+| h / ? | Show help overlay |
 | q | Quit |
 
 ## Session columns (in order)
@@ -119,8 +122,22 @@ source.packets, destination.packets, source.bytes, destination.bytes
 ### Nested field access
 - `get_nested_value()` tries flat key first (e.g., `"store.size"`), then dot-separated path (e.g., `"docs"` → `"count"`)
 
+## Arkime (Summary) tab
+
+- Calls `POST /api/sessions/summary` with `fields` in form body; response is a streamed JSON array
+- Field selector popup (`f` or `/`): type-to-filter, shows `exp (friendlyName)`, Enter to select
+- Bar chart: ratatui `BarChart` widget showing top values for selected metric (cyan bars)
+- Table view: columns are Value, Sessions, Packets, Bytes (bytes human-readable via `format_human_bytes`)
+- `G` cycles bar chart metric: Sessions → Packets → Bytes
+- `s` cycles sort column: Sessions → Packets → Bytes; `S` toggles sort direction
+- Sort indicators (▲/▼) shown in table header on active sort column
+- Sort is client-side on already-fetched data
+- `t`/`T` changes time range and re-fetches; `r` refreshes
+- Graph is hidden on this tab (only shown on Sessions tab)
+- State: `all_fields` (Vec<ArkimeField>), `summary_field`, `summary_data` (Vec<SummaryItem>), `summary_metric`, `summary_sort`, `summary_sort_desc`, `field_filter`, `field_filter_selected`
+
 ## Owl animation
-- Arkime and Settings tabs show a 90s "Under Construction" page with animated owl
+- Settings tab shows a 90s "Under Construction" page with animated owl
 - Owl bounces around the content area, flipping direction at edges
 - Two walking frames alternate every 75ms
 - Construction banner cycles through rainbow colors, barricade bars scroll
@@ -214,6 +231,7 @@ All endpoints are relative to base_url. Use `flatten=1` to get dot-notation fiel
 | `/api/sessions/csv` | GET | Export CSV | `expression`, `date`, `fields`, `ids` |
 | `/api/session/:id` | GET | Single session JSON (all fields) | `flatten`, `date` |
 | `/api/session/:nodeName/:id/detail` | GET | Session detail (HTML) | |
+| `/api/sessions/summary` | POST | Summary/aggregation by field | `fields` (form body), `expression`, `date` |
 | `/api/stats` | GET | Capture node stats | `sortField`, `desc`, `filter` |
 | `/api/esstats` | GET | DB/ES node stats | `sortField`, `desc`, `filter` |
 | `/api/esindices` | GET | DB/ES indices | `sortField`, `desc`, `filter` |

@@ -176,6 +176,23 @@ impl SummaryMetric {
 }
 
 #[derive(Clone, Copy, PartialEq)]
+pub enum SummarySort {
+    Value,
+    Sessions,
+    Packets,
+    Bytes,
+}
+
+impl SummarySort {
+    pub const ALL: [SummarySort; 4] = [SummarySort::Value, SummarySort::Sessions, SummarySort::Packets, SummarySort::Bytes];
+
+    pub fn next(&self) -> SummarySort {
+        let idx = SummarySort::ALL.iter().position(|&t| t == *self).unwrap_or(0);
+        SummarySort::ALL[(idx + 1) % SummarySort::ALL.len()]
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
 pub enum StatsTab {
     Capture,
     DBStats,
@@ -398,7 +415,7 @@ pub struct App {
     pub summary_metric: SummaryMetric,
     pub summary_selected: usize,
     pub summary_table_state: TableState,
-    pub summary_sort: SummaryMetric,
+    pub summary_sort: SummarySort,
     pub summary_sort_desc: bool,
     pub field_filter: String,
     pub field_filter_selected: usize,
@@ -481,7 +498,7 @@ impl App {
             summary_metric: SummaryMetric::Sessions,
             summary_selected: 0,
             summary_table_state: TableState::default().with_selected(0),
-            summary_sort: SummaryMetric::Sessions,
+            summary_sort: SummarySort::Sessions,
             summary_sort_desc: true,
             field_filter: String::new(),
             field_filter_selected: 0,
@@ -650,13 +667,18 @@ impl App {
     pub fn sort_summary_data(&mut self) {
         let desc = self.summary_sort_desc;
         match self.summary_sort {
-            SummaryMetric::Sessions => self.summary_data.sort_by(|a, b| {
+            SummarySort::Value => self.summary_data.sort_by(|a, b| {
+                let a_str = a.item.as_str().unwrap_or("");
+                let b_str = b.item.as_str().unwrap_or("");
+                if desc { b_str.cmp(a_str) } else { a_str.cmp(b_str) }
+            }),
+            SummarySort::Sessions => self.summary_data.sort_by(|a, b| {
                 if desc { b.sessions.cmp(&a.sessions) } else { a.sessions.cmp(&b.sessions) }
             }),
-            SummaryMetric::Packets => self.summary_data.sort_by(|a, b| {
+            SummarySort::Packets => self.summary_data.sort_by(|a, b| {
                 if desc { b.packets.cmp(&a.packets) } else { a.packets.cmp(&b.packets) }
             }),
-            SummaryMetric::Bytes => self.summary_data.sort_by(|a, b| {
+            SummarySort::Bytes => self.summary_data.sort_by(|a, b| {
                 if desc { b.bytes.cmp(&a.bytes) } else { a.bytes.cmp(&b.bytes) }
             }),
         }
@@ -959,18 +981,16 @@ impl App {
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if let Some(ref mut detail) = self.session_detail {
-                    if detail.total_rows > 0 && detail.selected < detail.total_rows - 1 {
+                if let Some(ref mut detail) = self.session_detail
+                    && detail.total_rows > 0 && detail.selected < detail.total_rows - 1 {
                         detail.selected += 1;
                     }
-                }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if let Some(ref mut detail) = self.session_detail {
-                    if detail.selected > 0 {
+                if let Some(ref mut detail) = self.session_detail
+                    && detail.selected > 0 {
                         detail.selected -= 1;
                     }
-                }
             }
             KeyCode::PageDown => {
                 if let Some(ref mut detail) = self.session_detail {
@@ -983,8 +1003,8 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                if let Some(ref detail) = self.session_detail {
-                    if let Some(obj) = detail.data.as_object() {
+                if let Some(ref detail) = self.session_detail
+                    && let Some(obj) = detail.data.as_object() {
                         let filter_lower = detail.filter.to_lowercase();
                         let mut keys: Vec<&String> = obj.keys()
                             .filter(|k| !is_hidden_detail_field(k))
@@ -1039,7 +1059,6 @@ impl App {
                             });
                         }
                     }
-                }
             }
             KeyCode::Char('a') => {
                 self.open_action_menu(ActionTarget::Single);
@@ -1063,13 +1082,11 @@ impl App {
                         detail.filter.clear();
                         detail.scroll = 0;
                     }
-                } else {
-                    if let Some(ref mut detail) = self.session_detail {
-                        detail.filter.clear();
-                        detail.selected = 0;
-                        detail.scroll = 0;
-                        self.recalc_detail_rows();
-                    }
+                } else if let Some(ref mut detail) = self.session_detail {
+                    detail.filter.clear();
+                    detail.selected = 0;
+                    detail.scroll = 0;
+                    self.recalc_detail_rows();
                 }
                 self.input_mode = InputMode::Normal;
             }
@@ -1082,13 +1099,11 @@ impl App {
                         detail.filter.push(c);
                         detail.scroll = 0;
                     }
-                } else {
-                    if let Some(ref mut detail) = self.session_detail {
-                        detail.filter.push(c);
-                        detail.selected = 0;
-                        detail.scroll = 0;
-                        self.recalc_detail_rows();
-                    }
+                } else if let Some(ref mut detail) = self.session_detail {
+                    detail.filter.push(c);
+                    detail.selected = 0;
+                    detail.scroll = 0;
+                    self.recalc_detail_rows();
                 }
             }
             KeyCode::Backspace => {
@@ -1097,13 +1112,11 @@ impl App {
                         detail.filter.pop();
                         detail.scroll = 0;
                     }
-                } else {
-                    if let Some(ref mut detail) = self.session_detail {
-                        detail.filter.pop();
-                        detail.selected = 0;
-                        detail.scroll = 0;
-                        self.recalc_detail_rows();
-                    }
+                } else if let Some(ref mut detail) = self.session_detail {
+                    detail.filter.pop();
+                    detail.selected = 0;
+                    detail.scroll = 0;
+                    self.recalc_detail_rows();
                 }
             }
             _ => {}
@@ -1111,8 +1124,8 @@ impl App {
     }
 
     fn recalc_detail_rows(&mut self) {
-        if let Some(ref mut detail) = self.session_detail {
-            if let Some(obj) = detail.data.as_object() {
+        if let Some(ref mut detail) = self.session_detail
+            && let Some(obj) = detail.data.as_object() {
                 let filter_lower = detail.filter.to_lowercase();
                 detail.total_rows = obj.keys()
                     .filter(|k| !is_hidden_detail_field(k))
@@ -1128,7 +1141,6 @@ impl App {
                     })
                     .count();
             }
-        }
     }
 
     fn handle_action_menu_key(&mut self, key: KeyEvent) {
@@ -1391,10 +1403,8 @@ impl App {
                         if menu.value_selected > 0 {
                             menu.value_selected -= 1;
                         }
-                    } else {
-                        if menu.selected > 0 {
-                            menu.selected -= 1;
-                        }
+                    } else if menu.selected > 0 {
+                        menu.selected -= 1;
                     }
                 }
             }

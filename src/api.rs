@@ -277,6 +277,7 @@ impl ArkimeClient {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_sessions(&self, fields: &[String], expression: &str, date: &str, sort_field: &str, sort_desc: bool, facets: bool, start: u64, length: u64) -> Result<SessionsResponse> {
         let fields_str = fields.join(",");
         let dir = if sort_desc { "desc" } else { "asc" };
@@ -451,12 +452,11 @@ impl ArkimeClient {
         let arr: Vec<Value> = serde_json::from_str(&body)?;
         // The response is a JSON array: [phase1_stats, {field, data: [...]}, {}]
         // We want the second element's data array
-        if arr.len() >= 2 {
-            if let Some(data) = arr[1].get("data") {
+        if arr.len() >= 2
+            && let Some(data) = arr[1].get("data") {
                 let items: Vec<SummaryItem> = serde_json::from_value(data.clone())?;
                 return Ok(items);
             }
-        }
         Ok(Vec::new())
     }
 }
