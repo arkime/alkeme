@@ -8,6 +8,18 @@ This project was entirely created by Claude — code, architecture, and document
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
+## Screenshots
+
+### Sessions Tab
+Browse and search network sessions with sortable columns, time range selection, and histograms.
+
+![Sessions Tab](assets/sessions-tab.png)
+
+### Arkime Tab
+Select any field to see top values with a bar chart and sortable table showing sessions, packets, and bytes.
+
+![Arkime Tab](assets/arkime-tab.png)
+
 ## Features
 
 - **Session browsing** — paginated session list with configurable columns and sort order
