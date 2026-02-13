@@ -142,7 +142,17 @@ jobs:
           body: |
             Alkeme - The Arkime TUI
 
-            Download the binary for your platform and run it with: `./alkeme-{platform} {VIEWER_URL}`
+            After downloading, make the binary executable:
+            ```
+            chmod a+x alkeme-*
+            ```
+
+            On macOS, you also need to remove the quarantine attribute:
+            ```
+            xattr -d com.apple.quarantine alkeme-macos-arm64
+            ```
+
+            Then run it with: `./alkeme-{platform} {VIEWER_URL}`
             See `--help` and https://github.com/arkime/alkeme for more info.
 
             Alkeme works best with Arkime 6+
