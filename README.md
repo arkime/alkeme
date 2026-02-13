@@ -39,11 +39,28 @@ Select any field to see top values with a bar chart and sortable table showing s
 
 ## Requirements
 
-- [Rust](https://www.rust-lang.org/tools/install) (edition 2024)
 - A running [Arkime](https://arkime.com) viewer instance
 - [Arkime 6](https://arkime.com) or later recommended for full functionality
 
 ## Installation
+
+### Pre-built binaries
+
+Download the latest binary for your platform from the [Releases page](https://github.com/arkime/alkeme/releases/latest).
+
+After downloading:
+```bash
+chmod a+x alkeme-*
+```
+
+On macOS, you also need to remove the quarantine attribute:
+```bash
+xattr -d com.apple.quarantine alkeme-macos-arm64
+```
+
+### Build from source
+
+Requires [Rust](https://www.rust-lang.org/tools/install) (edition 2024).
 
 ```bash
 git clone https://github.com/arkime/alkeme.git
