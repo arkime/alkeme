@@ -1,4 +1,4 @@
-use crate::app::{App, DetailActionMenu, GraphType, InputMode, SessionView, StatsTab, StatsView, Tab, TimeRange, is_hidden_detail_field};
+use crate::app::{App, DetailActionMenu, GraphType, InputMode, SessionView, StatsTab, StatsView, SummaryMetric, Tab, TimeRange, is_hidden_detail_field};
 use chrono::{DateTime, Local};
 use ratatui::{
     prelude::*,
@@ -119,6 +119,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.input_mode == InputMode::ActionPrompt {
         draw_action_prompt(f, app, f.area());
     }
+    if app.input_mode == InputMode::FieldSelector {
+        draw_field_selector(f, app, f.area());
+    }
 }
 
 fn status_bar_height(app: &App) -> u16 {
@@ -132,7 +135,7 @@ fn draw_default_layout(f: &mut Frame, app: &mut App) {
         Constraint::Length(3), // tabs
         Constraint::Length(3), // toolbar: time range + expression
     ];
-    if app.graph_size.is_visible() {
+    if app.graph_size.is_visible() && app.active_tab == Tab::Sessions {
         constraints.push(Constraint::Length(app.graph_size.height())); // graph
     }
     constraints.push(Constraint::Min(0));   // content
@@ -147,13 +150,14 @@ fn draw_default_layout(f: &mut Frame, app: &mut App) {
     draw_tabs(f, app, chunks[idx]); idx += 1;
     draw_toolbar(f, app, chunks[idx]); idx += 1;
 
-    if app.graph_size.is_visible() {
+    if app.graph_size.is_visible() && app.active_tab == Tab::Sessions {
         draw_graph(f, app, chunks[idx]); idx += 1;
     }
 
     match app.active_tab {
         Tab::Sessions => draw_sessions(f, app, chunks[idx]),
-        Tab::Arkime | Tab::Settings => {
+        Tab::Arkime => draw_arkime(f, app, chunks[idx]),
+        Tab::Settings => {
             let block = Block::default()
                 .borders(Borders::ALL)
                 .title(app.active_tab.name());
@@ -693,6 +697,202 @@ fn draw_detail_action_menu(f: &mut Frame, app: &App, area: Rect) {
                 .title(" Add to Expression "),
         );
     f.render_widget(paragraph, popup_area);
+}
+
+fn format_number(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.insert(0, ',');
+        }
+        result.insert(0, c);
+    }
+    result
+}
+
+fn draw_arkime(f: &mut Frame, app: &mut App, area: Rect) {
+    if app.summary_field.is_empty() {
+        // Show prompt to select a field
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Arkime Summary ");
+        let text = Paragraph::new(Line::from(vec![
+            Span::raw("Press "),
+            Span::styled("f", Style::default().fg(Color::Yellow)),
+            Span::raw(" to select a field"),
+        ]))
+        .alignment(Alignment::Center)
+        .block(block);
+        f.render_widget(text, area);
+        return;
+    }
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(10), // bar chart
+            Constraint::Min(0),    // table
+        ])
+        .split(area);
+
+    draw_summary_bar_chart(f, app, chunks[0]);
+    draw_summary_table(f, app, chunks[1]);
+}
+
+fn draw_summary_bar_chart(f: &mut Frame, app: &App, area: Rect) {
+    let metric = app.summary_metric;
+    let data: Vec<(&str, u64)> = app.summary_data.iter()
+        .map(|item| {
+            let label = item.item.as_str().unwrap_or("");
+            let val = match metric {
+                SummaryMetric::Sessions => item.sessions,
+                SummaryMetric::Packets => item.packets,
+                SummaryMetric::Bytes => item.bytes,
+            };
+            (label, val)
+        })
+        .collect();
+
+    if data.is_empty() {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(format!(" {} - {} (no data) [f]ield [G]raph type ", app.summary_field, metric.label()));
+        f.render_widget(block, area);
+        return;
+    }
+
+    let bar_width = if data.is_empty() { 1 } else {
+        let w = (area.width.saturating_sub(2)) / data.len() as u16;
+        w.max(1).min(12)
+    };
+
+    let bars: Vec<Bar> = data.iter()
+        .map(|(label, val)| {
+            let truncated: String = if label.len() > bar_width as usize {
+                label.chars().take(bar_width as usize).collect()
+            } else {
+                label.to_string()
+            };
+            Bar::default()
+                .value(*val)
+                .label(Line::from(truncated))
+                .style(Style::default().fg(Color::Cyan))
+        })
+        .collect();
+
+    let chart = BarChart::default()
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .title(format!(" {} - {} [f]ield [G]raph type ", app.summary_field, metric.label())))
+        .data(BarGroup::default().bars(&bars))
+        .bar_width(bar_width)
+        .bar_gap(1)
+        .bar_style(Style::default().fg(Color::Cyan))
+        .value_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
+
+    f.render_widget(chart, area);
+}
+
+fn draw_summary_table(f: &mut Frame, app: &mut App, area: Rect) {
+    let arrow = if app.summary_sort_desc { "▼" } else { "▲" };
+    let sort_indicator = |metric: SummaryMetric, label: &str| -> String {
+        if app.summary_sort == metric { format!("{label} {arrow}") } else { label.to_string() }
+    };
+
+    let header = Row::new(vec![
+        Cell::from("Value").style(Style::default().fg(Color::Yellow)),
+        Cell::from(sort_indicator(SummaryMetric::Sessions, "Sessions")).style(Style::default().fg(Color::Yellow)),
+        Cell::from(sort_indicator(SummaryMetric::Packets, "Packets")).style(Style::default().fg(Color::Yellow)),
+        Cell::from(sort_indicator(SummaryMetric::Bytes, "Bytes")).style(Style::default().fg(Color::Yellow)),
+    ])
+    .height(1)
+    .bottom_margin(0);
+
+    let rows: Vec<Row> = app.summary_data.iter().map(|item| {
+        let label = match &item.item {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        Row::new(vec![
+            Cell::from(label),
+            Cell::from(format_number(item.sessions)).style(Style::default().fg(Color::White)),
+            Cell::from(format_number(item.packets)).style(Style::default().fg(Color::White)),
+            Cell::from(format_human_bytes(item.bytes as f64)).style(Style::default().fg(Color::White)),
+        ])
+    }).collect();
+
+    let highlight_style = Style::default()
+        .bg(Color::DarkGray)
+        .add_modifier(Modifier::BOLD);
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(20),
+            Constraint::Length(14),
+            Constraint::Length(14),
+            Constraint::Length(14),
+        ],
+    )
+    .header(header)
+    .block(Block::default().borders(Borders::ALL).title(format!(" {} ", app.summary_field)))
+    .row_highlight_style(highlight_style);
+
+    f.render_stateful_widget(table, area, &mut app.summary_table_state);
+}
+
+fn draw_field_selector(f: &mut Frame, app: &App, area: Rect) {
+    let popup_width = 60u16.min(area.width.saturating_sub(4));
+    let popup_height = 20u16.min(area.height.saturating_sub(4));
+    let popup_area = Rect::new(
+        area.x + (area.width.saturating_sub(popup_width)) / 2,
+        area.y + (area.height.saturating_sub(popup_height)) / 2,
+        popup_width,
+        popup_height,
+    );
+
+    f.render_widget(Clear, popup_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // filter input
+            Constraint::Min(0),   // field list
+        ])
+        .split(popup_area);
+
+    // Filter input
+    let filter_style = Style::default().fg(Color::Yellow);
+    let filter_display = if app.field_filter.is_empty() {
+        "Type to filter fields...".to_string()
+    } else {
+        app.field_filter.clone()
+    };
+    let filter_input = Paragraph::new(Span::styled(&filter_display,
+        if app.field_filter.is_empty() { Style::default().fg(Color::DarkGray) } else { filter_style }))
+        .block(Block::default().borders(Borders::ALL).title(" Select Field "));
+    f.render_widget(filter_input, chunks[0]);
+
+    // Field list
+    let filtered = app.filtered_fields();
+    let items: Vec<ListItem> = filtered.iter().enumerate().map(|(i, field)| {
+        let style = if i == app.field_filter_selected {
+            Style::default().bg(Color::DarkGray).fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
+        let line = if field.friendly_name.is_empty() {
+            field.exp.clone()
+        } else {
+            format!("{} ({})", field.exp, field.friendly_name)
+        };
+        ListItem::new(line).style(style)
+    }).collect();
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(list, chunks[1]);
 }
 
 fn draw_under_construction(f: &mut Frame, app: &App, area: Rect) {

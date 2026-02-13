@@ -1,0 +1,5 @@
+IP Protocol, Start Time, Stop Time, Src IP, Src Port, Dst IP, Dst Port, Protocols, Src Packets, Dst Packets, Src Bytes, Dst Bytes
+tcp,1386644255859,1386644257101,10.0.0.3,2276,10.0.0.2,42356,"socks, rdp, tcp",6,4,405,263
+udp,1483109179834,1483109179834,10.0.0.3,48650,10.0.0.4,3478,"stun, udp",1,0,179,0
+tcp,1700000000570,1700000000640,10.0.0.3,49153,10.0.0.4,102,"tcp, s7comm",5,5,352,358
+udp,1770163211000,1770163214000,10.0.0.3,54321,10.0.0.4,20000,"dnp3, udp",2,2,117,121

@@ -1,4 +1,4 @@
-use crate::api::{ArkimeClient, GraphData};
+use crate::api::{ArkimeClient, ArkimeField, GraphData, SummaryItem};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::TableState;
 use serde_json::Value;
@@ -152,6 +152,30 @@ pub enum SessionView {
 }
 
 #[derive(Clone, Copy, PartialEq)]
+pub enum SummaryMetric {
+    Sessions,
+    Packets,
+    Bytes,
+}
+
+impl SummaryMetric {
+    pub const ALL: [SummaryMetric; 3] = [SummaryMetric::Sessions, SummaryMetric::Packets, SummaryMetric::Bytes];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            SummaryMetric::Sessions => "Sessions",
+            SummaryMetric::Packets => "Packets",
+            SummaryMetric::Bytes => "Bytes",
+        }
+    }
+
+    pub fn next(&self) -> SummaryMetric {
+        let idx = SummaryMetric::ALL.iter().position(|&t| t == *self).unwrap_or(0);
+        SummaryMetric::ALL[(idx + 1) % SummaryMetric::ALL.len()]
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
 pub enum StatsTab {
     Capture,
     DBStats,
@@ -220,6 +244,7 @@ pub enum InputMode {
     Expression,
     ActionPrompt,
     DetailFilter,
+    FieldSelector,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -366,6 +391,17 @@ pub struct App {
     pub stats_sort_desc: bool,
     pub stats_last_refresh: std::time::Instant,
     pub visible_rows: usize,
+    // Arkime (Summary) tab state
+    pub all_fields: Vec<ArkimeField>,
+    pub summary_field: String,
+    pub summary_data: Vec<SummaryItem>,
+    pub summary_metric: SummaryMetric,
+    pub summary_selected: usize,
+    pub summary_table_state: TableState,
+    pub summary_sort: SummaryMetric,
+    pub summary_sort_desc: bool,
+    pub field_filter: String,
+    pub field_filter_selected: usize,
     // Owl animation
     pub owl_x: f32,
     pub owl_y: f32,
@@ -438,6 +474,17 @@ impl App {
             stats_sort_desc: false,
             stats_last_refresh: std::time::Instant::now(),
             visible_rows: 20,
+            // Arkime (Summary) tab state
+            all_fields: Vec::new(),
+            summary_field: String::new(),
+            summary_data: Vec::new(),
+            summary_metric: SummaryMetric::Sessions,
+            summary_selected: 0,
+            summary_table_state: TableState::default().with_selected(0),
+            summary_sort: SummaryMetric::Sessions,
+            summary_sort_desc: true,
+            field_filter: String::new(),
+            field_filter_selected: 0,
             // Owl animation
             owl_x: 5.0,
             owl_y: 3.0,
@@ -470,7 +517,8 @@ impl App {
 
     pub async fn fetch_fields(&mut self) {
         match self.client.get_fields().await {
-            Ok((_fields, date_fields, field_exp_map, field_friendly_map)) => {
+            Ok((fields, date_fields, field_exp_map, field_friendly_map)) => {
+                self.all_fields = fields;
                 self.date_fields = date_fields;
                 self.field_exp_map = field_exp_map;
                 self.field_friendly_map = field_friendly_map;
@@ -580,6 +628,53 @@ impl App {
         }
     }
 
+    pub async fn fetch_summary(&mut self) {
+        if self.summary_field.is_empty() {
+            return;
+        }
+        self.status_msg = format!("Fetching summary for {}...", self.summary_field);
+        match self.client.get_summary(&self.summary_field, &self.expression, self.time_range.date_value()).await {
+            Ok(items) => {
+                self.summary_data = items;
+                self.sort_summary_data();
+                self.summary_selected = 0;
+                self.summary_table_state.select(Some(0));
+                self.status_msg = format!("Summary: {} items for {}", self.summary_data.len(), self.summary_field);
+            }
+            Err(e) => {
+                self.status_msg = format!("Error: {e}");
+            }
+        }
+    }
+
+    pub fn sort_summary_data(&mut self) {
+        let desc = self.summary_sort_desc;
+        match self.summary_sort {
+            SummaryMetric::Sessions => self.summary_data.sort_by(|a, b| {
+                if desc { b.sessions.cmp(&a.sessions) } else { a.sessions.cmp(&b.sessions) }
+            }),
+            SummaryMetric::Packets => self.summary_data.sort_by(|a, b| {
+                if desc { b.packets.cmp(&a.packets) } else { a.packets.cmp(&b.packets) }
+            }),
+            SummaryMetric::Bytes => self.summary_data.sort_by(|a, b| {
+                if desc { b.bytes.cmp(&a.bytes) } else { a.bytes.cmp(&b.bytes) }
+            }),
+        }
+        self.summary_selected = 0;
+        self.summary_table_state.select(Some(0));
+    }
+
+    pub fn filtered_fields(&self) -> Vec<&ArkimeField> {
+        if self.field_filter.is_empty() {
+            self.all_fields.iter().collect()
+        } else {
+            let filter = self.field_filter.to_lowercase();
+            self.all_fields.iter()
+                .filter(|f| f.exp.to_lowercase().contains(&filter) || f.friendly_name.to_lowercase().contains(&filter))
+                .collect()
+        }
+    }
+
     fn open_action_menu(&mut self, target: ActionTarget) {
         let (session_id, session_node) = match target {
             ActionTarget::Single => {
@@ -635,6 +730,10 @@ impl App {
             self.handle_detail_action_key(key);
             return;
         }
+        if self.input_mode == InputMode::FieldSelector {
+            self.handle_field_selector_key(key).await;
+            return;
+        }
         if self.input_mode == InputMode::Expression {
             self.handle_expression_key(key).await;
             return;
@@ -646,6 +745,7 @@ impl App {
                     StatsView::Detail => self.handle_stats_detail_key(key),
                 }
             }
+            Tab::Arkime => self.handle_arkime_key(key).await,
             _ => {
                 match self.session_view {
                     SessionView::List => self.handle_list_key(key).await,
@@ -829,7 +929,7 @@ impl App {
                     self.graph_type = self.graph_type.next();
                 }
             }
-            KeyCode::Char('h') => {
+            KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
             }
             KeyCode::Char('a') => {
@@ -1403,7 +1503,7 @@ impl App {
                 self.stats_sort_desc = !self.stats_sort_desc;
                 self.fetch_stats().await;
             }
-            KeyCode::Char('h') => {
+            KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
             }
             _ => {}
@@ -1438,6 +1538,106 @@ impl App {
             }
             KeyCode::Char('/') => {
                 self.input_mode = InputMode::DetailFilter;
+            }
+            _ => {}
+        }
+    }
+
+    async fn handle_arkime_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Tab => {
+                let idx = Tab::ALL.iter().position(|&t| t == self.active_tab).unwrap_or(0);
+                self.active_tab = Tab::ALL[(idx + 1) % Tab::ALL.len()];
+                if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
+                    self.fetch_stats().await;
+                }
+            }
+            KeyCode::BackTab => {
+                let idx = Tab::ALL.iter().position(|&t| t == self.active_tab).unwrap_or(0);
+                self.active_tab = Tab::ALL[(idx + Tab::ALL.len() - 1) % Tab::ALL.len()];
+                if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
+                    self.fetch_stats().await;
+                }
+            }
+            KeyCode::Char('f') | KeyCode::Char('/') => {
+                self.field_filter.clear();
+                self.field_filter_selected = 0;
+                self.input_mode = InputMode::FieldSelector;
+            }
+            KeyCode::Char('G') => {
+                self.summary_metric = self.summary_metric.next();
+            }
+            KeyCode::Char('s') => {
+                self.summary_sort = self.summary_sort.next();
+                self.sort_summary_data();
+            }
+            KeyCode::Char('S') => {
+                self.summary_sort_desc = !self.summary_sort_desc;
+                self.sort_summary_data();
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if !self.summary_data.is_empty() {
+                    self.summary_selected = (self.summary_selected + 1).min(self.summary_data.len() - 1);
+                    self.summary_table_state.select(Some(self.summary_selected));
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.summary_selected > 0 {
+                    self.summary_selected -= 1;
+                    self.summary_table_state.select(Some(self.summary_selected));
+                }
+            }
+            KeyCode::Char('r') => {
+                self.fetch_summary().await;
+            }
+            KeyCode::Char('t') => {
+                self.time_range = self.time_range.next();
+                self.fetch_summary().await;
+            }
+            KeyCode::Char('T') => {
+                self.time_range = self.time_range.prev();
+                self.fetch_summary().await;
+            }
+            KeyCode::Char('h') | KeyCode::Char('?') => {
+                self.show_help = true;
+            }
+            _ => {}
+        }
+    }
+
+    async fn handle_field_selector_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.input_mode = InputMode::Normal;
+                self.field_filter.clear();
+            }
+            KeyCode::Enter => {
+                let filtered = self.filtered_fields();
+                if let Some(field) = filtered.get(self.field_filter_selected) {
+                    self.summary_field = field.exp.clone();
+                    self.input_mode = InputMode::Normal;
+                    self.field_filter.clear();
+                    self.fetch_summary().await;
+                }
+            }
+            KeyCode::Down => {
+                let count = self.filtered_fields().len();
+                if count > 0 {
+                    self.field_filter_selected = (self.field_filter_selected + 1).min(count - 1);
+                }
+            }
+            KeyCode::Up => {
+                if self.field_filter_selected > 0 {
+                    self.field_filter_selected -= 1;
+                }
+            }
+            KeyCode::Char(c) => {
+                self.field_filter.push(c);
+                self.field_filter_selected = 0;
+            }
+            KeyCode::Backspace => {
+                self.field_filter.pop();
+                self.field_filter_selected = 0;
             }
             _ => {}
         }

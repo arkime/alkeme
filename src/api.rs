@@ -52,6 +52,17 @@ pub enum AuthMode {
     Digest,
 }
 
+#[derive(Deserialize, Clone)]
+pub struct SummaryItem {
+    pub item: Value,
+    #[serde(default)]
+    pub sessions: u64,
+    #[serde(default)]
+    pub bytes: u64,
+    #[serde(default)]
+    pub packets: u64,
+}
+
 pub struct ArkimeClient {
     client: Client,
     base_url: String,
@@ -429,5 +440,23 @@ impl ArkimeClient {
             url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
         }
         self.authenticated_post(&url, &[("tags", tags)]).await
+    }
+
+    pub async fn get_summary(&self, field: &str, expression: &str, date: &str) -> Result<Vec<SummaryItem>> {
+        let mut url = format!("{}/api/sessions/summary?date={}", self.base_url, urlencoding::encode(date));
+        if !expression.is_empty() {
+            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
+        }
+        let body = self.authenticated_post(&url, &[("fields", field)]).await?;
+        let arr: Vec<Value> = serde_json::from_str(&body)?;
+        // The response is a JSON array: [phase1_stats, {field, data: [...]}, {}]
+        // We want the second element's data array
+        if arr.len() >= 2 {
+            if let Some(data) = arr[1].get("data") {
+                let items: Vec<SummaryItem> = serde_json::from_value(data.clone())?;
+                return Ok(items);
+            }
+        }
+        Ok(Vec::new())
     }
 }
