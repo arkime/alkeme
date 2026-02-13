@@ -32,7 +32,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Session actions** — download PCAP, add/remove tags for single or all sessions; all-session PCAP/CSV supports visible vs matching scope
 - **Export** — export all matching or visible sessions as CSV
 - **Session detail filter** — press `/` to live-filter fields by name
-- **Packet hex dump** — press `p` to view packet contents as hex in a two-column overlay (source/destination), with color-coded display and hex offsets
+- **Packet hex dump** — press `p` to view packet contents as hex in a two-column overlay (source/destination) with timestamps, TCP flags, color-coded display, and hex offsets; `r` toggles raw frames, `l` cycles line number format
 - **Stats tab** — view capture stats, DB stats, and DB indices with sortable tables, filtering, and detail view
 - **Authentication** — supports no-auth, HTTP Basic, HTTP Digest, and form-based (cookie) authentication
 - **User permissions** — respects `removeEnabled` from the Arkime user profile

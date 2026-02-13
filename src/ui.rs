@@ -31,6 +31,16 @@ fn format_epoch_short(ms: f64) -> String {
     "-".into()
 }
 
+fn format_epoch_ms(ms: u64) -> String {
+    let secs = (ms / 1000) as i64;
+    let millis = (ms % 1000) as u32;
+    if let Some(dt) = DateTime::from_timestamp(secs, millis * 1_000_000) {
+        let local: DateTime<Local> = dt.into();
+        return local.format("%H:%M:%S%.3f").to_string();
+    }
+    "-".into()
+}
+
 fn format_human_bytes(bytes: f64) -> String {
     const TI: f64 = 1024.0 * 1024.0 * 1024.0 * 1024.0;
     const GI: f64 = 1024.0 * 1024.0 * 1024.0;
@@ -1497,6 +1507,12 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("PgUp / PgDn"), Span::raw("Scroll one page")]),
             Line::from(vec![key("← / Home"), Span::raw("Jump to top")]),
             Line::from(vec![key("→"), Span::raw("Jump to bottom")]),
+            blank(),
+            hdr!("Options"),
+            blank(),
+            Line::from(vec![key("r"), Span::raw("Toggle raw packets")]),
+            Line::from(vec![key("l"), Span::raw("Cycle line numbers: hex/dec/off")]),
+            blank(),
             Line::from(vec![key("Esc / p / q"), Span::raw("Close packets view")]),
             blank(),
             hdr!("Colors"),
@@ -1662,23 +1678,45 @@ fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
 
     for pkt in &pkt_data.packets {
         let dir_color = if pkt.src { Color::Cyan } else { Color::Green };
-        let header = vec![Span::styled(
-            format!("── {} bytes ──", pkt.bytes),
+        let mut header_parts = Vec::new();
+        if let Some(ts) = pkt.timestamp {
+            header_parts.push(Span::styled(
+                format!("{} ", format_epoch_ms(ts)),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+        let mut info = format!("{} bytes", pkt.bytes);
+        if !pkt.flags.is_empty() {
+            info = format!("{} {}", pkt.flags, info);
+        }
+        header_parts.push(Span::styled(
+            format!("── {} ──", info),
             Style::default().fg(dir_color).add_modifier(Modifier::BOLD),
-        )];
-        let mut pkt_rows = vec![header];
+        ));
+        let mut pkt_rows = vec![header_parts];
         for (i, hex_line) in pkt.lines.iter().enumerate() {
             let offset = i * 16;
-            pkt_rows.push(vec![
-                Span::styled(
-                    format!("{:04x}: ", offset),
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::styled(
-                    hex_line.to_string(),
-                    Style::default().fg(dir_color),
-                ),
-            ]);
+            let mut spans = Vec::new();
+            match app.packets_line {
+                crate::app::LineMode::Hex => {
+                    spans.push(Span::styled(
+                        format!("{:04x}: ", offset),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                }
+                crate::app::LineMode::Decimal => {
+                    spans.push(Span::styled(
+                        format!("{:5}: ", offset),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                }
+                crate::app::LineMode::Off => {}
+            }
+            spans.push(Span::styled(
+                hex_line.to_string(),
+                Style::default().fg(dir_color),
+            ));
+            pkt_rows.push(spans);
         }
         for row in pkt_rows {
             if pkt.src {
@@ -1703,7 +1741,11 @@ fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(format!(" Packets ({}) {}% ", pkt_data.total, pct));
+        .title(format!(" Packets ({}) {}% [r]aw:{} [l]ine:{} ",
+            pkt_data.total, pct,
+            if app.packets_raw { "on" } else { "off" },
+            app.packets_line.label(),
+        ));
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
 

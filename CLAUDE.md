@@ -45,8 +45,9 @@ src/
 - `SummaryMetric` — Enum: `Sessions` | `Packets` | `Bytes`. Selects which metric to display in Arkime summary bar chart and sort column.
 - `SummaryItem` — Deserialized summary API item with `item` (Value), `sessions`, `packets`, `bytes` (u64).
 - `SessionDetail` — Holds detail data, scroll position, selected row, total_rows, and `filter` string for live field filtering.
-- `Packet` — Parsed packet hex dump: `src` (bool), `bytes` (u32), `lines` (Vec<String>).
+- `Packet` — Parsed packet hex dump: `src` (bool), `bytes` (u32), `timestamp` (Option<u64>), `flags` (String), `lines` (Vec<String>).
 - `PacketsData` — Holds parsed packets, src/dst column labels, and total packet count. Displayed as a separate overlay via `p` key.
+- `LineMode` — Enum: `Off` | `Hex` | `Decimal`. Cycles line number display in packets view.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
@@ -177,7 +178,11 @@ source.packets, destination.packets, source.bytes, destination.bytes
 ## Packet hex dump overlay
 
 - `p` key opens a full-screen overlay from session list or session detail
-- Fetches from `/api/session/:node/:id/packets?base=hex` (returns HTML, not JSON)
+- Fetches from `/api/session/:node/:id/packets?base=hex&ts=true` (returns HTML, not JSON)
+- `r` toggles `showFrames=true` param — shows individual frames with TCP flags (syn, ack, psh, etc.)
+- `l` cycles client-side line offset display: hex (`0000:`) → decimal (`    0:`) → off
+- Timestamps displayed as `HH:MM:SS.mmm` in DarkGray before each packet header
+- TCP flags shown in header line (e.g. `── syn ack psh 60 bytes ──`)
 - Two-column layout: source (cyan, left) and destination (green, right)
 - Column headers parsed from HTML `srccol`/`dstcol` spans
 - Hex offset (`0000:`, `0010:`, etc.) shown in DarkGray before each line
@@ -185,7 +190,7 @@ source.packets, destination.packets, source.bytes, destination.bytes
 - Total packet count from `source.packets + destination.packets` in session metadata (not div count, since Arkime combines packets)
 - Title shows scroll percentage
 - Navigation: ↑/↓ (line), Shift+↑/↓ and PgUp/PgDn (page), ← (top), → (bottom)
-- State: `packets_view: Option<PacketsData>`, `packets_scroll: u16`
+- State: `packets_view: Option<PacketsData>`, `packets_scroll: u16`, `packets_raw: bool`, `packets_line: LineMode`
 
 ## Context-sensitive help
 

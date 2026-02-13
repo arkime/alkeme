@@ -87,6 +87,31 @@ impl GraphSize {
 }
 
 #[derive(Clone, Copy, PartialEq)]
+pub enum LineMode {
+    Off,
+    Hex,
+    Decimal,
+}
+
+impl LineMode {
+    pub fn next(&self) -> LineMode {
+        match self {
+            LineMode::Off => LineMode::Hex,
+            LineMode::Hex => LineMode::Decimal,
+            LineMode::Decimal => LineMode::Off,
+        }
+    }
+
+    pub fn label(&self) -> &str {
+        match self {
+            LineMode::Off => "off",
+            LineMode::Hex => "hex",
+            LineMode::Decimal => "dec",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
 pub enum TimeRange {
     Minutes15,
     Minutes30,
@@ -389,6 +414,8 @@ pub struct App {
     pub detail_action_menu: Option<DetailActionMenu>,
     pub packets_view: Option<crate::api::PacketsData>,
     pub packets_scroll: u16,
+    pub packets_raw: bool,
+    pub packets_line: LineMode,
     pub sort_column: usize,
     pub sort_desc: bool,
     pub graph_size: GraphSize,
@@ -474,6 +501,8 @@ impl App {
             detail_action_menu: None,
             packets_view: None,
             packets_scroll: 0,
+            packets_raw: false,
+            packets_line: LineMode::Hex,
             sort_column: 2,
             sort_desc: true,
             graph_size: GraphSize::Off,
@@ -761,7 +790,7 @@ impl App {
             return;
         }
         if self.packets_view.is_some() {
-            self.handle_packets_key(key);
+            self.handle_packets_key(key).await;
             return;
         }
         if self.input_mode == InputMode::Expression {
@@ -1481,7 +1510,7 @@ impl App {
         }
     }
 
-    fn handle_packets_key(&mut self, key: KeyEvent) {
+    async fn handle_packets_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Char('p') | KeyCode::Char('q') => {
                 self.packets_view = None;
@@ -1509,7 +1538,14 @@ impl App {
                 self.packets_scroll = 0;
             }
             KeyCode::Right => {
-                self.packets_scroll = u16::MAX; // will be clamped in draw
+                self.packets_scroll = u16::MAX;
+            }
+            KeyCode::Char('r') => {
+                self.packets_raw = !self.packets_raw;
+                self.open_packets().await;
+            }
+            KeyCode::Char('l') => {
+                self.packets_line = self.packets_line.next();
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
@@ -1534,7 +1570,7 @@ impl App {
                 .unwrap_or(0);
             let total = src_pkts + dst_pkts;
             self.status_msg = "Fetching packets...".into();
-            match self.client.get_session_packets(node, id).await {
+            match self.client.get_session_packets(node, id, self.packets_raw).await {
                 Ok(mut data) => {
                     data.total = total;
                     self.status_msg = format!("{} packets loaded", total);

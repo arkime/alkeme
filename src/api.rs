@@ -57,6 +57,8 @@ pub enum AuthMode {
 pub struct Packet {
     pub src: bool,
     pub bytes: u32,
+    pub timestamp: Option<u64>,
+    pub flags: String,
     pub lines: Vec<String>,
 }
 
@@ -537,8 +539,9 @@ impl ArkimeClient {
         Ok(Vec::new())
     }
 
-    pub async fn get_session_packets(&self, node: &str, id: &str) -> Result<PacketsData> {
-        let url = format!("{}/api/session/{}/{}/packets?base=hex", self.base_url, urlencoding::encode(node), urlencoding::encode(id));
+    pub async fn get_session_packets(&self, node: &str, id: &str, raw: bool) -> Result<PacketsData> {
+        let url = format!("{}/api/session/{}/{}/packets?base=hex&ts=true&showFrames={}",
+            self.base_url, urlencoding::encode(node), urlencoding::encode(id), raw);
         let html = self.authenticated_get(&url).await?;
         Ok(parse_packets_html(&html))
     }
@@ -554,6 +557,8 @@ fn parse_packets_html(html: &str) -> PacketsData {
     // Split on packet container divs: sessionsrc or sessiondst
     let re_packet = regex::Regex::new(r#"class="col-md-6[^"]*\s+(sessionsrc|sessiondst)">([\s\S]*?)</pre>"#).unwrap();
     let re_bytes = regex::Regex::new(r#">(\d+)&nbsp;<span class="bytes">"#).unwrap();
+    let re_ts = regex::Regex::new(r#"class="session-detail-ts"[^>]*value="(\d+)"#).unwrap();
+    let re_flags = regex::Regex::new(r#"</em>([\s\S]*?)<span class="pull-right">"#).unwrap();
     let re_pre = regex::Regex::new(r"<pre>([\s\S]*?)$").unwrap();
     let re_tag = regex::Regex::new(r"<[^>]+>").unwrap();
 
@@ -564,6 +569,17 @@ fn parse_packets_html(html: &str) -> PacketsData {
         let nbytes = re_bytes.captures(content)
             .and_then(|c| c[1].parse::<u32>().ok())
             .unwrap_or(0);
+
+        let timestamp = re_ts.captures(content)
+            .and_then(|c| c[1].parse::<u64>().ok());
+
+        let flags = re_flags.captures(content)
+            .map(|c| {
+                let raw = c[1].replace("&nbsp;", " ");
+                let clean = re_tag.replace_all(&raw, "");
+                clean.split_whitespace().collect::<Vec<_>>().join(" ")
+            })
+            .unwrap_or_default();
 
         let hex_lines: Vec<String> = if let Some(pre_cap) = re_pre.captures(content) {
             let raw = &pre_cap[1];
@@ -587,6 +603,8 @@ fn parse_packets_html(html: &str) -> PacketsData {
         packets.push(Packet {
             src: is_src,
             bytes: nbytes,
+            timestamp,
+            flags,
             lines: hex_lines,
         });
     }
