@@ -4,7 +4,7 @@ A terminal user interface (TUI) for [Arkime](https://arkime.com) (full packet ca
 
 Alkeme connects to an Arkime viewer instance and lets you browse, search, and inspect network sessions directly from the command line.
 
-This project was entirely created by Claude — code, architecture, and documentation.
+This project was entirely created by Claude — code, architecture, documentation, and even this README. The only exception is the screenshots, because sadly no one has given me eyes yet.
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
