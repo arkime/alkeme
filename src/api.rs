@@ -50,6 +50,7 @@ pub enum AuthMode {
     None,
     Basic,
     Digest,
+    Form,
 }
 
 #[derive(Deserialize, Clone)]
@@ -69,20 +70,57 @@ pub struct ArkimeClient {
     auth_mode: AuthMode,
     username: Option<String>,
     password: Option<String>,
+    logged_in: bool,
+    arkime_cookie: Option<String>,
 }
 
 impl ArkimeClient {
     pub fn new(base_url: &str, auth_mode: AuthMode, username: Option<String>, password: Option<String>) -> Self {
+        let mut builder = Client::builder()
+            .danger_accept_invalid_certs(true);
+        if auth_mode == AuthMode::Form {
+            builder = builder.cookie_store(true).redirect(reqwest::redirect::Policy::none());
+        }
         Self {
-            client: Client::builder()
-                .danger_accept_invalid_certs(true)
-                .build()
-                .expect("Failed to create HTTP client"),
+            client: builder.build().expect("Failed to create HTTP client"),
             base_url: base_url.trim_end_matches('/').to_string(),
             auth_mode,
             username,
             password,
+            logged_in: false,
+            arkime_cookie: None,
         }
+    }
+
+    pub async fn login(&mut self) -> Result<()> {
+        if self.auth_mode != AuthMode::Form || self.logged_in {
+            return Ok(());
+        }
+        let username = self.username.as_deref().unwrap_or("");
+        let password = self.password.as_deref().unwrap_or("");
+        let url = format!("{}/api/login", self.base_url);
+        let resp = self.client.post(&url)
+            .form(&[("username", username), ("password", password)])
+            .send()
+            .await?;
+        if resp.status() != reqwest::StatusCode::FOUND && !resp.status().is_success() {
+            anyhow::bail!("Form login failed: HTTP {}", resp.status());
+        }
+        // Fetch /api/user/settings to get the ARKIME-COOKIE (needed for POST CSRF protection)
+        let settings_url = format!("{}/api/user/settings", self.base_url);
+        let resp = self.client.get(&settings_url).send().await?;
+        for cookie_val in resp.headers().get_all("set-cookie") {
+            if let Ok(s) = cookie_val.to_str() {
+                if s.starts_with("ARKIME-COOKIE=") {
+                    if let Some(val) = s.strip_prefix("ARKIME-COOKIE=") {
+                        let val = val.split(';').next().unwrap_or(val);
+                        self.arkime_cookie = Some(urlencoding::decode(val).unwrap_or_default().into_owned());
+                    }
+                }
+            }
+        }
+        self.logged_in = true;
+        Ok(())
     }
 
     async fn authenticated_get(&self, url: &str) -> Result<String> {
@@ -144,6 +182,14 @@ impl ArkimeClient {
                     anyhow::bail!("HTTP {}: Authentication failed", resp.status());
                 }
 
+                Ok(resp.text().await?)
+            }
+            AuthMode::Form => {
+                // Cookie-based auth, login() must be called first
+                let resp = self.client.get(url).send().await?;
+                if !resp.status().is_success() {
+                    anyhow::bail!("HTTP {}: Authentication failed (session expired?)", resp.status());
+                }
                 Ok(resp.text().await?)
             }
         }
@@ -211,6 +257,17 @@ impl ArkimeClient {
 
                 Ok(resp.text().await?)
             }
+            AuthMode::Form => {
+                let mut req = self.client.post(url).form(form);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("x-arkime-cookie", cookie);
+                }
+                let resp = req.send().await?;
+                if !resp.status().is_success() {
+                    anyhow::bail!("HTTP {}: Authentication failed (session expired?)", resp.status());
+                }
+                Ok(resp.text().await?)
+            }
         }
     }
 
@@ -272,6 +329,13 @@ impl ArkimeClient {
                     anyhow::bail!("HTTP {}: Authentication failed", resp.status());
                 }
 
+                Ok(resp.bytes().await?.to_vec())
+            }
+            AuthMode::Form => {
+                let resp = self.client.get(url).send().await?;
+                if !resp.status().is_success() {
+                    anyhow::bail!("HTTP {}: Authentication failed (session expired?)", resp.status());
+                }
                 Ok(resp.bytes().await?.to_vec())
             }
         }

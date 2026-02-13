@@ -33,7 +33,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Export** — export all matching or visible sessions as CSV
 - **Session detail filter** — press `/` to live-filter fields by name
 - **Stats tab** — view capture stats, DB stats, and DB indices with sortable tables, filtering, and detail view
-- **Authentication** — supports no-auth, HTTP Basic, and HTTP Digest authentication
+- **Authentication** — supports no-auth, HTTP Basic, HTTP Digest, and form-based (cookie) authentication
 - **User permissions** — respects `removeEnabled` from the Arkime user profile
 - **Keyboard-driven** — fully navigable with keyboard shortcuts
 
@@ -82,6 +82,9 @@ alkeme http://viewer.example.com:8005
 # With digest authentication (inline credentials)
 alkeme http://viewer.example.com:8005 --auth digest --user admin:password
 
+# With form-based authentication
+alkeme http://viewer.example.com:8005 --auth form --user admin:password
+
 # With basic authentication (prompts for credentials)
 alkeme http://viewer.example.com:8005 --auth basic
 ```
@@ -91,7 +94,7 @@ alkeme http://viewer.example.com:8005 --auth basic
 | Option | Description |
 |---|---|
 | `<URL>` | Arkime viewer URL (default: `http://localhost:8005`) |
-| `--auth <MODE>` | Authentication mode: `basic` or `digest` |
+| `--auth <MODE>` | Authentication mode: `basic`, `digest`, or `form` |
 | `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`) |
 | `--search <EXPR>` | Default search expression for sessions |
 

@@ -28,7 +28,7 @@ struct Cli {
     url: String,
 
     /// Authentication mode
-    #[arg(long, value_parser = ["basic", "digest"])]
+    #[arg(long, value_parser = ["basic", "digest", "form"])]
     auth: Option<String>,
 
     /// Credentials as user:pass (prompts if omitted with --auth)
@@ -47,6 +47,7 @@ async fn main() -> Result<()> {
     let auth_mode = match cli.auth.as_deref() {
         Some("basic") => api::AuthMode::Basic,
         Some("digest") => api::AuthMode::Digest,
+        Some("form") => api::AuthMode::Form,
         _ => api::AuthMode::None,
     };
 
@@ -75,6 +76,7 @@ async fn main() -> Result<()> {
         app.expression = search.clone();
         app.expression_edit = search;
     }
+    app.client.login().await?;
     app.fetch_user().await;
     app.fetch_fields().await;
     app.fetch_sessions().await;

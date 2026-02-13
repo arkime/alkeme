@@ -9,6 +9,7 @@ cargo build                                                    # debug
 cargo run -- URL                                               # no auth
 cargo run -- URL --auth digest --user admin:admin              # digest auth
 cargo run -- URL --auth basic --user admin:admin               # basic auth
+cargo run -- URL --auth form --user admin:admin                # form auth (cookie-based)
 cargo run -- URL --auth digest                                 # prompts for credentials
 ```
 
@@ -36,7 +37,7 @@ src/
 - `GraphSize` — Enum: `Off` | `Small` (10 rows) | `Large` (20 rows). Three-state graph toggle.
 - `ArkimeClient` — Wraps `reqwest::Client` + `base_url` + auth. All API calls return `Result<T>`.
 - `ArkimeField` — Deserialized field definition with `dbField`, `type`, `exp` (expression name), `friendlyName`.
-- `AuthMode` — Enum: `None` | `Basic` | `Digest`.
+- `AuthMode` — Enum: `None` | `Basic` | `Digest` | `Form`.
 - `GraphData` — Deserialized histogram data from `facets=1` API response.
 - `TableState` — ratatui widget state for session/stats list scrolling.
 - `DetailActionMenu` — Popup for adding a field/value to expression from session detail. Options: AND/AND NOT/OR/OR NOT. Stores `field` (exp name for expressions), `display` (friendlyName for UI), `value`, `selected` index, `values` (for array value picker), and `value_selected`.
