@@ -110,9 +110,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         _ => draw_default_layout(f, app),
     }
 
-    if app.show_help {
-        draw_help(f, f.area());
-    }
     if app.action_menu.is_some() {
         draw_action_menu(f, app, f.area());
     }
@@ -124,6 +121,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
     if app.detail_action_menu.is_some() && app.active_tab == Tab::Arkime {
         draw_detail_action_menu(f, app, f.area());
+    }
+    if app.packets_view.is_some() {
+        draw_packets(f, app, f.area());
+    }
+    if app.show_help {
+        draw_help(f, app, f.area());
     }
 }
 
@@ -1477,57 +1480,247 @@ fn draw_action_prompt(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(paragraph, popup_area);
 }
 
-fn draw_help(f: &mut Frame, area: Rect) {
-    let help_text = vec![
-        Line::from(Span::styled("Navigation", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(""),
-        Line::from(vec![Span::styled("  Tab / Shift+Tab  ", Style::default().fg(Color::Yellow)), Span::raw("Switch tabs")]),
-        Line::from(vec![Span::styled("  j / k / ↑ / ↓    ", Style::default().fg(Color::Yellow)), Span::raw("Navigate sessions")]),
-        Line::from(vec![Span::styled("  ← / →            ", Style::default().fg(Color::Yellow)), Span::raw("Previous/next page")]),
-        Line::from(vec![Span::styled("  Shift+← / Shift+→", Style::default().fg(Color::Yellow)), Span::raw("First/last page")]),
-        Line::from(vec![Span::styled("  Home             ", Style::default().fg(Color::Yellow)), Span::raw("First page")]),
-        Line::from(vec![Span::styled("  PgUp / PgDn      ", Style::default().fg(Color::Yellow)), Span::raw("Scroll detail view")]),
-        Line::from(""),
-        Line::from(Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(""),
-        Line::from(vec![Span::styled("  Enter            ", Style::default().fg(Color::Yellow)), Span::raw("Open session detail / add to expression")]),
-        Line::from(vec![Span::styled("  Esc              ", Style::default().fg(Color::Yellow)), Span::raw("Close overlay")]),
-        Line::from(vec![Span::styled("  r                ", Style::default().fg(Color::Yellow)), Span::raw("Refresh")]),
-        Line::from(vec![Span::styled("  /                ", Style::default().fg(Color::Yellow)), Span::raw("Search expression")]),
-        Line::from(vec![Span::styled("  t / T            ", Style::default().fg(Color::Yellow)), Span::raw("Cycle time range")]),
-        Line::from(vec![Span::styled("  s                ", Style::default().fg(Color::Yellow)), Span::raw("Next sort column")]),
-        Line::from(vec![Span::styled("  S                ", Style::default().fg(Color::Yellow)), Span::raw("Toggle sort direction")]),
-        Line::from(vec![Span::styled("  g                ", Style::default().fg(Color::Yellow)), Span::raw("Toggle graph")]),
-        Line::from(vec![Span::styled("  G                ", Style::default().fg(Color::Yellow)), Span::raw("Cycle graph type")]),
-        Line::from(vec![Span::styled("  a                ", Style::default().fg(Color::Yellow)), Span::raw("Session actions (pcap/tags)")]),
-        Line::from(vec![Span::styled("  A                ", Style::default().fg(Color::Yellow)), Span::raw("All sessions actions")]),
-        Line::from(""),
-        Line::from(Span::styled("Stats Tab", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(""),
-        Line::from(vec![Span::styled("  1 / 2 / 3       ", Style::default().fg(Color::Yellow)), Span::raw("Switch stats sub-tab")]),
-        Line::from(""),
-        Line::from(Span::styled("General", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(""),
-        Line::from(vec![Span::styled("  h                ", Style::default().fg(Color::Yellow)), Span::raw("Show this help")]),
-        Line::from(vec![Span::styled("  q                ", Style::default().fg(Color::Yellow)), Span::raw("Quit")]),
-        Line::from(""),
-        Line::from(Span::styled("Press any key to close", Style::default().fg(Color::DarkGray))),
-    ];
+fn draw_help(f: &mut Frame, app: &App, area: Rect) {
+    let key = |k: &str| Span::styled(format!("  {k:19}"), Style::default().fg(Color::Yellow));
+    let blank = || Line::from("");
 
-    let popup_width = 62;
-    let popup_height = help_text.len() as u16 + 2; // +2 for borders
+    macro_rules! hdr {
+        ($s:expr) => { Line::from(Span::styled($s, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))) };
+    }
+
+    let (title, help_text) = if app.packets_view.is_some() {
+        ("Packets", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Scroll one line")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Scroll one page")]),
+            Line::from(vec![key("PgUp / PgDn"), Span::raw("Scroll one page")]),
+            Line::from(vec![key("← / Home"), Span::raw("Jump to top")]),
+            Line::from(vec![key("→"), Span::raw("Jump to bottom")]),
+            Line::from(vec![key("Esc / p / q"), Span::raw("Close packets view")]),
+            blank(),
+            hdr!("Colors"),
+            blank(),
+            Line::from(vec![Span::styled("  ██               ", Style::default().fg(Color::Cyan)), Span::raw("Source packets")]),
+            Line::from(vec![Span::styled("  ██               ", Style::default().fg(Color::Green)), Span::raw("Destination packets")]),
+            Line::from(vec![Span::styled("  ██               ", Style::default().fg(Color::DarkGray)), Span::raw("Hex offset")]),
+        ])
+    } else if app.session_view == SessionView::Detail && app.active_tab == Tab::Sessions {
+        ("Session Detail", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate fields")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            Line::from(vec![key("PgUp / PgDn"), Span::raw("Page up / down")]),
+            Line::from(vec![key("← / Home"), Span::raw("Jump to top")]),
+            Line::from(vec![key("→ / End"), Span::raw("Jump to bottom")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Add field to expression")]),
+            Line::from(vec![key("/"), Span::raw("Filter fields")]),
+            Line::from(vec![key("p"), Span::raw("View packets")]),
+            Line::from(vec![key("a"), Span::raw("Session actions")]),
+            Line::from(vec![key("A"), Span::raw("All sessions actions")]),
+            Line::from(vec![key("Esc / q"), Span::raw("Close detail")]),
+        ])
+    } else if app.active_tab == Tab::Stats && app.stats_view == StatsView::Detail {
+        ("Stats Detail", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Scroll one line")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            Line::from(vec![key("PgUp / PgDn"), Span::raw("Page up / down")]),
+            Line::from(vec![key("← / Home"), Span::raw("Jump to top")]),
+            Line::from(vec![key("→ / End"), Span::raw("Jump to bottom")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("/"), Span::raw("Filter fields")]),
+            Line::from(vec![key("Esc / q"), Span::raw("Close detail")]),
+        ])
+    } else if app.active_tab == Tab::Stats {
+        ("Stats", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
+            Line::from(vec![key("1 / 2 / 3"), Span::raw("Switch sub-tab")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Open detail")]),
+            Line::from(vec![key("/"), Span::raw("Filter")]),
+            Line::from(vec![key("s"), Span::raw("Next sort column")]),
+            Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
+            Line::from(vec![key("r"), Span::raw("Refresh")]),
+            Line::from(vec![key("Esc"), Span::raw("Close overlay")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ])
+    } else if app.active_tab == Tab::Arkime {
+        ("Arkime Summary", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            Line::from(vec![key("PgUp / PgDn"), Span::raw("Page up / down")]),
+            Line::from(vec![key("← / Home"), Span::raw("Jump to top")]),
+            Line::from(vec![key("→ / End"), Span::raw("Jump to bottom")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Add to expression")]),
+            Line::from(vec![key("/"), Span::raw("Edit expression")]),
+            Line::from(vec![key("f"), Span::raw("Select field")]),
+            Line::from(vec![key("G"), Span::raw("Cycle graph metric")]),
+            Line::from(vec![key("s"), Span::raw("Next sort column")]),
+            Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
+            Line::from(vec![key("t / T"), Span::raw("Cycle time range")]),
+            Line::from(vec![key("r"), Span::raw("Refresh")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ])
+    } else {
+        ("Sessions", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate sessions")]),
+            Line::from(vec![key("← / →"), Span::raw("Previous / next page")]),
+            Line::from(vec![key("Shift+← / Shift+→"), Span::raw("First / last page")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Open session detail")]),
+            Line::from(vec![key("p"), Span::raw("View packets")]),
+            Line::from(vec![key("/"), Span::raw("Edit expression")]),
+            Line::from(vec![key("t / T"), Span::raw("Cycle time range")]),
+            Line::from(vec![key("s"), Span::raw("Next sort column")]),
+            Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
+            Line::from(vec![key("g"), Span::raw("Toggle graph")]),
+            Line::from(vec![key("G"), Span::raw("Cycle graph type")]),
+            Line::from(vec![key("r"), Span::raw("Refresh")]),
+            Line::from(vec![key("a"), Span::raw("Session actions")]),
+            Line::from(vec![key("A"), Span::raw("All sessions actions")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ])
+    };
+
+    let mut lines = help_text;
+    lines.push(blank());
+    lines.push(Line::from(Span::styled("Press any key to close", Style::default().fg(Color::DarkGray))));
+
+    let popup_width = 52;
+    let popup_height = lines.len() as u16 + 2;
     let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
     let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
 
     f.render_widget(Clear, popup_area);
 
-    let help = Paragraph::new(help_text)
+    let help = Paragraph::new(lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
-                .title(" Help "),
+                .title(format!(" {title} Help ")),
         );
     f.render_widget(help, popup_area);
+}
+
+fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
+    let pkt_data = match &app.packets_view {
+        Some(p) => p,
+        None => return,
+    };
+
+    let popup_width = (area.width as f32 * 0.9) as u16;
+    let popup_height = (area.height as f32 * 0.9) as u16;
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let half_width = popup_area.width.saturating_sub(2) / 2;
+
+    // Build rows: each row is (left_spans, right_spans)
+    let mut rows: Vec<(Vec<Span>, Vec<Span>)> = Vec::new();
+
+    // Column headers
+    rows.push((
+        vec![Span::styled(
+            format!(" {}", pkt_data.src_label),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )],
+        vec![Span::styled(
+            format!(" {}", pkt_data.dst_label),
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        )],
+    ));
+
+    for pkt in &pkt_data.packets {
+        let dir_color = if pkt.src { Color::Cyan } else { Color::Green };
+        let header = vec![Span::styled(
+            format!("── {} bytes ──", pkt.bytes),
+            Style::default().fg(dir_color).add_modifier(Modifier::BOLD),
+        )];
+        let mut pkt_rows = vec![header];
+        for (i, hex_line) in pkt.lines.iter().enumerate() {
+            let offset = i * 16;
+            pkt_rows.push(vec![
+                Span::styled(
+                    format!("{:04x}: ", offset),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    hex_line.to_string(),
+                    Style::default().fg(dir_color),
+                ),
+            ]);
+        }
+        for row in pkt_rows {
+            if pkt.src {
+                rows.push((row, Vec::new()));
+            } else {
+                rows.push((Vec::new(), row));
+            }
+        }
+    }
+
+    let visible = popup_area.height.saturating_sub(2) as usize;
+    let max_scroll = rows.len().saturating_sub(visible) as u16;
+    app.packets_scroll = app.packets_scroll.min(max_scroll);
+    let start = app.packets_scroll as usize;
+
+    let pct = if rows.is_empty() {
+        100
+    } else {
+        ((start + visible).min(rows.len()) * 100) / rows.len()
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(format!(" Packets ({}) {}% ", pkt_data.total, pct));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    for (i, (left, right)) in rows.iter().skip(start).enumerate() {
+        if i >= visible {
+            break;
+        }
+        let y = inner.y + i as u16;
+        if !left.is_empty() {
+            let left_area = Rect::new(inner.x, y, half_width, 1);
+            let line = Line::from(left.clone());
+            f.render_widget(Paragraph::new(line), left_area);
+        }
+        if !right.is_empty() {
+            let right_area = Rect::new(inner.x + half_width, y, inner.width - half_width, 1);
+            let line = Line::from(right.clone());
+            f.render_widget(Paragraph::new(line), right_area);
+        }
+    }
 }

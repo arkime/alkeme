@@ -53,6 +53,21 @@ pub enum AuthMode {
     Form,
 }
 
+#[derive(Clone)]
+pub struct Packet {
+    pub src: bool,
+    pub bytes: u32,
+    pub lines: Vec<String>,
+}
+
+#[derive(Clone)]
+pub struct PacketsData {
+    pub src_label: String,
+    pub dst_label: String,
+    pub packets: Vec<Packet>,
+    pub total: u64,
+}
+
 #[derive(Deserialize, Clone)]
 pub struct SummaryItem {
     pub item: Value,
@@ -110,14 +125,12 @@ impl ArkimeClient {
         let settings_url = format!("{}/api/user/settings", self.base_url);
         let resp = self.client.get(&settings_url).send().await?;
         for cookie_val in resp.headers().get_all("set-cookie") {
-            if let Ok(s) = cookie_val.to_str() {
-                if s.starts_with("ARKIME-COOKIE=") {
-                    if let Some(val) = s.strip_prefix("ARKIME-COOKIE=") {
+            if let Ok(s) = cookie_val.to_str()
+                && s.starts_with("ARKIME-COOKIE=")
+                    && let Some(val) = s.strip_prefix("ARKIME-COOKIE=") {
                         let val = val.split(';').next().unwrap_or(val);
                         self.arkime_cookie = Some(urlencoding::decode(val).unwrap_or_default().into_owned());
                     }
-                }
-            }
         }
         self.logged_in = true;
         Ok(())
@@ -522,5 +535,65 @@ impl ArkimeClient {
                 return Ok(items);
             }
         Ok(Vec::new())
+    }
+
+    pub async fn get_session_packets(&self, node: &str, id: &str) -> Result<PacketsData> {
+        let url = format!("{}/api/session/{}/{}/packets?base=hex", self.base_url, urlencoding::encode(node), urlencoding::encode(id));
+        let html = self.authenticated_get(&url).await?;
+        Ok(parse_packets_html(&html))
+    }
+}
+
+fn parse_packets_html(html: &str) -> PacketsData {
+    let mut packets = Vec::new();
+
+    let re_src = regex::Regex::new(r#"class="srccol".*?<span class="small">&nbsp;\(([^)]+)\)"#).unwrap();
+    let re_dst = regex::Regex::new(r#"class="dstcol".*?<span class="small">&nbsp;\(([^)]+)\)"#).unwrap();
+    let src_label = re_src.captures(html).map(|c| c[1].to_string()).unwrap_or_default();
+    let dst_label = re_dst.captures(html).map(|c| c[1].to_string()).unwrap_or_default();
+    // Split on packet container divs: sessionsrc or sessiondst
+    let re_packet = regex::Regex::new(r#"class="col-md-6[^"]*\s+(sessionsrc|sessiondst)">([\s\S]*?)</pre>"#).unwrap();
+    let re_bytes = regex::Regex::new(r#">(\d+)&nbsp;<span class="bytes">"#).unwrap();
+    let re_pre = regex::Regex::new(r"<pre>([\s\S]*?)$").unwrap();
+    let re_tag = regex::Regex::new(r"<[^>]+>").unwrap();
+
+    for cap in re_packet.captures_iter(html) {
+        let is_src = &cap[1] == "sessionsrc";
+        let content = &cap[2];
+
+        let nbytes = re_bytes.captures(content)
+            .and_then(|c| c[1].parse::<u32>().ok())
+            .unwrap_or(0);
+
+        let hex_lines: Vec<String> = if let Some(pre_cap) = re_pre.captures(content) {
+            let raw = &pre_cap[1];
+            let clean = re_tag.replace_all(raw, "");
+            let decoded = clean
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&nbsp;", " ")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&#47;", "/");
+            decoded.lines()
+                .map(|l| l.to_string())
+                .filter(|l| !l.trim().is_empty())
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        packets.push(Packet {
+            src: is_src,
+            bytes: nbytes,
+            lines: hex_lines,
+        });
+    }
+    PacketsData {
+        src_label,
+        dst_label,
+        total: packets.len() as u64,
+        packets,
     }
 }

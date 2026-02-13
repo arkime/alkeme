@@ -45,6 +45,8 @@ src/
 - `SummaryMetric` — Enum: `Sessions` | `Packets` | `Bytes`. Selects which metric to display in Arkime summary bar chart and sort column.
 - `SummaryItem` — Deserialized summary API item with `item` (Value), `sessions`, `packets`, `bytes` (u64).
 - `SessionDetail` — Holds detail data, scroll position, selected row, total_rows, and `filter` string for live field filtering.
+- `Packet` — Parsed packet hex dump: `src` (bool), `bytes` (u32), `lines` (Vec<String>).
+- `PacketsData` — Holds parsed packets, src/dst column labels, and total packet count. Displayed as a separate overlay via `p` key.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
@@ -54,11 +56,11 @@ src/
 |---|---|
 | Tab / Shift+Tab | Switch tabs |
 | j / k / ↑ / ↓ | Navigate sessions/stats |
-| Shift+↑ / Shift+↓ | Page up/down in list or detail |
-| ← / → | Previous/next page (sessions); in expression input, move cursor |
+| Shift+↑ / Shift+↓ | Page up/down in list, detail, or packets |
+| ← / → | Previous/next page (sessions); jump to top/bottom (detail/stats detail/arkime/packets); in expression input, move cursor |
 | Shift+← / Shift+→ | First/last page |
 | Home / End | First page; in expression input, cursor to start/end |
-| PgUp / PgDn | Page up/down in detail view |
+| PgUp / PgDn | Page up/down in detail, stats detail, or packets view |
 | Enter | Open session/stats detail; in detail or summary, open expression menu |
 | Esc | Close overlay |
 | r | Refresh data |
@@ -72,7 +74,8 @@ src/
 | A | All sessions action menu (download pcap, export csv, add/remove tags) — pcap/csv show Visible/Matching scope selector |
 | 1 / 2 / 3 | Switch stats sub-tab (Capture/DB Stats/DB Indices) |
 | f | Open field selector (arkime tab) |
-| h / ? | Show help overlay |
+| p | View packet hex dump (session list or detail) |
+| h / ? | Show context-sensitive help overlay |
 | q | Quit |
 
 ## Session columns (in order)
@@ -108,6 +111,8 @@ source.packets, destination.packets, source.bytes, destination.bytes
 - Auto-refreshes every 30 seconds when on the Stats tab
 - Numeric/size columns are right-justified
 - Enter opens a detail overlay showing all fields for the selected row
+- Detail overlay supports full navigation: ↑/↓ (line), Shift+↑/↓ and PgUp/PgDn (page), ←/Home (top), →/End (bottom)
+- `/` filters fields in detail overlay; `h`/`?` shows help
 
 ### Stats columns per sub-tab
 - **Capture Stats**: nodeName, currentTime (formatted date), monitoring (Sessions), freeSpaceM (human-readable + percent), deltaPackets, deltaBytesPerSec (human-readable), deltaSessions, deltaDropped
@@ -137,6 +142,7 @@ source.packets, destination.packets, source.bytes, destination.bytes
 - Sort indicators (▲/▼) shown in table header on active sort column
 - Sort is client-side on already-fetched data
 - `t`/`T` changes time range and re-fetches; `r` refreshes
+- Navigation: ↑/↓ (row), Shift+↑/↓ and PgUp/PgDn (page), ←/Home (top), →/End (bottom)
 - Graph is hidden on this tab (only shown on Sessions tab)
 - State: `all_fields` (Vec<ArkimeField>), `summary_field`, `summary_data` (Vec<SummaryItem>), `summary_metric`, `summary_sort`, `summary_sort_desc`, `field_filter`, `field_filter_selected`
 
@@ -165,6 +171,28 @@ source.packets, destination.packets, source.bytes, destination.bytes
 - Fields ending in `Cnt` and `packetPos`/`packetRange`/`packetLen` are hidden from session detail
 - `/` activates a live field filter (case-insensitive substring match on dbField and friendlyName)
 - Filter text shown in title bar; Esc clears filter, Enter keeps filter active
+- `p` opens packet hex dump overlay (fetched from `/api/session/:node/:id/packets?base=hex`)
+- Left/Right arrows jump to top/bottom of field list
+
+## Packet hex dump overlay
+
+- `p` key opens a full-screen overlay from session list or session detail
+- Fetches from `/api/session/:node/:id/packets?base=hex` (returns HTML, not JSON)
+- Two-column layout: source (cyan, left) and destination (green, right)
+- Column headers parsed from HTML `srccol`/`dstcol` spans
+- Hex offset (`0000:`, `0010:`, etc.) shown in DarkGray before each line
+- HTML entities decoded: `&#39;` → `'`, `&#47;` → `/`, `&amp;` → `&`, `&lt;` → `<`, `&gt;` → `>`, `&nbsp;` → ` `, `&quot;` → `"`
+- Total packet count from `source.packets + destination.packets` in session metadata (not div count, since Arkime combines packets)
+- Title shows scroll percentage
+- Navigation: ↑/↓ (line), Shift+↑/↓ and PgUp/PgDn (page), ← (top), → (bottom)
+- State: `packets_view: Option<PacketsData>`, `packets_scroll: u16`
+
+## Context-sensitive help
+
+- `h` or `?` shows help overlay tailored to the current view
+- 6 contexts: Sessions list, Session detail, Packets view, Stats list, Stats detail, Arkime summary
+- Help renders last in draw order (on top of all overlays including packets)
+- Uses `macro_rules! hdr` for section headers to avoid closure lifetime issues
 
 ## User API
 
@@ -265,4 +293,4 @@ Facets: `facets=1` adds `graph` object with histogram arrays to response (slower
 - Direct buffer writes (`f.buffer_mut()`) for custom graph rendering with block chars
 
 ## Crate versions
-ratatui 0.29, crossterm 0.28, tokio 1 (full), reqwest 0.12 (rustls-tls), serde/serde_json 1, anyhow 1, urlencoding 2, digest_auth 0.3, rpassword 7, clap 4, chrono
+ratatui 0.29, crossterm 0.28, tokio 1 (full), reqwest 0.12 (rustls-tls), serde/serde_json 1, anyhow 1, urlencoding 2, digest_auth 0.3, rpassword 7, clap 4, chrono, regex 1

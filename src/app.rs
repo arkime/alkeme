@@ -387,6 +387,8 @@ pub struct App {
     pub session_view: SessionView,
     pub session_detail: Option<SessionDetail>,
     pub detail_action_menu: Option<DetailActionMenu>,
+    pub packets_view: Option<crate::api::PacketsData>,
+    pub packets_scroll: u16,
     pub sort_column: usize,
     pub sort_desc: bool,
     pub graph_size: GraphSize,
@@ -470,6 +472,8 @@ impl App {
             session_view: SessionView::List,
             session_detail: None,
             detail_action_menu: None,
+            packets_view: None,
+            packets_scroll: 0,
             sort_column: 2,
             sort_desc: true,
             graph_size: GraphSize::Off,
@@ -756,6 +760,10 @@ impl App {
             self.handle_field_selector_key(key).await;
             return;
         }
+        if self.packets_view.is_some() {
+            self.handle_packets_key(key);
+            return;
+        }
         if self.input_mode == InputMode::Expression {
             self.handle_expression_key(key).await;
             return;
@@ -771,7 +779,7 @@ impl App {
             _ => {
                 match self.session_view {
                     SessionView::List => self.handle_list_key(key).await,
-                    SessionView::Detail => self.handle_detail_key(key),
+                    SessionView::Detail => self.handle_detail_key(key).await,
                 }
             }
         }
@@ -964,11 +972,14 @@ impl App {
             KeyCode::Char('A') => {
                 self.open_action_menu(ActionTarget::All);
             }
+            KeyCode::Char('p') => {
+                self.open_packets().await;
+            }
             _ => {}
         }
     }
 
-    fn handle_detail_key(&mut self, key: KeyEvent) {
+    async fn handle_detail_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 self.session_view = SessionView::List;
@@ -1004,6 +1015,16 @@ impl App {
             KeyCode::PageUp => {
                 if let Some(ref mut detail) = self.session_detail {
                     detail.selected = detail.selected.saturating_sub(self.visible_rows);
+                }
+            }
+            KeyCode::Left | KeyCode::Home => {
+                if let Some(ref mut detail) = self.session_detail {
+                    detail.selected = 0;
+                }
+            }
+            KeyCode::Right | KeyCode::End => {
+                if let Some(ref mut detail) = self.session_detail {
+                    detail.selected = detail.total_rows.saturating_sub(1);
                 }
             }
             KeyCode::Enter => {
@@ -1072,6 +1093,12 @@ impl App {
             }
             KeyCode::Char('/') => {
                 self.input_mode = InputMode::DetailFilter;
+            }
+            KeyCode::Char('p') => {
+                self.open_packets().await;
+            }
+            KeyCode::Char('h') | KeyCode::Char('?') => {
+                self.show_help = true;
             }
             _ => {}
         }
@@ -1454,6 +1481,73 @@ impl App {
         }
     }
 
+    fn handle_packets_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('p') | KeyCode::Char('q') => {
+                self.packets_view = None;
+                self.packets_scroll = 0;
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.packets_scroll = self.packets_scroll.saturating_sub(self.visible_rows as u16);
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.packets_scroll = self.packets_scroll.saturating_add(self.visible_rows as u16);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.packets_scroll = self.packets_scroll.saturating_add(1);
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.packets_scroll = self.packets_scroll.saturating_sub(1);
+            }
+            KeyCode::PageDown => {
+                self.packets_scroll = self.packets_scroll.saturating_add(self.visible_rows as u16);
+            }
+            KeyCode::PageUp => {
+                self.packets_scroll = self.packets_scroll.saturating_sub(self.visible_rows as u16);
+            }
+            KeyCode::Home | KeyCode::Left => {
+                self.packets_scroll = 0;
+            }
+            KeyCode::Right => {
+                self.packets_scroll = u16::MAX; // will be clamped in draw
+            }
+            KeyCode::Char('h') | KeyCode::Char('?') => {
+                self.show_help = true;
+            }
+            _ => {}
+        }
+    }
+
+    async fn open_packets(&mut self) {
+        if let Some(session) = self.sessions.get(self.selected_session) {
+            let id = session.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let node = session.get("node").and_then(|v| v.as_str()).unwrap_or("");
+            if id.is_empty() || node.is_empty() {
+                self.status_msg = "No session id/node".into();
+                return;
+            }
+            let src_pkts = session.pointer("/source/packets").and_then(|v| v.as_u64())
+                .or_else(|| session.get("source.packets").and_then(|v| v.as_u64()))
+                .unwrap_or(0);
+            let dst_pkts = session.pointer("/destination/packets").and_then(|v| v.as_u64())
+                .or_else(|| session.get("destination.packets").and_then(|v| v.as_u64()))
+                .unwrap_or(0);
+            let total = src_pkts + dst_pkts;
+            self.status_msg = "Fetching packets...".into();
+            match self.client.get_session_packets(node, id).await {
+                Ok(mut data) => {
+                    data.total = total;
+                    self.status_msg = format!("{} packets loaded", total);
+                    self.packets_view = Some(data);
+                    self.packets_scroll = 0;
+                }
+                Err(e) => {
+                    self.status_msg = format!("Error fetching packets: {e}");
+                }
+            }
+        }
+    }
+
     async fn handle_stats_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Tab => {
@@ -1533,6 +1627,16 @@ impl App {
                 self.stats_view = StatsView::List;
                 self.stats_detail = None;
             }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if let Some(ref mut detail) = self.stats_detail {
+                    detail.scroll = detail.scroll.saturating_add(self.visible_rows as u16);
+                }
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if let Some(ref mut detail) = self.stats_detail {
+                    detail.scroll = detail.scroll.saturating_sub(self.visible_rows as u16);
+                }
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(ref mut detail) = self.stats_detail {
                     detail.scroll = detail.scroll.saturating_add(1);
@@ -1545,16 +1649,29 @@ impl App {
             }
             KeyCode::PageDown => {
                 if let Some(ref mut detail) = self.stats_detail {
-                    detail.scroll = detail.scroll.saturating_add(20);
+                    detail.scroll = detail.scroll.saturating_add(self.visible_rows as u16);
                 }
             }
             KeyCode::PageUp => {
                 if let Some(ref mut detail) = self.stats_detail {
-                    detail.scroll = detail.scroll.saturating_sub(20);
+                    detail.scroll = detail.scroll.saturating_sub(self.visible_rows as u16);
+                }
+            }
+            KeyCode::Left | KeyCode::Home => {
+                if let Some(ref mut detail) = self.stats_detail {
+                    detail.scroll = 0;
+                }
+            }
+            KeyCode::Right | KeyCode::End => {
+                if let Some(ref mut detail) = self.stats_detail {
+                    detail.scroll = u16::MAX;
                 }
             }
             KeyCode::Char('/') => {
                 self.input_mode = InputMode::DetailFilter;
+            }
+            KeyCode::Char('h') | KeyCode::Char('?') => {
+                self.show_help = true;
             }
             _ => {}
         }
@@ -1597,6 +1714,16 @@ impl App {
                 self.summary_sort_desc = !self.summary_sort_desc;
                 self.sort_summary_data();
             }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if !self.summary_data.is_empty() {
+                    self.summary_selected = (self.summary_selected + self.visible_rows).min(self.summary_data.len() - 1);
+                    self.summary_table_state.select(Some(self.summary_selected));
+                }
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.summary_selected = self.summary_selected.saturating_sub(self.visible_rows);
+                self.summary_table_state.select(Some(self.summary_selected));
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.summary_data.is_empty() {
                     self.summary_selected = (self.summary_selected + 1).min(self.summary_data.len() - 1);
@@ -1606,6 +1733,26 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.summary_selected > 0 {
                     self.summary_selected -= 1;
+                    self.summary_table_state.select(Some(self.summary_selected));
+                }
+            }
+            KeyCode::PageDown => {
+                if !self.summary_data.is_empty() {
+                    self.summary_selected = (self.summary_selected + self.visible_rows).min(self.summary_data.len() - 1);
+                    self.summary_table_state.select(Some(self.summary_selected));
+                }
+            }
+            KeyCode::PageUp => {
+                self.summary_selected = self.summary_selected.saturating_sub(self.visible_rows);
+                self.summary_table_state.select(Some(self.summary_selected));
+            }
+            KeyCode::Left | KeyCode::Home => {
+                self.summary_selected = 0;
+                self.summary_table_state.select(Some(self.summary_selected));
+            }
+            KeyCode::Right | KeyCode::End => {
+                if !self.summary_data.is_empty() {
+                    self.summary_selected = self.summary_data.len() - 1;
                     self.summary_table_state.select(Some(self.summary_selected));
                 }
             }

@@ -32,6 +32,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Session actions** — download PCAP, add/remove tags for single or all sessions; all-session PCAP/CSV supports visible vs matching scope
 - **Export** — export all matching or visible sessions as CSV
 - **Session detail filter** — press `/` to live-filter fields by name
+- **Packet hex dump** — press `p` to view packet contents as hex in a two-column overlay (source/destination), with color-coded display and hex offsets
 - **Stats tab** — view capture stats, DB stats, and DB indices with sortable tables, filtering, and detail view
 - **Authentication** — supports no-auth, HTTP Basic, HTTP Digest, and form-based (cookie) authentication
 - **User permissions** — respects `removeEnabled` from the Arkime user profile
@@ -104,11 +105,11 @@ alkeme http://viewer.example.com:8005 --auth basic
 |---|---|
 | `Tab` / `Shift+Tab` | Switch tabs |
 | `j` / `k` / `↑` / `↓` | Navigate sessions |
-| `Shift+↑` / `Shift+↓` | Page up / down in list |
-| `←` / `→` | Previous / next page; in expression input, move cursor |
+| `Shift+↑` / `Shift+↓` | Page up / down in list or detail |
+| `←` / `→` | Previous / next page (sessions); jump to top / bottom (detail/stats/arkime); move cursor (expression) |
 | `Shift+←` / `Shift+→` | First / last page |
 | `Home` / `End` | First page; in expression input, move cursor to start / end |
-| `PgUp` / `PgDn` | Page up / down in detail view |
+| `PgUp` / `PgDn` | Page up / down in detail or packet view |
 | `Enter` | Open session detail; in detail or summary, add field to expression |
 | `Esc` | Close overlay / cancel search |
 | `r` | Refresh |
@@ -122,7 +123,8 @@ alkeme http://viewer.example.com:8005 --auth basic
 | `A` | All sessions actions (download PCAP, export CSV, add/remove tags) with visible/matching selector |
 | `f` | Open field selector (summary tab) |
 | `1` / `2` / `3` | Switch stats sub-tab (Capture / DB Stats / DB Indices) |
-| `h` / `?` | Show help overlay |
+| `p` | View packet hex dump (sessions list or detail) |
+| `h` / `?` | Show context-sensitive help overlay |
 | `q` | Quit |
 
 ## License
