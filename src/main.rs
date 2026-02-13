@@ -95,8 +95,47 @@ async fn main() -> Result<()> {
 }
 
 async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+    let mut packets_handle: Option<tokio::task::JoinHandle<Result<crate::api::PacketsData, anyhow::Error>>> = None;
+
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
+
+        if app.pending_packets_fetch {
+            app.pending_packets_fetch = false;
+            let node = std::mem::take(&mut app.packets_node_pending);
+            let id = std::mem::take(&mut app.packets_id_pending);
+            let raw = app.packets_raw;
+            let url = app.client.packets_url(&node, &id, raw);
+            let client = app.client.clone_for_fetch();
+            packets_handle = Some(tokio::spawn(async move {
+                let html = client.fetch_url(&url).await?;
+                Ok(crate::api::parse_packets_html(&html))
+            }));
+            continue;
+        }
+
+        // Check if background packets fetch completed
+        if let Some(ref mut handle) = packets_handle {
+            if handle.is_finished() {
+                let handle = packets_handle.take().unwrap();
+                match handle.await {
+                    Ok(Ok(mut data)) => {
+                        data.total = app.packets_total_pending;
+                        app.status_msg = format!("{} packets loaded", app.packets_total_pending);
+                        app.packets_view = Some(data);
+                        app.packets_scroll = 0;
+                    }
+                    Ok(Err(e)) => {
+                        app.status_msg = format!("Error fetching packets: {e}");
+                    }
+                    Err(e) => {
+                        app.status_msg = format!("Error fetching packets: {e}");
+                    }
+                }
+                app.show_loading = false;
+                continue;
+            }
+        }
 
         // Auto-refresh stats every 30 seconds when on Stats tab
         if app.active_tab == app::Tab::Stats

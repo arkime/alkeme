@@ -416,6 +416,14 @@ pub struct App {
     pub packets_scroll: u16,
     pub packets_raw: bool,
     pub packets_line: LineMode,
+    pub show_loading: bool,
+    pub loading_owl_x: u16,
+    pub loading_owl_dx: i16,
+    pub loading_owl_tick: std::time::Instant,
+    pub pending_packets_fetch: bool,
+    pub packets_node_pending: String,
+    pub packets_id_pending: String,
+    pub packets_total_pending: u64,
     pub sort_column: usize,
     pub sort_desc: bool,
     pub graph_size: GraphSize,
@@ -503,6 +511,14 @@ impl App {
             packets_scroll: 0,
             packets_raw: false,
             packets_line: LineMode::Hex,
+            show_loading: false,
+            loading_owl_x: 0,
+            loading_owl_dx: 1,
+            loading_owl_tick: std::time::Instant::now(),
+            pending_packets_fetch: false,
+            packets_node_pending: String::new(),
+            packets_id_pending: String::new(),
+            packets_total_pending: 0,
             sort_column: 2,
             sort_desc: true,
             graph_size: GraphSize::Off,
@@ -790,7 +806,7 @@ impl App {
             return;
         }
         if self.packets_view.is_some() {
-            self.handle_packets_key(key).await;
+            self.handle_packets_key(key);
             return;
         }
         if self.input_mode == InputMode::Expression {
@@ -1002,7 +1018,7 @@ impl App {
                 self.open_action_menu(ActionTarget::All);
             }
             KeyCode::Char('p') => {
-                self.open_packets().await;
+                self.request_packets();
             }
             _ => {}
         }
@@ -1124,7 +1140,7 @@ impl App {
                 self.input_mode = InputMode::DetailFilter;
             }
             KeyCode::Char('p') => {
-                self.open_packets().await;
+                self.request_packets();
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
@@ -1510,7 +1526,7 @@ impl App {
         }
     }
 
-    async fn handle_packets_key(&mut self, key: KeyEvent) {
+    fn handle_packets_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Char('p') | KeyCode::Char('q') => {
                 self.packets_view = None;
@@ -1542,7 +1558,7 @@ impl App {
             }
             KeyCode::Char('r') => {
                 self.packets_raw = !self.packets_raw;
-                self.open_packets().await;
+                self.request_packets();
             }
             KeyCode::Char('l') => {
                 self.packets_line = self.packets_line.next();
@@ -1554,7 +1570,7 @@ impl App {
         }
     }
 
-    async fn open_packets(&mut self) {
+    pub fn request_packets(&mut self) {
         if let Some(session) = self.sessions.get(self.selected_session) {
             let id = session.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let node = session.get("node").and_then(|v| v.as_str()).unwrap_or("");
@@ -1569,18 +1585,14 @@ impl App {
                 .or_else(|| session.get("destination.packets").and_then(|v| v.as_u64()))
                 .unwrap_or(0);
             let total = src_pkts + dst_pkts;
+            self.packets_total_pending = total;
+            self.packets_node_pending = node.to_string();
+            self.packets_id_pending = id.to_string();
             self.status_msg = "Fetching packets...".into();
-            match self.client.get_session_packets(node, id, self.packets_raw).await {
-                Ok(mut data) => {
-                    data.total = total;
-                    self.status_msg = format!("{} packets loaded", total);
-                    self.packets_view = Some(data);
-                    self.packets_scroll = 0;
-                }
-                Err(e) => {
-                    self.status_msg = format!("Error fetching packets: {e}");
-                }
+            if total > 500 {
+                self.show_loading = true;
             }
+            self.pending_packets_fetch = true;
         }
     }
 

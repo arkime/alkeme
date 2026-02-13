@@ -81,6 +81,69 @@ pub struct SummaryItem {
     pub packets: u64,
 }
 
+pub struct FetchClient {
+    client: Client,
+    auth_mode: AuthMode,
+    username: Option<String>,
+    password: Option<String>,
+    arkime_cookie: Option<String>,
+}
+
+impl FetchClient {
+    pub async fn fetch_url(&self, url: &str) -> Result<String> {
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => {
+                let resp = self.client.get(url).send().await?;
+                return Ok(resp.text().await?);
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        match self.auth_mode {
+            AuthMode::None => {
+                let resp = self.client.get(url).send().await?;
+                Ok(resp.text().await?)
+            }
+            AuthMode::Basic => {
+                let resp = self.client.get(url)
+                    .basic_auth(username, Some(password))
+                    .send()
+                    .await?;
+                Ok(resp.text().await?)
+            }
+            AuthMode::Digest => {
+                let resp = self.client.get(url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    return Ok(resp.text().await?);
+                }
+                let www_auth = resp.headers().get("www-authenticate")
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?.to_string();
+                let parsed_url = reqwest::Url::parse(url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else {
+                    parsed_url.path().to_string()
+                };
+                let context = digest_auth::AuthContext::new(username, password, &uri);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+                let resp = self.client.get(url).header("Authorization", auth_header).send().await?;
+                Ok(resp.text().await?)
+            }
+            AuthMode::Form => {
+                let mut req = self.client.get(url);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("Cookie", cookie.as_str());
+                }
+                let resp = req.send().await?;
+                Ok(resp.text().await?)
+            }
+        }
+    }
+}
+
 pub struct ArkimeClient {
     client: Client,
     base_url: String,
@@ -106,6 +169,16 @@ impl ArkimeClient {
             password,
             logged_in: false,
             arkime_cookie: None,
+        }
+    }
+
+    pub fn clone_for_fetch(&self) -> FetchClient {
+        FetchClient {
+            client: self.client.clone(),
+            auth_mode: self.auth_mode,
+            username: self.username.clone(),
+            password: self.password.clone(),
+            arkime_cookie: self.arkime_cookie.clone(),
         }
     }
 
@@ -539,15 +612,13 @@ impl ArkimeClient {
         Ok(Vec::new())
     }
 
-    pub async fn get_session_packets(&self, node: &str, id: &str, raw: bool) -> Result<PacketsData> {
-        let url = format!("{}/api/session/{}/{}/packets?base=hex&ts=true&showFrames={}",
-            self.base_url, urlencoding::encode(node), urlencoding::encode(id), raw);
-        let html = self.authenticated_get(&url).await?;
-        Ok(parse_packets_html(&html))
+    pub fn packets_url(&self, node: &str, id: &str, raw: bool) -> String {
+        format!("{}/api/session/{}/{}/packets?base=hex&ts=true&packets=10000&showFrames={}",
+            self.base_url, urlencoding::encode(node), urlencoding::encode(id), raw)
     }
 }
 
-fn parse_packets_html(html: &str) -> PacketsData {
+pub fn parse_packets_html(html: &str) -> PacketsData {
     let mut packets = Vec::new();
 
     let re_src = regex::Regex::new(r#"class="srccol".*?<span class="small">&nbsp;\(([^)]+)\)"#).unwrap();

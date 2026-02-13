@@ -138,6 +138,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.show_help {
         draw_help(f, app, f.area());
     }
+    if app.show_loading {
+        draw_loading(f, app, f.area());
+    }
 }
 
 fn status_bar_height(app: &App) -> u16 {
@@ -1764,5 +1767,80 @@ fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
             let line = Line::from(right.clone());
             f.render_widget(Paragraph::new(line), right_area);
         }
+    }
+}
+
+fn draw_loading(f: &mut Frame, app: &mut App, area: Rect) {
+    let owl_right = [
+        " ,___,  ",
+        " (O,O)  ",
+        " /)  )  ",
+        "  \" \"   ",
+        " _| |_  ",
+    ];
+    let owl_left = [
+        "  ,___,  ",
+        "  (O,O)  ",
+        "  (  (\\  ",
+        "   \" \"   ",
+        "  _| |_  ",
+    ];
+    let popup_width = 30u16;
+    let popup_height = (owl_right.len() + 5) as u16;
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let owl_w = 10u16;
+    let max_x = inner.width.saturating_sub(owl_w);
+
+    // Animate owl position
+    if app.loading_owl_tick.elapsed() >= std::time::Duration::from_millis(100) {
+        app.loading_owl_tick = std::time::Instant::now();
+        let new_x = app.loading_owl_x as i16 + app.loading_owl_dx;
+        if new_x <= 0 {
+            app.loading_owl_x = 0;
+            app.loading_owl_dx = 1;
+        } else if new_x >= max_x as i16 {
+            app.loading_owl_x = max_x;
+            app.loading_owl_dx = -1;
+        } else {
+            app.loading_owl_x = new_x as u16;
+        }
+    }
+
+    let owl = if app.loading_owl_dx > 0 { &owl_right } else { &owl_left };
+
+    // Draw owl at animated position
+    for (i, row) in owl.iter().enumerate() {
+        let y = inner.y + 1 + i as u16;
+        if y < inner.y + inner.height {
+            let x = inner.x + app.loading_owl_x;
+            let owl_area = Rect::new(x, y, owl_w.min(inner.width - app.loading_owl_x), 1);
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(*row, Style::default().fg(Color::Yellow)))),
+                owl_area,
+            );
+        }
+    }
+
+    // Draw "Loading ..." text centered
+    let loading_y = inner.y + owl_right.len() as u16 + 2;
+    if loading_y < inner.y + inner.height {
+        let text = "Loading ...";
+        let text_x = inner.x + (inner.width.saturating_sub(text.len() as u16)) / 2;
+        let text_area = Rect::new(text_x, loading_y, text.len() as u16, 1);
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(text, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))),
+            text_area,
+        );
     }
 }

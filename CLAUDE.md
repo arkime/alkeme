@@ -48,6 +48,7 @@ src/
 - `Packet` — Parsed packet hex dump: `src` (bool), `bytes` (u32), `timestamp` (Option<u64>), `flags` (String), `lines` (Vec<String>).
 - `PacketsData` — Holds parsed packets, src/dst column labels, and total packet count. Displayed as a separate overlay via `p` key.
 - `LineMode` — Enum: `Off` | `Hex` | `Decimal`. Cycles line number display in packets view.
+- `FetchClient` — Lightweight Send-able clone of `ArkimeClient` auth state for background fetches via `tokio::spawn`.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
@@ -178,7 +179,7 @@ source.packets, destination.packets, source.bytes, destination.bytes
 ## Packet hex dump overlay
 
 - `p` key opens a full-screen overlay from session list or session detail
-- Fetches from `/api/session/:node/:id/packets?base=hex&ts=true` (returns HTML, not JSON)
+- Fetches from `/api/session/:node/:id/packets?base=hex&ts=true&packets=10000` (returns HTML, not JSON)
 - `r` toggles `showFrames=true` param — shows individual frames with TCP flags (syn, ack, psh, etc.)
 - `l` cycles client-side line offset display: hex (`0000:`) → decimal (`    0:`) → off
 - Timestamps displayed as `HH:MM:SS.mmm` in DarkGray before each packet header
@@ -191,6 +192,10 @@ source.packets, destination.packets, source.bytes, destination.bytes
 - Title shows scroll percentage
 - Navigation: ↑/↓ (line), Shift+↑/↓ and PgUp/PgDn (page), ← (top), → (bottom)
 - State: `packets_view: Option<PacketsData>`, `packets_scroll: u16`, `packets_raw: bool`, `packets_line: LineMode`
+- Fetch is async via `tokio::spawn` + `FetchClient` — main loop keeps drawing during fetch
+- Loading popup with walking owl shown for sessions with >500 packets (`show_loading` flag)
+- `pending_packets_fetch` flag triggers spawn in main loop; result polled via `JoinHandle::is_finished()`
+- `FetchClient` is a lightweight Send-able clone of auth state from `ArkimeClient::clone_for_fetch()`
 
 ## Context-sensitive help
 
@@ -268,6 +273,7 @@ All endpoints are relative to base_url. Use `flatten=1` to get dot-notation fiel
 | `/api/sessions/csv` | GET | Export CSV | `expression`, `date`, `fields`, `ids` |
 | `/api/session/:id` | GET | Single session JSON (all fields) | `flatten`, `date` |
 | `/api/session/:nodeName/:id/detail` | GET | Session detail (HTML) | |
+| `/api/session/:node/:id/packets` | GET | Packet hex dump (HTML) | `base`, `ts`, `packets`, `showFrames` |
 | `/api/sessions/summary` | POST | Summary/aggregation by field | `fields` (form body), `expression`, `date` |
 | `/api/stats` | GET | Capture node stats | `sortField`, `desc`, `filter` |
 | `/api/esstats` | GET | DB/ES node stats | `sortField`, `desc`, `filter` |
