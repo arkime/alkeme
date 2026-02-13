@@ -59,7 +59,7 @@ src/
 | Shift+← / Shift+→ | First/last page |
 | Home / End | First page; in expression input, cursor to start/end |
 | PgUp / PgDn | Page up/down in detail view |
-| Enter | Open session/stats detail; in detail, open expression menu |
+| Enter | Open session/stats detail; in detail or summary, open expression menu |
 | Esc | Close overlay |
 | r | Refresh data |
 | / | Search expression or filter (Enter to apply, Esc to cancel); in session detail, live-filter fields |
@@ -126,11 +126,14 @@ source.packets, destination.packets, source.bytes, destination.bytes
 ## Arkime (Summary) tab
 
 - Calls `POST /api/sessions/summary` with `fields` in form body; response is a streamed JSON array
-- Field selector popup (`f` or `/`): type-to-filter, shows `exp (friendlyName)`, Enter to select
+- Field selector popup (`f`): type-to-filter, shows `exp (friendlyName)`, Enter to select
+- `/` opens expression editor (same as Sessions tab)
 - Bar chart: ratatui `BarChart` widget showing top values for selected metric (cyan bars)
 - Table view: columns are Value, Sessions, Packets, Bytes (bytes human-readable via `format_human_bytes`)
 - `G` cycles bar chart metric: Sessions → Packets → Bytes
-- `s` cycles sort column: Sessions → Packets → Bytes; `S` toggles sort direction
+- `s` cycles sort column: Value → Sessions → Packets → Bytes; `S` toggles sort direction
+- Enter on a table row opens AND/AND NOT/OR/OR NOT expression menu (reuses `DetailActionMenu`)
+- Expression changes auto-refresh summary data
 - Sort indicators (▲/▼) shown in table header on active sort column
 - Sort is client-side on already-fetched data
 - `t`/`T` changes time range and re-fetches; `r` refreshes

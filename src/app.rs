@@ -749,7 +749,7 @@ impl App {
             return;
         }
         if self.detail_action_menu.is_some() {
-            self.handle_detail_action_key(key);
+            self.handle_detail_action_key(key).await;
             return;
         }
         if self.input_mode == InputMode::FieldSelector {
@@ -790,7 +790,11 @@ impl App {
                     self.expression = self.expression_edit.clone();
                     self.input_mode = InputMode::Normal;
                     self.page_start = 0;
-                    self.fetch_sessions().await;
+                    if self.active_tab == Tab::Arkime {
+                        self.fetch_summary().await;
+                    } else {
+                        self.fetch_sessions().await;
+                    }
                 }
             }
             KeyCode::Esc => {
@@ -1379,7 +1383,7 @@ impl App {
         }
     }
 
-    fn handle_detail_action_key(&mut self, key: KeyEvent) {
+    async fn handle_detail_action_key(&mut self, key: KeyEvent) {
         let in_values = self.detail_action_menu.as_ref()
             .map(|m| m.values.is_some()).unwrap_or(false);
 
@@ -1441,6 +1445,9 @@ impl App {
                         self.expression = format!("{} {} {}", self.expression, connector, clause);
                     }
                     self.expression_edit = self.expression.clone();
+                    if self.active_tab == Tab::Arkime {
+                        self.fetch_summary().await;
+                    }
                 }
             }
             _ => {}
@@ -1569,7 +1576,12 @@ impl App {
                     self.fetch_stats().await;
                 }
             }
-            KeyCode::Char('f') | KeyCode::Char('/') => {
+            KeyCode::Char('/') => {
+                self.expression_edit = self.expression.clone();
+                self.expression_cursor = self.expression_edit.len();
+                self.input_mode = InputMode::Expression;
+            }
+            KeyCode::Char('f') => {
                 self.field_filter.clear();
                 self.field_filter_selected = 0;
                 self.input_mode = InputMode::FieldSelector;
@@ -1595,6 +1607,22 @@ impl App {
                 if self.summary_selected > 0 {
                     self.summary_selected -= 1;
                     self.summary_table_state.select(Some(self.summary_selected));
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(item) = self.summary_data.get(self.summary_selected) {
+                    let value = match &item.item {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    self.detail_action_menu = Some(DetailActionMenu {
+                        field: self.summary_field.clone(),
+                        display: self.summary_field.clone(),
+                        value,
+                        selected: 0,
+                        values: None,
+                        value_selected: 0,
+                    });
                 }
             }
             KeyCode::Char('r') => {

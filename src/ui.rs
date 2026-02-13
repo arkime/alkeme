@@ -122,6 +122,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.input_mode == InputMode::FieldSelector {
         draw_field_selector(f, app, f.area());
     }
+    if app.detail_action_menu.is_some() && app.active_tab == Tab::Arkime {
+        draw_detail_action_menu(f, app, f.area());
+    }
 }
 
 fn status_bar_height(app: &App) -> u16 {
@@ -757,7 +760,7 @@ fn draw_summary_bar_chart(f: &mut Frame, app: &App, area: Rect) {
     if data.is_empty() {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(format!(" {} - {} (no data) [f]ield [G]raph type ", app.summary_field, metric.label()));
+            .title(format!(" {} - {} (no data) [G]raph type ", app.summary_field, metric.label()));
         f.render_widget(block, area);
         return;
     }
@@ -784,7 +787,7 @@ fn draw_summary_bar_chart(f: &mut Frame, app: &App, area: Rect) {
     let chart = BarChart::default()
         .block(Block::default()
             .borders(Borders::ALL)
-            .title(format!(" {} - {} [f]ield [G]raph type ", app.summary_field, metric.label())))
+            .title(format!(" {} - {} [G]raph type ", app.summary_field, metric.label())))
         .data(BarGroup::default().bars(&bars))
         .bar_width(bar_width)
         .bar_gap(1)
@@ -836,7 +839,7 @@ fn draw_summary_table(f: &mut Frame, app: &mut App, area: Rect) {
         ],
     )
     .header(header)
-    .block(Block::default().borders(Borders::ALL).title(format!(" {} ", app.summary_field)))
+    .block(Block::default().borders(Borders::ALL).title(format!(" {} [f]ield [s]ort [S]ort dir ", app.summary_field)))
     .row_highlight_style(highlight_style);
 
     f.render_stateful_widget(table, area, &mut app.summary_table_state);
@@ -1489,7 +1492,7 @@ fn draw_help(f: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from(vec![Span::styled("  Enter            ", Style::default().fg(Color::Yellow)), Span::raw("Open session detail / add to expression")]),
         Line::from(vec![Span::styled("  Esc              ", Style::default().fg(Color::Yellow)), Span::raw("Close overlay")]),
-        Line::from(vec![Span::styled("  r                ", Style::default().fg(Color::Yellow)), Span::raw("Refresh sessions")]),
+        Line::from(vec![Span::styled("  r                ", Style::default().fg(Color::Yellow)), Span::raw("Refresh")]),
         Line::from(vec![Span::styled("  /                ", Style::default().fg(Color::Yellow)), Span::raw("Search expression")]),
         Line::from(vec![Span::styled("  t / T            ", Style::default().fg(Color::Yellow)), Span::raw("Cycle time range")]),
         Line::from(vec![Span::styled("  s                ", Style::default().fg(Color::Yellow)), Span::raw("Next sort column")]),

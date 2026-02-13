@@ -109,12 +109,12 @@ alkeme http://viewer.example.com:8005 --auth basic
 | `Shift+←` / `Shift+→` | First / last page |
 | `Home` / `End` | First page; in expression input, move cursor to start / end |
 | `PgUp` / `PgDn` | Page up / down in detail view |
-| `Enter` | Open session detail; in detail, add field to expression |
+| `Enter` | Open session detail; in detail or summary, add field to expression |
 | `Esc` | Close overlay / cancel search |
-| `r` | Refresh data |
-| `/` | Search expression or filter (`Enter` to apply, `Esc` to cancel); in session detail, live-filter fields |
+| `r` | Refresh |
+| `/` | Search expression (`Enter` to apply, `Esc` to cancel); in session detail, live-filter fields |
 | `t` / `T` | Cycle time range forward / backward |
-| `s` | Next sort column |
+| `s` | Next sort column (Value/Sessions/Packets/Bytes on summary tab) |
 | `S` | Toggle sort direction (asc / desc) |
 | `g` | Cycle graph size: Off → Small → Large → Off |
 | `G` | Cycle graph type: Sessions → Packets → Bytes; cycle bar chart metric (summary tab) |
