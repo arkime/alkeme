@@ -23,6 +23,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 ## Features
 
 - **Session browsing** — paginated session list with configurable columns and sort order
+- **Column layout** — press `c` to toggle/reorder columns with type-to-filter search, `C` to save/load/delete named layouts via the Arkime API
 - **Summary tab** — select any field to see top values with bar chart and table showing sessions, packets, and bytes; cycle metrics and sort columns
 - **Session detail** — drill into any session to view all captured fields with friendly names
 - **Expression builder** — select any field in session detail to add it to the search expression (AND/AND NOT/OR/OR NOT); array fields show a value picker
@@ -124,6 +125,8 @@ alkeme http://viewer.example.com:8005 --auth basic
 | `f` | Open field selector (summary tab) |
 | `1` / `2` / `3` | Switch stats sub-tab (Capture / DB Stats / DB Indices) |
 | `p` | View packet hex dump (sessions list or detail) |
+| `c` | Open column editor (toggle/reorder fields) |
+| `C` | Open layouts popup (save/load/delete named layouts) |
 | `h` / `?` | Show context-sensitive help overlay |
 | `q` | Quit |
 

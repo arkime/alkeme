@@ -43,6 +43,17 @@ pub struct ArkimeField {
     pub exp: String,
     #[serde(default, rename = "friendlyName")]
     pub friendly_name: String,
+    #[serde(default)]
+    pub regex: Option<String>,
+    #[serde(default, rename = "noFacet")]
+    pub no_facet: Option<String>,
+}
+
+impl ArkimeField {
+    /// Fields with regex or noFacet="true" should be hidden from user selectors
+    pub fn is_visible(&self) -> bool {
+        self.regex.is_none() && self.no_facet.as_deref() != Some("true")
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -142,6 +153,65 @@ impl FetchClient {
             }
         }
     }
+
+    pub async fn fetch_post(&self, url: &str, form: &[(&str, &str)]) -> Result<String> {
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => {
+                let resp = self.client.post(url).form(form).send().await?;
+                return Ok(resp.text().await?);
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        match self.auth_mode {
+            AuthMode::None => {
+                let resp = self.client.post(url).form(form).send().await?;
+                Ok(resp.text().await?)
+            }
+            AuthMode::Basic => {
+                let mut req = self.client.post(url)
+                    .basic_auth(username, Some(password))
+                    .form(form);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("x-arkime-cookie", cookie.as_str());
+                }
+                let resp = req.send().await?;
+                Ok(resp.text().await?)
+            }
+            AuthMode::Digest => {
+                let resp = self.client.post(url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    return Ok(resp.text().await?);
+                }
+                let www_auth = resp.headers().get("www-authenticate")
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?.to_string();
+                let parsed_url = reqwest::Url::parse(url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else { parsed_url.path().to_string() };
+                let context = digest_auth::AuthContext::new_post::<_, _, _, &[u8]>(username, password, &uri, None);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+                let mut req = self.client.post(url).header("Authorization", auth_header).form(form);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("x-arkime-cookie", cookie.as_str());
+                }
+                let resp = req.send().await?;
+                Ok(resp.text().await?)
+            }
+            AuthMode::Form => {
+                let mut req = self.client.post(url).form(form);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("Cookie", cookie.as_str());
+                    req = req.header("x-arkime-cookie", cookie.as_str());
+                }
+                let resp = req.send().await?;
+                Ok(resp.text().await?)
+            }
+        }
+    }
 }
 
 pub struct ArkimeClient {
@@ -196,17 +266,10 @@ impl ArkimeClient {
         if resp.status() != reqwest::StatusCode::FOUND && !resp.status().is_success() {
             anyhow::bail!("Form login failed: HTTP {}", resp.status());
         }
-        // Fetch /api/user/settings to get the ARKIME-COOKIE (needed for POST CSRF protection)
+        // Fetch /api/user/settings to get the ARKIME-COOKIE (needed for CSRF protection)
         let settings_url = format!("{}/api/user/settings", self.base_url);
         let resp = self.client.get(&settings_url).send().await?;
-        for cookie_val in resp.headers().get_all("set-cookie") {
-            if let Ok(s) = cookie_val.to_str()
-                && s.starts_with("ARKIME-COOKIE=")
-                    && let Some(val) = s.strip_prefix("ARKIME-COOKIE=") {
-                        let val = val.split(';').next().unwrap_or(val);
-                        self.arkime_cookie = Some(urlencoding::decode(val).unwrap_or_default().into_owned());
-                    }
-        }
+        self.extract_cookie(&resp);
         self.logged_in = true;
         Ok(())
     }
@@ -283,6 +346,84 @@ impl ArkimeClient {
         }
     }
 
+    /// Like authenticated_get but sends x-arkime-cookie header (for endpoints with checkCookieToken)
+    async fn authenticated_get_with_cookie(&self, url: &str) -> Result<String> {
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => {
+                let mut req = self.client.get(url);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("x-arkime-cookie", cookie);
+                }
+                let resp = req.send().await?;
+                return Ok(resp.text().await?);
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        match self.auth_mode {
+            AuthMode::None => {
+                let mut req = self.client.get(url);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("x-arkime-cookie", cookie);
+                }
+                let resp = req.send().await?;
+                Ok(resp.text().await?)
+            }
+            AuthMode::Basic => {
+                let mut req = self.client.get(url)
+                    .basic_auth(username, Some(password));
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("x-arkime-cookie", cookie);
+                }
+                let resp = req.send().await?;
+                if !resp.status().is_success() {
+                    anyhow::bail!("HTTP {}: Authentication failed", resp.status());
+                }
+                Ok(resp.text().await?)
+            }
+            AuthMode::Digest => {
+                let resp = self.client.get(url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    return Ok(resp.text().await?);
+                }
+                let www_auth = resp.headers().get("www-authenticate")
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?
+                    .to_string();
+                let parsed_url = reqwest::Url::parse(url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else { parsed_url.path().to_string() };
+                let context = digest_auth::AuthContext::new(username, password, &uri);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+                let mut req = self.client.get(url).header("Authorization", auth_header);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("x-arkime-cookie", cookie);
+                }
+                let resp = req.send().await?;
+                if !resp.status().is_success() {
+                    let status = resp.status();
+                    let text = resp.text().await.unwrap_or_default();
+                    anyhow::bail!("HTTP {}: {}", status, text);
+                }
+                Ok(resp.text().await?)
+            }
+            AuthMode::Form => {
+                let mut req = self.client.get(url);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("x-arkime-cookie", cookie);
+                }
+                let resp = req.send().await?;
+                if !resp.status().is_success() {
+                    anyhow::bail!("HTTP {}: Authentication failed (session expired?)", resp.status());
+                }
+                Ok(resp.text().await?)
+            }
+        }
+    }
+
     async fn authenticated_post(&self, url: &str, form: &[(&str, &str)]) -> Result<String> {
         let username = match self.username.as_deref() {
             Some(u) => u,
@@ -299,11 +440,13 @@ impl ArkimeClient {
                 Ok(resp.text().await?)
             }
             AuthMode::Basic => {
-                let resp = self.client.post(url)
+                let mut req = self.client.post(url)
                     .basic_auth(username, Some(password))
-                    .form(form)
-                    .send()
-                    .await?;
+                    .form(form);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("x-arkime-cookie", cookie);
+                }
+                let resp = req.send().await?;
                 if !resp.status().is_success() {
                     anyhow::bail!("HTTP {}: Authentication failed", resp.status());
                 }
@@ -332,12 +475,14 @@ impl ArkimeClient {
                 let mut prompt = digest_auth::parse(&www_auth)?;
                 let auth_header = prompt.respond(&context)?.to_header_string();
 
-                let resp = self.client
+                let mut req = self.client
                     .post(url)
                     .header("Authorization", auth_header)
-                    .form(form)
-                    .send()
-                    .await?;
+                    .form(form);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header("x-arkime-cookie", cookie);
+                }
+                let resp = req.send().await?;
 
                 if !resp.status().is_success() {
                     anyhow::bail!("HTTP {}: Authentication failed", resp.status());
@@ -595,26 +740,245 @@ impl ArkimeClient {
         self.authenticated_post(&url, &[("tags", tags)]).await
     }
 
-    pub async fn get_summary(&self, field: &str, expression: &str, date: &str) -> Result<Vec<SummaryItem>> {
+    pub fn summary_url(&self, expression: &str, date: &str) -> String {
         let mut url = format!("{}/api/sessions/summary?date={}", self.base_url, urlencoding::encode(date));
         if !expression.is_empty() {
             url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
         }
-        let body = self.authenticated_post(&url, &[("fields", field)]).await?;
-        let arr: Vec<Value> = serde_json::from_str(&body)?;
-        // The response is a JSON array: [phase1_stats, {field, data: [...]}, {}]
-        // We want the second element's data array
-        if arr.len() >= 2
-            && let Some(data) = arr[1].get("data") {
-                let items: Vec<SummaryItem> = serde_json::from_value(data.clone())?;
-                return Ok(items);
-            }
-        Ok(Vec::new())
+        url
     }
 
     pub fn packets_url(&self, node: &str, id: &str, raw: bool) -> String {
         format!("{}/api/session/{}/{}/packets?base=hex&ts=true&packets=10000&showFrames={}",
             self.base_url, urlencoding::encode(node), urlencoding::encode(id), raw)
+    }
+
+    /// Fetch the ARKIME-COOKIE from /api/user/settings (has setCookie middleware).
+    /// Must be called once at startup for layout API support.
+    pub async fn fetch_cookie(&mut self) -> Result<()> {
+        let url = format!("{}/api/user/settings", self.base_url);
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => return Ok(()),
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        let resp = match self.auth_mode {
+            AuthMode::None => self.client.get(&url).send().await?,
+            AuthMode::Basic => {
+                self.client.get(&url)
+                    .basic_auth(username, Some(password))
+                    .send().await?
+            }
+            AuthMode::Digest => {
+                let resp = self.client.get(&url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    self.extract_cookie(&resp);
+                    return Ok(());
+                }
+                let www_auth = resp.headers().get("www-authenticate")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                let parsed_url = reqwest::Url::parse(&url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else { parsed_url.path().to_string() };
+                let context = digest_auth::AuthContext::new(username, password, &uri);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+                self.client.get(&url).header("Authorization", auth_header).send().await?
+            }
+            AuthMode::Form => return Ok(()), // already captured during login
+        };
+        self.extract_cookie(&resp);
+        Ok(())
+    }
+
+    fn extract_cookie(&mut self, resp: &reqwest::Response) {
+        for cookie_val in resp.headers().get_all("set-cookie") {
+            if let Ok(s) = cookie_val.to_str()
+                && s.starts_with("ARKIME-COOKIE=")
+                    && let Some(val) = s.strip_prefix("ARKIME-COOKIE=") {
+                        let val = val.split(';').next().unwrap_or(val);
+                        self.arkime_cookie = Some(val.to_string());
+                    }
+        }
+    }
+
+    async fn authenticated_post_json(&self, url: &str, body: &Value) -> Result<Value> {
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => {
+                let resp = self.client.post(url)
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+                    .send().await?;
+                return Ok(resp.json().await?);
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        let mut req = match self.auth_mode {
+            AuthMode::None => self.client.post(url),
+            AuthMode::Basic => self.client.post(url).basic_auth(username, Some(password)),
+            AuthMode::Digest => {
+                let resp = self.client.post(url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    // shouldn't happen, but handle it
+                    return Ok(serde_json::from_str(&resp.text().await?)?);
+                }
+                let www_auth = resp.headers().get("www-authenticate")
+                    .and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+                let parsed_url = reqwest::Url::parse(url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else { parsed_url.path().to_string() };
+                let context = digest_auth::AuthContext::new_post::<_, _, _, &[u8]>(username, password, &uri, None);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+                self.client.post(url).header("Authorization", auth_header)
+            }
+            AuthMode::Form => self.client.post(url),
+        };
+        if let Some(ref cookie) = self.arkime_cookie {
+            req = req.header("x-arkime-cookie", cookie);
+        }
+        let resp = req
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("HTTP {}: {}", status, text);
+        }
+        Ok(resp.json().await?)
+    }
+
+    async fn authenticated_put_json(&self, url: &str, body: &Value) -> Result<Value> {
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => {
+                let resp = self.client.put(url)
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+                    .send().await?;
+                return Ok(resp.json().await?);
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        let mut req = match self.auth_mode {
+            AuthMode::None => self.client.put(url),
+            AuthMode::Basic => self.client.put(url).basic_auth(username, Some(password)),
+            AuthMode::Digest => {
+                let resp = self.client.put(url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    return Ok(serde_json::from_str(&resp.text().await?)?);
+                }
+                let www_auth = resp.headers().get("www-authenticate")
+                    .and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+                let parsed_url = reqwest::Url::parse(url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else { parsed_url.path().to_string() };
+                let context = digest_auth::AuthContext::new_with_method::<_, _, _, &[u8]>(username, password, &uri, None, digest_auth::HttpMethod::PUT);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+                self.client.put(url).header("Authorization", auth_header)
+            }
+            AuthMode::Form => self.client.put(url),
+        };
+        if let Some(ref cookie) = self.arkime_cookie {
+            req = req.header("x-arkime-cookie", cookie);
+        }
+        let resp = req
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("HTTP {}: {}", status, text);
+        }
+        Ok(resp.json().await?)
+    }
+
+    async fn authenticated_delete(&self, url: &str) -> Result<Value> {
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => {
+                let resp = self.client.delete(url).send().await?;
+                return Ok(resp.json().await?);
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        let mut req = match self.auth_mode {
+            AuthMode::None => self.client.delete(url),
+            AuthMode::Basic => self.client.delete(url).basic_auth(username, Some(password)),
+            AuthMode::Digest => {
+                let resp = self.client.delete(url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    return Ok(serde_json::from_str(&resp.text().await?)?);
+                }
+                let www_auth = resp.headers().get("www-authenticate")
+                    .and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+                let parsed_url = reqwest::Url::parse(url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else { parsed_url.path().to_string() };
+                let context = digest_auth::AuthContext::new_with_method::<_, _, _, &[u8]>(username, password, &uri, None, digest_auth::HttpMethod::DELETE);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+                self.client.delete(url).header("Authorization", auth_header)
+            }
+            AuthMode::Form => self.client.delete(url),
+        };
+        if let Some(ref cookie) = self.arkime_cookie {
+            req = req.header("x-arkime-cookie", cookie);
+        }
+        let resp = req.send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("HTTP {}: {}", status, text);
+        }
+        Ok(resp.json().await?)
+    }
+
+    // Layout API methods
+    pub async fn get_layouts(&self) -> Result<Value> {
+        let url = format!("{}/api/user/layouts/sessionstable", self.base_url);
+        let body = self.authenticated_get_with_cookie(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    pub async fn create_layout(&self, name: &str, columns: &[String], sort_field: &str, sort_dir: &str) -> Result<Value> {
+        let url = format!("{}/api/user/layouts/sessionstable", self.base_url);
+        let body = serde_json::json!({
+            "name": name,
+            "columns": columns,
+            "order": [[sort_field, sort_dir]]
+        });
+        self.authenticated_post_json(&url, &body).await
+    }
+
+    pub async fn update_layout(&self, name: &str, columns: &[String], sort_field: &str, sort_dir: &str) -> Result<Value> {
+        let url = format!("{}/api/user/layouts/sessionstable", self.base_url);
+        let body = serde_json::json!({
+            "name": name,
+            "columns": columns,
+            "order": [[sort_field, sort_dir]]
+        });
+        self.authenticated_put_json(&url, &body).await
+    }
+
+    pub async fn delete_layout(&self, name: &str) -> Result<Value> {
+        let url = format!("{}/api/user/layouts/sessionstable/{}", self.base_url, urlencoding::encode(name));
+        self.authenticated_delete(&url).await
     }
 }
 

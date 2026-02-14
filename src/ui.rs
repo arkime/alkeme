@@ -1,4 +1,4 @@
-use crate::app::{App, DetailActionMenu, GraphType, InputMode, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, is_hidden_detail_field};
+use crate::app::{App, ColumnEditorMode, DetailActionMenu, GraphType, InputMode, LayoutPopupMode, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, is_hidden_detail_field};
 use chrono::{DateTime, Local};
 use ratatui::{
     prelude::*,
@@ -134,6 +134,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
     if app.packets_view.is_some() {
         draw_packets(f, app, f.area());
+    }
+    if app.show_column_editor {
+        draw_column_editor(f, app, f.area());
+    }
+    if app.show_layout_popup {
+        draw_layout_popup(f, app, f.area());
     }
     if app.show_help {
         draw_help(f, app, f.area());
@@ -432,39 +438,34 @@ fn draw_sessions(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
     // header row + borders = 3 lines overhead
     app.visible_rows = area.height.saturating_sub(3) as usize;
-    let labels = [
-        "IP", "First Packet", "Last Packet", "Src IP", "SrcPort",
-        "Dst IP", "DstPort", "Protocols", "Src Pkts", "Dst Pkts",
-        "Src Bytes", "Dst Bytes",
-    ];
-    let header_cells = labels
-    .iter()
-    .enumerate()
-    .map(|(i, h)| {
-        let label = if i == app.sort_column {
-            let arrow = if app.sort_desc { "▼" } else { "▲" };
-            format!("{h}{arrow}")
-        } else {
-            h.to_string()
-        };
-        let style = if i == app.sort_column {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        };
-        Cell::from(label).style(style)
-    });
+    let header_cells = app.columns
+        .iter()
+        .enumerate()
+        .map(|(i, col)| {
+            let label = if i == app.sort_column {
+                let arrow = if app.sort_desc { "▼" } else { "▲" };
+                format!("{}{arrow}", col.label)
+            } else {
+                col.label.clone()
+            };
+            let style = if i == app.sort_column {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            };
+            Cell::from(label).style(style)
+        });
     let header = Row::new(header_cells).height(1);
 
     let rows: Vec<Row> = app
         .sessions
         .iter()
         .map(|session| {
-            let cells = app.session_fields.iter().map(|field| {
-                let val = session.get(field).unwrap_or(&serde_json::Value::Null);
-                let text = if field == "ipProtocol" {
+            let cells = app.columns.iter().map(|col| {
+                let val = session.get(&col.field).unwrap_or(&serde_json::Value::Null);
+                let text = if col.field == "ipProtocol" {
                     ip_protocol_str(val)
-                } else if let Some(field_type) = app.date_fields.get(field.as_str()) {
+                } else if let Some(field_type) = app.date_fields.get(col.field.as_str()) {
                     format_epoch(val, field_type)
                 } else {
                     match val {
@@ -484,20 +485,9 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let widths = [
-        Constraint::Length(4),  // ipProtocol
-        Constraint::Length(20), // firstPacket
-        Constraint::Length(20), // lastPacket
-        Constraint::Length(16), // src ip
-        Constraint::Length(7),  // src port
-        Constraint::Length(16), // dst ip
-        Constraint::Length(7),  // dst port
-        Constraint::Length(20), // protocols
-        Constraint::Length(9),  // src pkts
-        Constraint::Length(9),  // dst pkts
-        Constraint::Length(10), // src bytes
-        Constraint::Length(10), // dst bytes
-    ];
+    let widths: Vec<Constraint> = app.columns.iter()
+        .map(|col| Constraint::Length(col.width))
+        .collect();
 
     let end = (app.page_start + app.sessions.len() as u64).min(app.sessions_filtered);
     let page_label = if app.sessions_filtered > 0 {
@@ -1599,6 +1589,37 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
+    } else if app.show_column_editor {
+        ("Column Editor", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate fields")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Space / Enter"), Span::raw("Toggle field on/off")]),
+            Line::from(vec![key("/"), Span::raw("Filter fields")]),
+            Line::from(vec![key("m"), Span::raw("Reorder mode (↑/↓ to move)")]),
+            Line::from(vec![key("a"), Span::raw("Apply changes")]),
+            Line::from(vec![key("d"), Span::raw("Reset to defaults")]),
+            Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
+            Line::from(vec![key("q"), Span::raw("Close")]),
+        ])
+    } else if app.show_layout_popup {
+        ("Layouts", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate layouts")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Select / save / load layout")]),
+            Line::from(vec![key("/"), Span::raw("Filter layouts")]),
+            Line::from(vec![key("x / Delete"), Span::raw("Delete selected layout")]),
+            Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
+            Line::from(vec![key("q"), Span::raw("Close")]),
+        ])
     } else {
         ("Sessions", vec![
             hdr!("Navigation"),
@@ -1622,6 +1643,8 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("a"), Span::raw("Session actions")]),
             Line::from(vec![key("A"), Span::raw("All sessions actions")]),
+            Line::from(vec![key("c"), Span::raw("Column editor")]),
+            Line::from(vec![key("C"), Span::raw("Layouts (save/load)")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     };
@@ -1766,6 +1789,250 @@ fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
             let right_area = Rect::new(inner.x + half_width, y, inner.width - half_width, 1);
             let line = Line::from(right.clone());
             f.render_widget(Paragraph::new(line), right_area);
+        }
+    }
+}
+
+fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
+    let popup_width = 60u16.min(area.width.saturating_sub(4));
+    let popup_height = (area.height as f32 * 0.8) as u16;
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let mode_label = if app.column_editor_mode == ColumnEditorMode::Reorder { " [REORDER] " } else { "" };
+    let bottom = if app.column_editor_filter.is_empty() {
+        " space:toggle /:filter m:move a:apply d:default Esc:close "
+    } else {
+        " space:toggle ↑↓:navigate Esc:clear filter "
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(format!(" Columns{mode_label}"))
+        .title_bottom(Line::from(bottom).fg(Color::DarkGray));
+
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    // Filter bar at top
+    let filter_height = 1u16;
+    let filter_area = Rect::new(inner.x, inner.y, inner.width, filter_height);
+    let list_area = Rect::new(inner.x, inner.y + filter_height, inner.width, inner.height.saturating_sub(filter_height));
+
+    let filter_active = !app.column_editor_filter.is_empty();
+    let filter_text = app.column_editor_filter.trim_matches('\0');
+    let filter_display = if !filter_active {
+        Line::from(vec![
+            Span::styled("  / to filter", Style::default().fg(Color::DarkGray)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("  /", Style::default().fg(Color::Yellow)),
+            Span::raw(filter_text),
+            Span::styled("█", Style::default().fg(Color::White)),
+        ])
+    };
+    f.render_widget(Paragraph::new(vec![filter_display]), filter_area);
+
+    // Build filtered view
+    let filter_lower = filter_text.to_lowercase();
+    let filtered: Vec<usize> = if filter_lower.is_empty() {
+        (0..app.column_editor_available.len()).collect()
+    } else {
+        app.column_editor_available.iter().enumerate()
+            .filter(|(_, item)| {
+                item.exp.to_lowercase().contains(&filter_lower)
+                    || item.friendly_name.to_lowercase().contains(&filter_lower)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    };
+
+    let visible_rows = list_area.height as usize;
+    let total = filtered.len();
+
+    // Find position of selected in filtered list
+    let sel_pos = filtered.iter().position(|&i| i == app.column_editor_selected).unwrap_or(0);
+
+    let scroll_offset = if sel_pos >= visible_rows {
+        sel_pos - visible_rows + 1
+    } else {
+        0
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+    for &idx in filtered.iter().skip(scroll_offset).take(visible_rows) {
+        let item = &app.column_editor_available[idx];
+        let is_selected = idx == app.column_editor_selected;
+        let checkbox = if item.enabled { "[x] " } else { "[ ] " };
+        let marker = if is_selected && app.column_editor_mode == ColumnEditorMode::Reorder {
+            "≡ "
+        } else if is_selected {
+            "► "
+        } else {
+            "  "
+        };
+        let display = if item.friendly_name.is_empty() || item.friendly_name == item.exp {
+            item.exp.clone()
+        } else {
+            format!("{} ({})", item.exp, item.friendly_name)
+        };
+        let text = format!("{marker}{checkbox}{display}");
+        let style = if is_selected {
+            Style::default().fg(Color::Black).bg(Color::Yellow)
+        } else if item.enabled {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        lines.push(Line::from(text).style(style));
+    }
+
+    // Show scroll indicator
+    if total > visible_rows && !lines.is_empty() {
+        let pct = if total > 1 { (sel_pos * 100) / (total - 1).max(1) } else { 0 };
+        let indicator = format!(" ↕ {}/{} ({}%) ", sel_pos + 1, total, pct);
+        let last = lines.len() - 1;
+        lines[last] = Line::from(indicator).style(Style::default().fg(Color::DarkGray));
+    }
+
+    let paragraph = Paragraph::new(lines);
+    f.render_widget(paragraph, list_area);
+}
+
+fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
+    let popup_width = 44u16.min(area.width.saturating_sub(4));
+    let popup_height = (app.saved_layouts.len() as u16 + 8).min(area.height.saturating_sub(4));
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    match app.layout_popup_mode {
+        LayoutPopupMode::ConfirmDelete => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Red))
+                .title(" Confirm Delete ");
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+            let lines = vec![
+                Line::from(""),
+                Line::from(format!("  Delete layout '{}'?", app.layout_delete_name))
+                    .style(Style::default().fg(Color::Yellow)),
+                Line::from(""),
+                Line::from("  y: yes  any other key: cancel")
+                    .style(Style::default().fg(Color::DarkGray)),
+            ];
+            f.render_widget(Paragraph::new(lines), inner);
+        }
+        LayoutPopupMode::List => {
+            let filter_active = !app.layout_filter.is_empty();
+            let bottom = if filter_active {
+                " Enter:select ↑↓:navigate Esc:clear "
+            } else {
+                " Enter:select /:filter x:delete Esc:close "
+            };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" Layouts ")
+                .title_bottom(Line::from(bottom).fg(Color::DarkGray));
+
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+
+            let mut lines: Vec<Line> = Vec::new();
+
+            if !filter_active {
+                // "Save Current" option
+                let style = if app.layout_popup_selected == 0 {
+                    Style::default().fg(Color::Black).bg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::Cyan)
+                };
+                lines.push(Line::from("  [+] Save Current Layout").style(style));
+
+                // "Default" option
+                let style = if app.layout_popup_selected == 1 {
+                    Style::default().fg(Color::Black).bg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                lines.push(Line::from("  ↺ Default Columns").style(style));
+
+                // Separator
+                lines.push(Line::from("  ────────────────────────────────").style(Style::default().fg(Color::DarkGray)));
+            } else {
+                // Filter bar
+                let filter_text = app.layout_filter.trim_matches('\0');
+                lines.push(Line::from(vec![
+                    Span::styled("  /", Style::default().fg(Color::Yellow)),
+                    Span::raw(filter_text),
+                    Span::styled("█", Style::default().fg(Color::White)),
+                ]));
+            }
+
+            // Saved layouts (filtered if filter active)
+            let filter_text = app.layout_filter.trim_matches('\0').to_lowercase();
+            let mut any_shown = false;
+            for (i, layout) in app.saved_layouts.iter().enumerate() {
+                if !filter_text.is_empty() && !layout.name.to_lowercase().contains(&filter_text) {
+                    continue;
+                }
+                any_shown = true;
+                let is_selected = app.layout_popup_selected == i + 2;
+                let style = if is_selected {
+                    Style::default().fg(Color::Black).bg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::Green)
+                };
+                let col_count = layout.columns.len();
+                lines.push(Line::from(format!("  {} ({} cols)", layout.name, col_count)).style(style));
+            }
+
+            if !any_shown {
+                lines.push(Line::from("  (no saved layouts)").style(Style::default().fg(Color::DarkGray)));
+            }
+
+            let paragraph = Paragraph::new(lines);
+            f.render_widget(paragraph, inner);
+        }
+        LayoutPopupMode::SaveInput => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" Save Layout ");
+
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+
+            let mut lines: Vec<Line> = Vec::new();
+            lines.push(Line::from("  Layout name:").style(Style::default().fg(Color::Yellow)));
+
+            // Input field with cursor
+            let name = &app.layout_save_name;
+            let cursor = app.layout_save_cursor;
+            let mut spans = vec![Span::raw("  ")];
+            if cursor < name.len() {
+                spans.push(Span::raw(&name[..cursor]));
+                spans.push(Span::styled(&name[cursor..cursor+1], Style::default().bg(Color::White).fg(Color::Black)));
+                spans.push(Span::raw(&name[cursor+1..]));
+            } else {
+                spans.push(Span::raw(name.as_str()));
+                spans.push(Span::styled(" ", Style::default().bg(Color::White)));
+            }
+            lines.push(Line::from(spans));
+
+            lines.push(Line::from(""));
+            lines.push(Line::from("  Enter: save  Esc: cancel").style(Style::default().fg(Color::DarkGray)));
+
+            let paragraph = Paragraph::new(lines);
+            f.render_widget(paragraph, inner);
         }
     }
 }

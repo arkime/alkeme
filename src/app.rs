@@ -12,6 +12,76 @@ pub fn is_non_actionable_field(key: &str) -> bool {
     key == "@timestamp"
 }
 
+#[derive(Clone)]
+pub struct ColumnDef {
+    pub field: String,    // dbField name (used for API calls)
+    pub exp: String,      // expression name (shown to user)
+    pub label: String,
+    pub width: u16,
+}
+
+impl ColumnDef {
+    pub fn new(field: &str, exp: &str, label: &str, width: u16) -> Self {
+        Self { field: field.into(), exp: exp.into(), label: label.into(), width }
+    }
+}
+
+pub fn default_columns() -> Vec<ColumnDef> {
+    vec![
+        ColumnDef::new("ipProtocol", "ip.protocol", "IP", 4),
+        ColumnDef::new("firstPacket", "starttime", "First Packet", 20),
+        ColumnDef::new("lastPacket", "stoptime", "Last Packet", 20),
+        ColumnDef::new("source.ip", "ip.src", "Src IP", 16),
+        ColumnDef::new("source.port", "port.src", "SrcPort", 7),
+        ColumnDef::new("destination.ip", "ip.dst", "Dst IP", 16),
+        ColumnDef::new("destination.port", "port.dst", "DstPort", 7),
+        ColumnDef::new("protocol", "protocols", "Protocols", 20),
+        ColumnDef::new("source.packets", "packets.src", "Src Pkts", 9),
+        ColumnDef::new("destination.packets", "packets.dst", "Dst Pkts", 9),
+        ColumnDef::new("source.bytes", "bytes.src", "Src Bytes", 10),
+        ColumnDef::new("destination.bytes", "bytes.dst", "Dst Bytes", 10),
+    ]
+}
+
+#[derive(Clone)]
+pub struct ColumnEditorItem {
+    pub db_field: String,
+    pub exp: String,
+    pub friendly_name: String,
+    pub enabled: bool,
+}
+
+/// Derive a reasonable column width from field type
+pub fn width_for_field(field_type: &str) -> u16 {
+    match field_type {
+        "ip" => 16,
+        "integer" => 10,
+        "seconds" | "date" => 20,
+        _ => 16,
+    }
+}
+
+#[derive(Clone)]
+pub struct SavedLayout {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub sort_field: String,
+    pub sort_dir: String,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ColumnEditorMode {
+    Browse,
+    Reorder,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum LayoutPopupMode {
+    List,
+    SaveInput,
+    ConfirmDelete,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tab {
     Arkime,
@@ -405,6 +475,20 @@ pub struct App {
     pub sessions_total: u64,
     pub sessions_filtered: u64,
     pub session_fields: Vec<String>,
+    pub columns: Vec<ColumnDef>,
+    pub saved_layouts: Vec<SavedLayout>,
+    pub show_column_editor: bool,
+    pub column_editor_selected: usize,
+    pub column_editor_mode: ColumnEditorMode,
+    pub column_editor_available: Vec<ColumnEditorItem>,
+    pub column_editor_filter: String,
+    pub show_layout_popup: bool,
+    pub layout_popup_mode: LayoutPopupMode,
+    pub layout_popup_selected: usize,
+    pub layout_save_name: String,
+    pub layout_save_cursor: usize,
+    pub layout_delete_name: String,
+    pub layout_filter: String,
     pub page_start: u64,
     pub page_size: u64,
     pub selected_session: usize,
@@ -421,6 +505,7 @@ pub struct App {
     pub loading_owl_dx: i16,
     pub loading_owl_tick: std::time::Instant,
     pub pending_packets_fetch: bool,
+    pub pending_summary_fetch: bool,
     pub packets_node_pending: String,
     pub packets_id_pending: String,
     pub packets_total_pending: u64,
@@ -500,6 +585,20 @@ impl App {
                 "source.bytes".into(),
                 "destination.bytes".into(),
             ],
+            columns: default_columns(),
+            saved_layouts: Vec::new(),
+            show_column_editor: false,
+            column_editor_selected: 0,
+            column_editor_mode: ColumnEditorMode::Browse,
+            column_editor_available: Vec::new(),
+            column_editor_filter: String::new(),
+            show_layout_popup: false,
+            layout_popup_mode: LayoutPopupMode::List,
+            layout_popup_selected: 0,
+            layout_save_name: String::new(),
+            layout_save_cursor: 0,
+            layout_delete_name: String::new(),
+            layout_filter: String::new(),
             page_start: 0,
             page_size: 100,
             selected_session: 0,
@@ -516,6 +615,7 @@ impl App {
             loading_owl_dx: 1,
             loading_owl_tick: std::time::Instant::now(),
             pending_packets_fetch: false,
+            pending_summary_fetch: false,
             packets_node_pending: String::new(),
             packets_id_pending: String::new(),
             packets_total_pending: 0,
@@ -564,6 +664,155 @@ impl App {
 
     pub fn is_detail_view(&self) -> bool {
         self.session_view == SessionView::Detail || self.stats_view == StatsView::Detail
+    }
+
+    /// Rebuild session_fields from columns
+    pub fn sync_session_fields(&mut self) {
+        self.session_fields = self.columns.iter().map(|c| c.field.clone()).collect();
+        if self.sort_column >= self.columns.len() {
+            self.sort_column = 0;
+        }
+    }
+
+    /// Apply a saved layout
+    pub fn apply_layout(&mut self, layout: &SavedLayout) {
+        let mut cols = Vec::new();
+        for field in &layout.columns {
+            // Resolve to dbField and exp names (layout may store exp or dbField)
+            let found = self.all_fields.iter()
+                .find(|f| f.exp == *field || f.db_field == *field);
+            let db_field = found.map(|f| f.db_field.clone()).unwrap_or_else(|| field.clone());
+            let exp = found.map(|f| f.exp.clone()).unwrap_or_else(|| field.clone());
+            let label = self.field_friendly_map.get(db_field.as_str())
+                .cloned()
+                .unwrap_or_else(|| field.clone());
+            let width = found.map(|f| width_for_field(&f.field_type)).unwrap_or(16);
+            // Use default widths/labels for known fields
+            let width = default_columns().iter()
+                .find(|c| c.field == db_field)
+                .map(|c| c.width)
+                .unwrap_or(width);
+            let label = default_columns().iter()
+                .find(|c| c.field == db_field)
+                .map(|c| c.label.clone())
+                .unwrap_or(label);
+            cols.push(ColumnDef::new(&db_field, &exp, &label, width));
+        }
+        if !cols.is_empty() {
+            self.columns = cols;
+            self.sync_session_fields();
+            // Apply sort from layout (resolve to dbField)
+            if !layout.sort_field.is_empty() {
+                let sort_db = self.all_fields.iter()
+                    .find(|f| f.exp == layout.sort_field || f.db_field == layout.sort_field)
+                    .map(|f| f.db_field.clone())
+                    .unwrap_or_else(|| layout.sort_field.clone());
+                if let Some(idx) = self.columns.iter().position(|c| c.field == sort_db) {
+                    self.sort_column = idx;
+                    self.sort_desc = layout.sort_dir == "desc";
+                }
+            }
+        }
+    }
+
+    /// Build column_editor_available from all_fields + current columns
+    pub fn build_column_editor(&mut self) {
+        let enabled: std::collections::HashSet<String> = self.columns.iter().map(|c| c.field.clone()).collect();
+        let mut items: Vec<ColumnEditorItem> = Vec::new();
+        // Add enabled columns first, in order
+        for col in &self.columns {
+            let friendly = self.field_friendly_map.get(col.field.as_str())
+                .cloned()
+                .unwrap_or_else(|| col.label.clone());
+            items.push(ColumnEditorItem {
+                db_field: col.field.clone(),
+                exp: col.exp.clone(),
+                friendly_name: friendly,
+                enabled: true,
+            });
+        }
+        // Add remaining fields (sorted by exp), excluding hidden fields
+        let mut remaining: Vec<&ArkimeField> = self.all_fields.iter()
+            .filter(|f| !f.db_field.is_empty() && !enabled.contains(&f.db_field) && f.is_visible())
+            .collect();
+        remaining.sort_by(|a, b| a.exp.cmp(&b.exp));
+        for field in remaining {
+            items.push(ColumnEditorItem {
+                db_field: field.db_field.clone(),
+                exp: field.exp.clone(),
+                friendly_name: field.friendly_name.clone(),
+                enabled: false,
+            });
+        }
+        self.column_editor_available = items;
+        self.column_editor_selected = 0;
+        self.column_editor_mode = ColumnEditorMode::Browse;
+        self.column_editor_filter.clear();
+    }
+
+    /// Apply column editor selections back to columns
+    pub fn apply_column_editor(&mut self) {
+        let mut new_cols = Vec::new();
+        for item in &self.column_editor_available {
+            if !item.enabled { continue; }
+            let width = default_columns().iter()
+                .find(|c| c.field == item.db_field)
+                .map(|c| c.width)
+                .unwrap_or_else(|| {
+                    self.all_fields.iter()
+                        .find(|f| f.db_field == item.db_field)
+                        .map(|f| width_for_field(&f.field_type))
+                        .unwrap_or(16)
+                });
+            let label = default_columns().iter()
+                .find(|c| c.field == item.db_field)
+                .map(|c| c.label.clone())
+                .unwrap_or_else(|| item.friendly_name.clone());
+            new_cols.push(ColumnDef::new(&item.db_field, &item.exp, &label, width));
+        }
+        if !new_cols.is_empty() {
+            self.columns = new_cols;
+            self.sync_session_fields();
+        }
+    }
+
+    pub async fn fetch_layouts(&mut self) {
+        match self.client.get_layouts().await {
+            Ok(val) => {
+                // Response can be an array of layouts or an object keyed by name
+                let mut layouts = Vec::new();
+                let items: Vec<&Value> = if let Some(arr) = val.as_array() {
+                    arr.iter().collect()
+                } else if let Some(obj) = val.as_object() {
+                    obj.values().collect()
+                } else {
+                    Vec::new()
+                };
+                for v in items {
+                    let name = v.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                    if name.is_empty() { continue; }
+                    let columns: Vec<String> = v.get("columns")
+                        .and_then(|c| c.as_array())
+                        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                        .unwrap_or_default();
+                    let (sort_field, sort_dir) = v.get("order")
+                        .and_then(|o| o.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|pair| pair.as_array())
+                        .map(|pair| {
+                            let f = pair.first().and_then(|x| x.as_str()).unwrap_or("").to_string();
+                            let d = pair.get(1).and_then(|x| x.as_str()).unwrap_or("asc").to_string();
+                            (f, d)
+                        })
+                        .unwrap_or_default();
+                    layouts.push(SavedLayout { name, columns, sort_field, sort_dir });
+                }
+                self.saved_layouts = layouts;
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching layouts: {e}");
+            }
+        }
     }
 
     pub fn remove_enabled(&self) -> bool {
@@ -694,23 +943,12 @@ impl App {
         }
     }
 
-    pub async fn fetch_summary(&mut self) {
+    pub fn request_summary_fetch(&mut self) {
         if self.summary_field.is_empty() {
             return;
         }
-        self.status_msg = format!("Fetching summary for {}...", self.summary_field);
-        match self.client.get_summary(&self.summary_field, &self.expression, self.time_range.date_value()).await {
-            Ok(items) => {
-                self.summary_data = items;
-                self.sort_summary_data();
-                self.summary_selected = 0;
-                self.summary_table_state.select(Some(0));
-                self.status_msg = format!("Summary: {} items for {}", self.summary_data.len(), self.summary_field);
-            }
-            Err(e) => {
-                self.status_msg = format!("Error: {e}");
-            }
-        }
+        self.show_loading = true;
+        self.pending_summary_fetch = true;
     }
 
     pub fn sort_summary_data(&mut self) {
@@ -737,10 +975,11 @@ impl App {
 
     pub fn filtered_fields(&self) -> Vec<&ArkimeField> {
         if self.field_filter.is_empty() {
-            self.all_fields.iter().collect()
+            self.all_fields.iter().filter(|f| f.is_visible()).collect()
         } else {
             let filter = self.field_filter.to_lowercase();
             self.all_fields.iter()
+                .filter(|f| f.is_visible())
                 .filter(|f| f.exp.to_lowercase().contains(&filter) || f.friendly_name.to_lowercase().contains(&filter))
                 .collect()
         }
@@ -813,6 +1052,14 @@ impl App {
             self.handle_expression_key(key).await;
             return;
         }
+        if self.show_column_editor {
+            self.handle_column_editor_key(key).await;
+            return;
+        }
+        if self.show_layout_popup {
+            self.handle_layout_popup_key(key).await;
+            return;
+        }
         match self.active_tab {
             Tab::Stats => {
                 match self.stats_view {
@@ -844,7 +1091,7 @@ impl App {
                     self.input_mode = InputMode::Normal;
                     self.page_start = 0;
                     if self.active_tab == Tab::Arkime {
-                        self.fetch_summary().await;
+                        self.request_summary_fetch();
                     } else {
                         self.fetch_sessions().await;
                     }
@@ -1020,7 +1267,388 @@ impl App {
             KeyCode::Char('p') => {
                 self.request_packets();
             }
+            KeyCode::Char('c') => {
+                self.build_column_editor();
+                self.show_column_editor = true;
+            }
+            KeyCode::Char('C') => {
+                self.fetch_layouts().await;
+                self.layout_popup_mode = LayoutPopupMode::List;
+                self.layout_popup_selected = 0;
+                self.layout_filter.clear();
+                self.show_layout_popup = true;
+            }
             _ => {}
+        }
+    }
+
+    fn column_editor_filtered_indices(&self) -> Vec<usize> {
+        let filter_text = self.column_editor_filter.trim_matches('\0');
+        if filter_text.is_empty() {
+            return (0..self.column_editor_available.len()).collect();
+        }
+        let filter = filter_text.to_lowercase();
+        self.column_editor_available.iter().enumerate()
+            .filter(|(_, item)| {
+                item.exp.to_lowercase().contains(&filter)
+                    || item.friendly_name.to_lowercase().contains(&filter)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    async fn handle_column_editor_key(&mut self, key: KeyEvent) {
+        let filtered = self.column_editor_filtered_indices();
+        let cur_pos = filtered.iter().position(|&i| i == self.column_editor_selected);
+
+        // When filter is active, route typing keys to filter input
+        if !self.column_editor_filter.is_empty() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.column_editor_filter.clear();
+                    self.column_editor_selected = 0;
+                    return;
+                }
+                KeyCode::Backspace => {
+                    self.column_editor_filter.pop();
+                    let filtered = self.column_editor_filtered_indices();
+                    if !filtered.is_empty() {
+                        self.column_editor_selected = filtered[0];
+                    }
+                    return;
+                }
+                KeyCode::Enter => {
+                    // Toggle selected field
+                    if let Some(item) = self.column_editor_available.get_mut(self.column_editor_selected) {
+                        item.enabled = !item.enabled;
+                    }
+                    return;
+                }
+                KeyCode::Char(' ') => {
+                    if let Some(item) = self.column_editor_available.get_mut(self.column_editor_selected) {
+                        item.enabled = !item.enabled;
+                    }
+                    return;
+                }
+                KeyCode::Down => {
+                    if let Some(pos) = cur_pos {
+                        if pos + 1 < filtered.len() {
+                            self.column_editor_selected = filtered[pos + 1];
+                        }
+                    } else if !filtered.is_empty() {
+                        self.column_editor_selected = filtered[0];
+                    }
+                    return;
+                }
+                KeyCode::Up => {
+                    if let Some(pos) = cur_pos {
+                        if pos > 0 {
+                            self.column_editor_selected = filtered[pos - 1];
+                        }
+                    } else if !filtered.is_empty() {
+                        self.column_editor_selected = filtered[0];
+                    }
+                    return;
+                }
+                KeyCode::Char(c) => {
+                    self.column_editor_filter.push(c);
+                    let filtered = self.column_editor_filtered_indices();
+                    if !filtered.is_empty() {
+                        self.column_editor_selected = filtered[0];
+                    }
+                    return;
+                }
+                _ => { return; }
+            }
+        }
+
+        // Normal mode (no filter active)
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.show_column_editor = false;
+            }
+            KeyCode::Char('h') | KeyCode::Char('?') => {
+                self.show_help = !self.show_help;
+            }
+            KeyCode::Char('/') => {
+                self.column_editor_filter = String::new();
+                // Set filter to empty string — but we need a sentinel to indicate "filter mode active"
+                // Use a special state: push empty and check in the filter-active branch above
+                // Actually, just set it to a placeholder that gets replaced on first char
+                self.column_editor_filter = "\0".to_string(); // sentinel for "filter mode on, no chars yet"
+            }
+            KeyCode::Enter => {
+                if self.column_editor_mode == ColumnEditorMode::Reorder {
+                    self.column_editor_mode = ColumnEditorMode::Browse;
+                } else if let Some(item) = self.column_editor_available.get_mut(self.column_editor_selected) {
+                    item.enabled = !item.enabled;
+                }
+            }
+            KeyCode::Char(' ') => {
+                if let Some(item) = self.column_editor_available.get_mut(self.column_editor_selected) {
+                    item.enabled = !item.enabled;
+                }
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if let Some(pos) = cur_pos {
+                    let new_pos = (pos + 10).min(filtered.len().saturating_sub(1));
+                    self.column_editor_selected = filtered[new_pos];
+                }
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if let Some(pos) = cur_pos {
+                    let new_pos = pos.saturating_sub(10);
+                    self.column_editor_selected = filtered[new_pos];
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.column_editor_mode == ColumnEditorMode::Reorder {
+                    let len = self.column_editor_available.len();
+                    if self.column_editor_selected + 1 < len {
+                        self.column_editor_available.swap(self.column_editor_selected, self.column_editor_selected + 1);
+                        self.column_editor_selected += 1;
+                    }
+                } else if let Some(pos) = cur_pos {
+                    if pos + 1 < filtered.len() {
+                        self.column_editor_selected = filtered[pos + 1];
+                    }
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.column_editor_mode == ColumnEditorMode::Reorder {
+                    if self.column_editor_selected > 0 {
+                        self.column_editor_available.swap(self.column_editor_selected, self.column_editor_selected - 1);
+                        self.column_editor_selected -= 1;
+                    }
+                } else if let Some(pos) = cur_pos {
+                    if pos > 0 {
+                        self.column_editor_selected = filtered[pos - 1];
+                    }
+                }
+            }
+            KeyCode::Char('m') => {
+                if self.column_editor_mode == ColumnEditorMode::Reorder {
+                    self.column_editor_mode = ColumnEditorMode::Browse;
+                } else {
+                    self.column_editor_mode = ColumnEditorMode::Reorder;
+                }
+            }
+            KeyCode::Char('a') => {
+                self.apply_column_editor();
+                self.show_column_editor = false;
+                self.page_start = 0;
+                self.fetch_sessions().await;
+            }
+            KeyCode::Char('d') => {
+                self.columns = default_columns();
+                self.sync_session_fields();
+                self.show_column_editor = false;
+                self.page_start = 0;
+                self.fetch_sessions().await;
+            }
+            _ => {}
+        }
+    }
+
+    fn layout_filtered_indices(&self) -> Vec<usize> {
+        let filter_text = self.layout_filter.trim_matches('\0');
+        if filter_text.is_empty() {
+            return (0..self.saved_layouts.len()).collect();
+        }
+        let filter = filter_text.to_lowercase();
+        self.saved_layouts.iter().enumerate()
+            .filter(|(_, l)| l.name.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    async fn handle_layout_popup_key(&mut self, key: KeyEvent) {
+        match self.layout_popup_mode {
+            LayoutPopupMode::ConfirmDelete => {
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        let name = self.layout_delete_name.clone();
+                        match self.client.delete_layout(&name).await {
+                            Ok(_) => {
+                                self.saved_layouts.retain(|l| l.name != name);
+                                self.status_msg = format!("Deleted layout '{name}'");
+                                let max = self.saved_layouts.len() + 2;
+                                if self.layout_popup_selected >= max {
+                                    self.layout_popup_selected = max.saturating_sub(1);
+                                }
+                            }
+                            Err(e) => self.status_msg = format!("Error deleting layout: {e}"),
+                        }
+                        self.layout_popup_mode = LayoutPopupMode::List;
+                    }
+                    _ => {
+                        self.layout_popup_mode = LayoutPopupMode::List;
+                    }
+                }
+            }
+            LayoutPopupMode::List => {
+                // Filter mode active
+                if !self.layout_filter.is_empty() {
+                    let filtered = self.layout_filtered_indices();
+                    let cur_pos = filtered.iter().position(|&i| i + 2 == self.layout_popup_selected);
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.layout_filter.clear();
+                            self.layout_popup_selected = 0;
+                        }
+                        KeyCode::Backspace => {
+                            self.layout_filter.pop();
+                            if self.layout_filter.is_empty() || self.layout_filter == "\0" {
+                                self.layout_filter.clear();
+                                self.layout_popup_selected = 0;
+                            } else {
+                                let filtered = self.layout_filtered_indices();
+                                if let Some(&first) = filtered.first() {
+                                    self.layout_popup_selected = first + 2;
+                                }
+                            }
+                        }
+                        KeyCode::Enter => {
+                            if let Some(&idx) = filtered.iter().find(|&&i| i + 2 == self.layout_popup_selected) {
+                                if let Some(layout) = self.saved_layouts.get(idx).cloned() {
+                                    self.apply_layout(&layout);
+                                    self.show_layout_popup = false;
+                                    self.layout_filter.clear();
+                                    self.page_start = 0;
+                                    self.fetch_sessions().await;
+                                }
+                            }
+                        }
+                        KeyCode::Down => {
+                            if let Some(pos) = cur_pos {
+                                if pos + 1 < filtered.len() {
+                                    self.layout_popup_selected = filtered[pos + 1] + 2;
+                                }
+                            } else if let Some(&first) = filtered.first() {
+                                self.layout_popup_selected = first + 2;
+                            }
+                        }
+                        KeyCode::Up => {
+                            if let Some(pos) = cur_pos {
+                                if pos > 0 {
+                                    self.layout_popup_selected = filtered[pos - 1] + 2;
+                                }
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            self.layout_filter.push(c);
+                            let filtered = self.layout_filtered_indices();
+                            if let Some(&first) = filtered.first() {
+                                self.layout_popup_selected = first + 2;
+                            }
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+
+                // Normal list mode
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        self.show_layout_popup = false;
+                    }
+                    KeyCode::Char('h') | KeyCode::Char('?') => {
+                        self.show_help = !self.show_help;
+                    }
+                    KeyCode::Char('/') => {
+                        self.layout_filter = "\0".to_string();
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        let max = self.saved_layouts.len() + 2;
+                        if self.layout_popup_selected + 1 < max {
+                            self.layout_popup_selected += 1;
+                        }
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.layout_popup_selected = self.layout_popup_selected.saturating_sub(1);
+                    }
+                    KeyCode::Enter => {
+                        if self.layout_popup_selected == 0 {
+                            self.layout_popup_mode = LayoutPopupMode::SaveInput;
+                            self.layout_save_name.clear();
+                            self.layout_save_cursor = 0;
+                        } else if self.layout_popup_selected == 1 {
+                            self.columns = default_columns();
+                            self.sync_session_fields();
+                            self.show_layout_popup = false;
+                            self.page_start = 0;
+                            self.fetch_sessions().await;
+                        } else {
+                            let idx = self.layout_popup_selected - 2;
+                            if let Some(layout) = self.saved_layouts.get(idx).cloned() {
+                                self.apply_layout(&layout);
+                                self.show_layout_popup = false;
+                                self.page_start = 0;
+                                self.fetch_sessions().await;
+                            }
+                        }
+                    }
+                    KeyCode::Char('x') | KeyCode::Delete => {
+                        if let Some(idx) = self.layout_popup_selected.checked_sub(2) {
+                            if let Some(layout) = self.saved_layouts.get(idx) {
+                                self.layout_delete_name = layout.name.clone();
+                                self.layout_popup_mode = LayoutPopupMode::ConfirmDelete;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            LayoutPopupMode::SaveInput => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.layout_popup_mode = LayoutPopupMode::List;
+                    }
+                    KeyCode::Enter => {
+                        if !self.layout_save_name.is_empty() {
+                            let name = self.layout_save_name.clone();
+                            let columns: Vec<String> = self.columns.iter().map(|c| c.field.clone()).collect();
+                            let sort_field = self.columns.get(self.sort_column)
+                                .map(|c| c.field.clone())
+                                .unwrap_or_default();
+                            let sort_dir = if self.sort_desc { "desc" } else { "asc" };
+                            self.status_msg = format!("Saving layout '{name}' with {} columns...", columns.len());
+                            // Check if layout name already exists → update, else create
+                            let exists = self.saved_layouts.iter().any(|l| l.name == name);
+                            let result = if exists {
+                                self.client.update_layout(&name, &columns, &sort_field, sort_dir).await
+                            } else {
+                                self.client.create_layout(&name, &columns, &sort_field, sort_dir).await
+                            };
+                            match result {
+                                Ok(_) => {
+                                    self.status_msg = format!("Saved layout '{name}'");
+                                    self.fetch_layouts().await;
+                                }
+                                Err(e) => self.status_msg = format!("Error saving layout: {e}"),
+                            }
+                            self.show_layout_popup = false;
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        if self.layout_save_cursor > 0 {
+                            self.layout_save_cursor -= 1;
+                            self.layout_save_name.remove(self.layout_save_cursor);
+                        }
+                    }
+                    KeyCode::Left => {
+                        self.layout_save_cursor = self.layout_save_cursor.saturating_sub(1);
+                    }
+                    KeyCode::Right => {
+                        self.layout_save_cursor = (self.layout_save_cursor + 1).min(self.layout_save_name.len());
+                    }
+                    KeyCode::Char(c) => {
+                        self.layout_save_name.insert(self.layout_save_cursor, c);
+                        self.layout_save_cursor += 1;
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -1518,7 +2146,7 @@ impl App {
                     }
                     self.expression_edit = self.expression.clone();
                     if self.active_tab == Tab::Arkime {
-                        self.fetch_summary().await;
+                        self.request_summary_fetch();
                     }
                 }
             }
@@ -1821,15 +2449,15 @@ impl App {
                 }
             }
             KeyCode::Char('r') => {
-                self.fetch_summary().await;
+                self.request_summary_fetch();
             }
             KeyCode::Char('t') => {
                 self.time_range = self.time_range.next();
-                self.fetch_summary().await;
+                self.request_summary_fetch();
             }
             KeyCode::Char('T') => {
                 self.time_range = self.time_range.prev();
-                self.fetch_summary().await;
+                self.request_summary_fetch();
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
@@ -1850,7 +2478,7 @@ impl App {
                     self.summary_field = field.exp.clone();
                     self.input_mode = InputMode::Normal;
                     self.field_filter.clear();
-                    self.fetch_summary().await;
+                    self.request_summary_fetch();
                 }
             }
             KeyCode::Down => {

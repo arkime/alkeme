@@ -36,7 +36,7 @@ src/
 - `GraphType` — Enum: `Sessions` | `Packets` | `Bytes`. Selects which histogram to display.
 - `GraphSize` — Enum: `Off` | `Small` (10 rows) | `Large` (20 rows). Three-state graph toggle.
 - `ArkimeClient` — Wraps `reqwest::Client` + `base_url` + auth. All API calls return `Result<T>`.
-- `ArkimeField` — Deserialized field definition with `dbField`, `type`, `exp` (expression name), `friendlyName`.
+- `ArkimeField` — Deserialized field definition with `dbField`, `type`, `exp` (expression name), `friendlyName`, `regex` (Option), `noFacet` (Option). `is_visible()` returns false for fields with regex or noFacet="true".
 - `AuthMode` — Enum: `None` | `Basic` | `Digest` | `Form`.
 - `GraphData` — Deserialized histogram data from `facets=1` API response.
 - `TableState` — ratatui widget state for session/stats list scrolling.
@@ -48,7 +48,12 @@ src/
 - `Packet` — Parsed packet hex dump: `src` (bool), `bytes` (u32), `timestamp` (Option<u64>), `flags` (String), `lines` (Vec<String>).
 - `PacketsData` — Holds parsed packets, src/dst column labels, and total packet count. Displayed as a separate overlay via `p` key.
 - `LineMode` — Enum: `Off` | `Hex` | `Decimal`. Cycles line number display in packets view.
-- `FetchClient` — Lightweight Send-able clone of `ArkimeClient` auth state for background fetches via `tokio::spawn`.
+- `FetchClient` — Lightweight Send-able clone of `ArkimeClient` auth state for background fetches via `tokio::spawn`. Has `fetch_url` (GET) and `fetch_post` (POST with form data) methods.
+- `ColumnDef` — Dynamic column definition: `field` (dbField String), `exp` (expression name String), `label` (String), `width` (u16). `default_columns()` returns the default set.
+- `ColumnEditorItem` — Column editor entry: `db_field`, `exp`, `friendly_name`, `enabled` (bool). Built from `all_fields`.
+- `SavedLayout` — Server-stored layout: `name`, `columns` (Vec<String>), `sort_field`, `sort_dir`.
+- `ColumnEditorMode` — Enum: `Browse` | `Reorder`. Controls column editor key behavior.
+- `LayoutPopupMode` — Enum: `List` | `SaveInput` | `ConfirmDelete`. Controls layout popup state.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
@@ -77,14 +82,29 @@ src/
 | 1 / 2 / 3 | Switch stats sub-tab (Capture/DB Stats/DB Indices) |
 | f | Open field selector (arkime tab) |
 | p | View packet hex dump (session list or detail) |
+| c | Column editor (toggle/reorder fields) |
+| C | Layouts popup (save/load/delete named layouts) |
 | h / ? | Show context-sensitive help overlay |
 | q | Quit |
 
-## Session columns (in order)
+## Session columns (default)
 
 ipProtocol (4-char mapped: TCP/UDP/ICMP/ICM6/etc), firstPacket, lastPacket, source.ip,
 source.port, destination.ip, destination.port, protocol (array, comma-joined),
 source.packets, destination.packets, source.bytes, destination.bytes
+
+Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`. `session_fields` stays in sync via `sync_session_fields()`. Column editor (`c`) lets users toggle fields on/off and reorder; shows expression names (exp) not dbField; `/` activates filter. Layout popup (`C`) saves/loads named layouts via Arkime API (`/api/user/layouts/sessionstable`); `/` filters layouts, `x` deletes with confirmation.
+
+## Column Layout API
+
+- `GET /api/user/layouts/sessionstable` — returns array of layout objects (requires `x-arkime-cookie` header)
+- `POST /api/user/layouts/sessionstable` — body: `{name, columns: [field_names], order: [[sortField, dir]]}`
+- `PUT /api/user/layouts/sessionstable` — same body, updates existing
+- `DELETE /api/user/layouts/sessionstable/:name` — deletes layout
+- All mutating calls require `x-arkime-cookie` header (CSRF token from `ARKIME-COOKIE` response cookie)
+- `ArkimeClient::fetch_cookie()` captures the cookie at startup for all auth modes
+- `authenticated_get_with_cookie()` sends `x-arkime-cookie` header for GET endpoints with `checkCookieToken`
+- `extract_cookie()` helper shared between `login()` and `fetch_cookie()`
 
 ## Pagination
 
@@ -147,6 +167,9 @@ source.packets, destination.packets, source.bytes, destination.bytes
 - Navigation: ↑/↓ (row), Shift+↑/↓ and PgUp/PgDn (page), ←/Home (top), →/End (bottom)
 - Graph is hidden on this tab (only shown on Sessions tab)
 - State: `all_fields` (Vec<ArkimeField>), `summary_field`, `summary_data` (Vec<SummaryItem>), `summary_metric`, `summary_sort`, `summary_sort_desc`, `field_filter`, `field_filter_selected`
+- Fetch is async via `tokio::spawn` + `FetchClient::fetch_post` — shows walking owl loading popup during fetch
+- `pending_summary_fetch` flag triggers spawn in main loop; result polled via `JoinHandle::is_finished()`
+- Fields with `regex` or `noFacet="true"` are hidden from field selector (`is_visible()` filter)
 
 ## Owl animation
 - Settings tab shows a 90s "Under Construction" page with animated owl
@@ -200,7 +223,7 @@ source.packets, destination.packets, source.bytes, destination.bytes
 ## Context-sensitive help
 
 - `h` or `?` shows help overlay tailored to the current view
-- 6 contexts: Sessions list, Session detail, Packets view, Stats list, Stats detail, Arkime summary
+- 8 contexts: Sessions list, Session detail, Packets view, Stats list, Stats detail, Arkime summary, Column editor, Layouts
 - Help renders last in draw order (on top of all overlays including packets)
 - Uses `macro_rules! hdr` for section headers to avoid closure lifetime issues
 

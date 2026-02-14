@@ -77,6 +77,7 @@ async fn main() -> Result<()> {
         app.expression_edit = search;
     }
     app.client.login().await?;
+    app.client.fetch_cookie().await.ok();
     app.fetch_user().await;
     app.fetch_fields().await;
     app.fetch_sessions().await;
@@ -96,6 +97,7 @@ async fn main() -> Result<()> {
 
 async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     let mut packets_handle: Option<tokio::task::JoinHandle<Result<crate::api::PacketsData, anyhow::Error>>> = None;
+    let mut summary_handle: Option<tokio::task::JoinHandle<Result<Vec<crate::api::SummaryItem>, anyhow::Error>>> = None;
 
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
@@ -112,6 +114,51 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 Ok(crate::api::parse_packets_html(&html))
             }));
             continue;
+        }
+
+        if app.pending_summary_fetch {
+            app.pending_summary_fetch = false;
+            let field = app.summary_field.clone();
+            let url = app.client.summary_url(&app.expression, app.time_range.date_value());
+            let client = app.client.clone_for_fetch();
+            summary_handle = Some(tokio::spawn(async move {
+                let body = client.fetch_post(&url, &[("fields", field.as_str())]).await?;
+                let arr: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+                if arr.len() >= 2 {
+                    if let Some(data) = arr[1].get("data") {
+                        let items: Vec<crate::api::SummaryItem> = serde_json::from_value(data.clone())?;
+                        return Ok(items);
+                    }
+                }
+                Ok(Vec::new())
+            }));
+            continue;
+        }
+
+        // Check if background summary fetch completed
+        if let Some(ref mut handle) = summary_handle {
+            if handle.is_finished() {
+                let handle = summary_handle.take().unwrap();
+                match handle.await {
+                    Ok(Ok(items)) => {
+                        let count = items.len();
+                        let field = app.summary_field.clone();
+                        app.summary_data = items;
+                        app.sort_summary_data();
+                        app.summary_selected = 0;
+                        app.summary_table_state.select(Some(0));
+                        app.status_msg = format!("Summary: {} items for {}", count, field);
+                    }
+                    Ok(Err(e)) => {
+                        app.status_msg = format!("Error: {e}");
+                    }
+                    Err(e) => {
+                        app.status_msg = format!("Error: {e}");
+                    }
+                }
+                app.show_loading = false;
+                continue;
+            }
         }
 
         // Check if background packets fetch completed
@@ -150,7 +197,8 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     return Ok(());
                 }
-                if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal {
+                if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
+                    && !app.show_column_editor && !app.show_layout_popup && !app.show_help {
                     return Ok(());
                 }
                 app.handle_key(key).await;
