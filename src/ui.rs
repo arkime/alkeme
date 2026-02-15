@@ -496,7 +496,7 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let end = (app.page_start + app.sessions.len() as u64).min(app.sessions_filtered);
-    let view_label = if let Some(ref v) = app.active_view {
+    let view_label = if let Some(ref v) = app.active_view_name {
         format!(" [view: {}]", v)
     } else {
         String::new()
@@ -732,7 +732,7 @@ fn format_number(n: u64) -> String {
 }
 
 fn draw_arkime(f: &mut Frame, app: &mut App, area: Rect) {
-    let arkime_title = if let Some(ref v) = app.active_view {
+    let arkime_title = if let Some(ref v) = app.active_view_name {
         format!(" Arkime Summary [view: {}] ", v)
     } else {
         " Arkime Summary ".to_string()
@@ -2194,8 +2194,8 @@ fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
         }
         ViewPopupMode::List => {
             let mut lines: Vec<Line> = Vec::new();
-            let active_marker = |name: &str| -> &str {
-                if app.active_view.as_deref() == Some(name) { " ●" } else { "" }
+            let active_marker = |id: &str| -> &str {
+                if app.active_view.as_deref() == Some(id) { " ●" } else { "" }
             };
 
             // Option 0: Save current expression as view
@@ -2204,7 +2204,7 @@ fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 Style::default().fg(Color::Green)
             };
-            lines.push(Line::from(Span::styled("💾 Save Current Expression as View", save_style)));
+            lines.push(Line::from(Span::styled("[+] Save Current Expression as View", save_style)));
 
             // Option 1: Clear view
             let clear_style = if app.view_popup_selected == 1 {
@@ -2242,7 +2242,7 @@ fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
                     spans.push(Span::raw("   "));
                 }
                 spans.push(Span::styled(&view.name, base_style));
-                let marker = active_marker(&view.name);
+                let marker = active_marker(&view.id);
                 if !marker.is_empty() {
                     spans.push(Span::styled(marker, Style::default().fg(Color::Green)));
                 }

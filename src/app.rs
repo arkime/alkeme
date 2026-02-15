@@ -497,7 +497,8 @@ pub struct App {
     pub layout_delete_name: String,
     pub layout_filter: String,
     // View state
-    pub active_view: Option<String>,
+    pub active_view: Option<String>,      // view id for API calls
+    pub active_view_name: Option<String>,  // view name for display
     pub saved_views: Vec<ArkimeView>,
     pub show_view_popup: bool,
     pub view_popup_mode: ViewPopupMode,
@@ -623,6 +624,7 @@ impl App {
             layout_delete_name: String::new(),
             layout_filter: String::new(),
             active_view: None,
+            active_view_name: None,
             saved_views: Vec::new(),
             show_view_popup: false,
             view_popup_mode: ViewPopupMode::List,
@@ -1753,9 +1755,15 @@ impl App {
                         let name = self.view_save_name.trim().to_string();
                         if !name.is_empty() && !self.expression.is_empty() {
                             match self.client.create_view(&name, &self.expression).await {
-                                Ok(_) => {
+                                Ok(resp) => {
                                     self.status_msg = format!("View '{}' created", name);
-                                    self.active_view = Some(name);
+                                    let view_id = resp.get("view")
+                                        .and_then(|v| v.get("id"))
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or(&name)
+                                        .to_string();
+                                    self.active_view = Some(view_id);
+                                    self.active_view_name = Some(name);
                                     self.page_start = 0;
                                     self.show_view_popup = false;
                                     self.fetch_sessions().await;
@@ -1801,8 +1809,9 @@ impl App {
                         match self.client.delete_view(&id).await {
                             Ok(_) => {
                                 self.status_msg = format!("View '{}' deleted", name);
-                                if self.active_view.as_deref() == Some(&name) {
+                                if self.active_view.as_deref() == Some(&id) {
                                     self.active_view = None;
+                                    self.active_view_name = None;
                                 }
                                 self.saved_views.retain(|v| v.id != id);
                                 self.view_popup_selected = 0;
@@ -1860,6 +1869,7 @@ impl App {
                             // Clear view
                             if self.active_view.is_some() {
                                 self.active_view = None;
+                                self.active_view_name = None;
                                 self.page_start = 0;
                                 self.show_view_popup = false;
                                 self.fetch_sessions().await;
@@ -1870,8 +1880,10 @@ impl App {
                             // Select a view
                             let fi = self.view_popup_selected - 2;
                             if let Some(&idx) = filtered.get(fi) {
+                                let view_id = self.saved_views[idx].id.clone();
                                 let view_name = self.saved_views[idx].name.clone();
-                                self.active_view = Some(view_name);
+                                self.active_view = Some(view_id);
+                                self.active_view_name = Some(view_name);
                                 self.page_start = 0;
                                 self.show_view_popup = false;
                                 self.fetch_sessions().await;
