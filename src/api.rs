@@ -89,6 +89,16 @@ impl ArkimeField {
     }
 }
 
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct ArkimeView {
+    pub id: String,
+    pub name: String,
+    pub expression: String,
+    pub user: String,
+    pub shared: bool,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum AuthMode {
     None,
@@ -777,7 +787,15 @@ impl ArkimeClient {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn get_sessions(&self, fields: &[String], expression: &str, date: &str, sort_field: &str, sort_desc: bool, facets: bool, start: u64, length: u64) -> Result<SessionsResponse> {
+    fn append_view(url: &mut String, view: &Option<String>) {
+        if let Some(v) = view {
+            if !v.is_empty() {
+                url.push_str(&format!("&view={}", urlencoding::encode(v)));
+            }
+        }
+    }
+
+    pub async fn get_sessions(&self, fields: &[String], expression: &str, date: &str, sort_field: &str, sort_desc: bool, facets: bool, start: u64, length: u64, view: &Option<String>) -> Result<SessionsResponse> {
         let fields_str = fields.join(",");
         let dir = if sort_desc { "desc" } else { "asc" };
         let mut url = format!(
@@ -790,6 +808,7 @@ impl ArkimeClient {
         if !expression.is_empty() {
             url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
         }
+        Self::append_view(&mut url, view);
 
         let body = self.authenticated_get(&url).await?;
         let parsed: SessionsResponse = serde_json::from_str(&body)?;
@@ -886,11 +905,12 @@ impl ArkimeClient {
         self.authenticated_get_bytes(&url).await
     }
 
-    pub async fn download_sessions_pcap(&self, expression: &str, date: &str) -> Result<Vec<u8>> {
+    pub async fn download_sessions_pcap(&self, expression: &str, date: &str, view: &Option<String>) -> Result<Vec<u8>> {
         let mut url = format!("{}/api/sessions.pcap?date={}", self.base_url, urlencoding::encode(date));
         if !expression.is_empty() {
             url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
         }
+        Self::append_view(&mut url, view);
         self.authenticated_get_bytes(&url).await
     }
 
@@ -900,12 +920,13 @@ impl ArkimeClient {
         self.authenticated_get_bytes(&url).await
     }
 
-    pub async fn export_sessions_csv(&self, expression: &str, date: &str, fields: &[String]) -> Result<Vec<u8>> {
+    pub async fn export_sessions_csv(&self, expression: &str, date: &str, fields: &[String], view: &Option<String>) -> Result<Vec<u8>> {
         let fields_str = fields.join(",");
         let mut url = format!("{}/api/sessions/csv?date={}&fields={}", self.base_url, urlencoding::encode(date), urlencoding::encode(&fields_str));
         if !expression.is_empty() {
             url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
         }
+        Self::append_view(&mut url, view);
         self.authenticated_get_bytes(&url).await
     }
 
@@ -921,11 +942,12 @@ impl ArkimeClient {
         self.authenticated_post(&url, &[("tags", tags), ("ids", id)]).await
     }
 
-    pub async fn add_sessions_tags(&self, expression: &str, date: &str, tags: &str) -> Result<String> {
+    pub async fn add_sessions_tags(&self, expression: &str, date: &str, tags: &str, view: &Option<String>) -> Result<String> {
         let mut url = format!("{}/api/sessions/addtags?date={}", self.base_url, urlencoding::encode(date));
         if !expression.is_empty() {
             url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
         }
+        Self::append_view(&mut url, view);
         self.authenticated_post(&url, &[("tags", tags)]).await
     }
 
@@ -934,19 +956,21 @@ impl ArkimeClient {
         self.authenticated_post(&url, &[("tags", tags), ("ids", id)]).await
     }
 
-    pub async fn remove_sessions_tags(&self, expression: &str, date: &str, tags: &str) -> Result<String> {
+    pub async fn remove_sessions_tags(&self, expression: &str, date: &str, tags: &str, view: &Option<String>) -> Result<String> {
         let mut url = format!("{}/api/sessions/removetags?date={}", self.base_url, urlencoding::encode(date));
         if !expression.is_empty() {
             url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
         }
+        Self::append_view(&mut url, view);
         self.authenticated_post(&url, &[("tags", tags)]).await
     }
 
-    pub fn summary_url(&self, expression: &str, date: &str) -> String {
+    pub fn summary_url(&self, expression: &str, date: &str, view: &Option<String>) -> String {
         let mut url = format!("{}/api/sessions/summary?date={}", self.base_url, urlencoding::encode(date));
         if !expression.is_empty() {
             url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
         }
+        Self::append_view(&mut url, view);
         url
     }
 
@@ -1220,6 +1244,39 @@ impl ArkimeClient {
 
     pub async fn delete_layout(&self, name: &str) -> Result<Value> {
         let url = format!("{}/api/user/layouts/sessionstable/{}", self.base_url, urlencoding::encode(name));
+        self.authenticated_delete(&url).await
+    }
+
+    pub async fn get_views(&self) -> Result<Vec<ArkimeView>> {
+        let url = format!("{}/api/views?length=1000", self.base_url);
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let mut views = Vec::new();
+        if let Some(data) = parsed.get("data").and_then(|d| d.as_array()) {
+            let current_user = self.username.as_deref().unwrap_or("");
+            for item in data {
+                let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let expression = item.get("expression").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let user = item.get("user").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let shared = user != current_user;
+                views.push(ArkimeView { id, name, expression, user, shared });
+            }
+        }
+        Ok(views)
+    }
+
+    pub async fn create_view(&self, name: &str, expression: &str) -> Result<Value> {
+        let url = format!("{}/api/view", self.base_url);
+        let body = serde_json::json!({
+            "name": name,
+            "expression": expression,
+        });
+        self.authenticated_post_json(&url, &body).await
+    }
+
+    pub async fn delete_view(&self, id: &str) -> Result<Value> {
+        let url = format!("{}/api/view/{}", self.base_url, urlencoding::encode(id));
         self.authenticated_delete(&url).await
     }
 }

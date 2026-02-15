@@ -1,4 +1,4 @@
-use crate::api::{ArkimeClient, ArkimeField, GraphData, HttpLog, SummaryItem};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, GraphData, HttpLog, SummaryItem};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::TableState;
 use serde_json::Value;
@@ -77,6 +77,13 @@ pub enum ColumnEditorMode {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum LayoutPopupMode {
+    List,
+    SaveInput,
+    ConfirmDelete,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ViewPopupMode {
     List,
     SaveInput,
     ConfirmDelete,
@@ -489,6 +496,17 @@ pub struct App {
     pub layout_save_cursor: usize,
     pub layout_delete_name: String,
     pub layout_filter: String,
+    // View state
+    pub active_view: Option<String>,
+    pub saved_views: Vec<ArkimeView>,
+    pub show_view_popup: bool,
+    pub view_popup_mode: ViewPopupMode,
+    pub view_popup_selected: usize,
+    pub view_save_name: String,
+    pub view_save_cursor: usize,
+    pub view_delete_id: String,
+    pub view_delete_name: String,
+    pub view_filter: String,
     pub page_start: u64,
     pub page_size: u64,
     pub selected_session: usize,
@@ -604,6 +622,16 @@ impl App {
             layout_save_cursor: 0,
             layout_delete_name: String::new(),
             layout_filter: String::new(),
+            active_view: None,
+            saved_views: Vec::new(),
+            show_view_popup: false,
+            view_popup_mode: ViewPopupMode::List,
+            view_popup_selected: 0,
+            view_save_name: String::new(),
+            view_save_cursor: 0,
+            view_delete_id: String::new(),
+            view_delete_name: String::new(),
+            view_filter: String::new(),
             page_start: 0,
             page_size: 100,
             selected_session: 0,
@@ -858,7 +886,7 @@ impl App {
         let sort_field = self.session_fields.get(self.sort_column)
             .cloned()
             .unwrap_or_else(|| "firstPacket".into());
-        match self.client.get_sessions(&self.session_fields, &self.expression, self.time_range.date_value(), &sort_field, self.sort_desc, self.graph_size.is_visible(), self.page_start, self.page_size).await {
+        match self.client.get_sessions(&self.session_fields, &self.expression, self.time_range.date_value(), &sort_field, self.sort_desc, self.graph_size.is_visible(), self.page_start, self.page_size, &self.active_view).await {
             Ok(response) => {
                 if let Some(err) = response.bsq_err.as_ref().or(response.error.as_ref()) {
                     self.status_msg = format!("Expression error: {err}");
@@ -1081,6 +1109,10 @@ impl App {
             self.handle_layout_popup_key(key).await;
             return;
         }
+        if self.show_view_popup {
+            self.handle_view_popup_key(key).await;
+            return;
+        }
         if key.code == KeyCode::Char('D') {
             self.show_debug = true;
             self.debug_scroll = 0;
@@ -1299,6 +1331,9 @@ impl App {
                 self.layout_popup_selected = 0;
                 self.layout_filter.clear();
                 self.show_layout_popup = true;
+            }
+            KeyCode::Char('v') => {
+                self.open_view_popup().await;
             }
             _ => {}
         }
@@ -1682,6 +1717,184 @@ impl App {
         }
     }
 
+    async fn open_view_popup(&mut self) {
+        self.status_msg = "Fetching views...".into();
+        match self.client.get_views().await {
+            Ok(views) => {
+                self.saved_views = views;
+                self.status_msg = String::new();
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching views: {e}");
+            }
+        }
+        self.view_popup_mode = ViewPopupMode::List;
+        self.view_popup_selected = 0;
+        self.view_filter.clear();
+        self.show_view_popup = true;
+    }
+
+    pub fn view_filtered_indices(&self) -> Vec<usize> {
+        let filter_text = self.view_filter.to_lowercase();
+        if filter_text.is_empty() {
+            return (0..self.saved_views.len()).collect();
+        }
+        self.saved_views.iter().enumerate()
+            .filter(|(_, v)| v.name.to_lowercase().contains(&filter_text) || v.expression.to_lowercase().contains(&filter_text))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    async fn handle_view_popup_key(&mut self, key: KeyEvent) {
+        match self.view_popup_mode {
+            ViewPopupMode::SaveInput => {
+                match key.code {
+                    KeyCode::Enter => {
+                        let name = self.view_save_name.trim().to_string();
+                        if !name.is_empty() && !self.expression.is_empty() {
+                            match self.client.create_view(&name, &self.expression).await {
+                                Ok(_) => {
+                                    self.status_msg = format!("View '{}' created", name);
+                                    self.active_view = Some(name);
+                                    self.page_start = 0;
+                                    self.show_view_popup = false;
+                                    self.fetch_sessions().await;
+                                }
+                                Err(e) => self.status_msg = format!("Error creating view: {e}"),
+                            }
+                        } else if self.expression.is_empty() {
+                            self.status_msg = "Cannot save view: expression is empty".into();
+                        }
+                        self.view_popup_mode = ViewPopupMode::List;
+                    }
+                    KeyCode::Esc => {
+                        self.view_popup_mode = ViewPopupMode::List;
+                    }
+                    KeyCode::Left => {
+                        if self.view_save_cursor > 0 {
+                            self.view_save_cursor -= 1;
+                        }
+                    }
+                    KeyCode::Right => {
+                        if self.view_save_cursor < self.view_save_name.len() {
+                            self.view_save_cursor += 1;
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        self.view_save_name.insert(self.view_save_cursor, c);
+                        self.view_save_cursor += 1;
+                    }
+                    KeyCode::Backspace => {
+                        if self.view_save_cursor > 0 {
+                            self.view_save_cursor -= 1;
+                            self.view_save_name.remove(self.view_save_cursor);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            ViewPopupMode::ConfirmDelete => {
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        let id = self.view_delete_id.clone();
+                        let name = self.view_delete_name.clone();
+                        match self.client.delete_view(&id).await {
+                            Ok(_) => {
+                                self.status_msg = format!("View '{}' deleted", name);
+                                if self.active_view.as_deref() == Some(&name) {
+                                    self.active_view = None;
+                                }
+                                self.saved_views.retain(|v| v.id != id);
+                                self.view_popup_selected = 0;
+                            }
+                            Err(e) => self.status_msg = format!("Error deleting view: {e}"),
+                        }
+                        self.view_popup_mode = ViewPopupMode::List;
+                    }
+                    _ => {
+                        self.view_popup_mode = ViewPopupMode::List;
+                    }
+                }
+            }
+            ViewPopupMode::List => {
+                let filtered = self.view_filtered_indices();
+                let total_items = 2 + filtered.len(); // 0=Save, 1=Clear, 2+=views
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        self.show_view_popup = false;
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if total_items > 0 {
+                            self.view_popup_selected = (self.view_popup_selected + 1).min(total_items - 1);
+                        }
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.view_popup_selected = self.view_popup_selected.saturating_sub(1);
+                    }
+                    KeyCode::Char('x') => {
+                        if self.view_popup_selected >= 2 {
+                            let fi = self.view_popup_selected - 2;
+                            if let Some(&idx) = filtered.get(fi) {
+                                let view = &self.saved_views[idx];
+                                if !view.shared {
+                                    self.view_delete_id = view.id.clone();
+                                    self.view_delete_name = view.name.clone();
+                                    self.view_popup_mode = ViewPopupMode::ConfirmDelete;
+                                } else {
+                                    self.status_msg = "Cannot delete shared views".into();
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if self.view_popup_selected == 0 {
+                            // Save current expression as view
+                            if self.expression.is_empty() {
+                                self.status_msg = "Cannot save view: expression is empty".into();
+                            } else {
+                                self.view_save_name.clear();
+                                self.view_save_cursor = 0;
+                                self.view_popup_mode = ViewPopupMode::SaveInput;
+                            }
+                        } else if self.view_popup_selected == 1 {
+                            // Clear view
+                            if self.active_view.is_some() {
+                                self.active_view = None;
+                                self.page_start = 0;
+                                self.show_view_popup = false;
+                                self.fetch_sessions().await;
+                            } else {
+                                self.show_view_popup = false;
+                            }
+                        } else {
+                            // Select a view
+                            let fi = self.view_popup_selected - 2;
+                            if let Some(&idx) = filtered.get(fi) {
+                                let view_name = self.saved_views[idx].name.clone();
+                                self.active_view = Some(view_name);
+                                self.page_start = 0;
+                                self.show_view_popup = false;
+                                self.fetch_sessions().await;
+                            }
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        if self.view_popup_selected >= 2 || !self.view_filter.is_empty() {
+                            self.view_filter.push(c);
+                            self.view_popup_selected = 2; // reset to first view
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        if !self.view_filter.is_empty() {
+                            self.view_filter.pop();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     async fn handle_detail_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
@@ -2037,7 +2250,7 @@ impl App {
                     let ids = self.visible_session_ids();
                     self.client.download_sessions_pcap_ids(&ids).await
                 } else {
-                    self.client.download_sessions_pcap(&self.expression, date).await
+                    self.client.download_sessions_pcap(&self.expression, date, &self.active_view).await
                 };
                 match result {
                     Ok(data) => {
@@ -2055,7 +2268,7 @@ impl App {
                     let ids = self.visible_session_ids();
                     self.client.export_sessions_csv_ids(&ids, &self.session_fields).await
                 } else {
-                    self.client.export_sessions_csv(&self.expression, date, &self.session_fields).await
+                    self.client.export_sessions_csv(&self.expression, date, &self.session_fields, &self.active_view).await
                 };
                 match result {
                     Ok(data) => {
@@ -2080,7 +2293,7 @@ impl App {
             }
             (ActionKind::AddTags, ActionTarget::All) => {
                 self.status_msg = "Adding tags...".into();
-                match self.client.add_sessions_tags(&self.expression, date, &prompt.input).await {
+                match self.client.add_sessions_tags(&self.expression, date, &prompt.input, &self.active_view).await {
                     Ok(_) => {
                         self.status_msg = format!("Tags added: {}", prompt.input);
                         self.fetch_sessions().await;
@@ -2101,7 +2314,7 @@ impl App {
             }
             (ActionKind::RemoveTags, ActionTarget::All) => {
                 self.status_msg = "Removing tags...".into();
-                match self.client.remove_sessions_tags(&self.expression, date, &prompt.input).await {
+                match self.client.remove_sessions_tags(&self.expression, date, &prompt.input, &self.active_view).await {
                     Ok(_) => {
                         self.status_msg = format!("Tags removed: {}", prompt.input);
                         self.fetch_sessions().await;
@@ -2491,6 +2704,9 @@ impl App {
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
+            }
+            KeyCode::Char('v') => {
+                self.open_view_popup().await;
             }
             _ => {}
         }

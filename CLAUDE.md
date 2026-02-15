@@ -54,6 +54,8 @@ src/
 - `SavedLayout` — Server-stored layout: `name`, `columns` (Vec<String>), `sort_field`, `sort_dir`.
 - `ColumnEditorMode` — Enum: `Browse` | `Reorder`. Controls column editor key behavior.
 - `LayoutPopupMode` — Enum: `List` | `SaveInput` | `ConfirmDelete`. Controls layout popup state.
+- `ArkimeView` — Server view: `id`, `name`, `expression`, `user`, `shared` (bool). Fetched from `/api/views`.
+- `ViewPopupMode` — Enum: `List` | `SaveInput` | `ConfirmDelete`. Controls view popup state.
 - `HttpLogEntry` — Records HTTP request: timestamp, method, url, post_data, status, first_byte_ms, last_byte_ms. Stored in `HttpLog` (`Arc<Mutex<Vec<HttpLogEntry>>>`), shared between `ArkimeClient` and `FetchClient`.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
@@ -84,6 +86,7 @@ src/
 | f | Open field selector (arkime tab) |
 | p | View packet hex dump (session list or detail) |
 | c | Columns & layouts menu |
+| v | Views (select/create/delete views) |
 | D | HTTP debug log overlay |
 | h / ? | Show context-sensitive help overlay |
 | q | Quit |
@@ -106,6 +109,20 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - `ArkimeClient::fetch_cookie()` captures the cookie at startup for all auth modes
 - `authenticated_get_with_cookie()` sends `x-arkime-cookie` header for GET endpoints with `checkCookieToken`
 - `extract_cookie()` helper shared between `login()` and `fetch_cookie()`
+
+## Views
+
+- `v` opens the Views popup from Sessions or Arkime tabs
+- Views are server-side saved expressions that filter sessions
+- `GET /api/views` — returns `{data: [{id, name, expression, user, ...}], recordsTotal, recordsFiltered}`
+- `POST /api/view` — body: `{name, expression}` — creates a new view (requires cookie)
+- `DELETE /api/view/:id` — deletes a view (requires cookie)
+- View query param: `&view=viewname` added to session/summary/pcap/csv/tag API calls
+- Server resolves view by name or id, applies the view's expression as an additional filter
+- Shared views (created by other users) shown with 🔗 indicator, cannot be deleted
+- Active view shown in title bar: `Sessions [view: MyView] [1-100 of 742]`
+- State: `active_view: Option<String>`, `saved_views: Vec<ArkimeView>`, `show_view_popup`, `view_popup_mode`, `view_popup_selected`, `view_filter`
+- Popup: "Save Current Expression as View" (top), "Clear Active View", then saved views with filter
 
 ## Pagination
 

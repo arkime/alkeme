@@ -119,7 +119,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
         if app.pending_summary_fetch {
             app.pending_summary_fetch = false;
             let field = app.summary_field.clone();
-            let url = app.client.summary_url(&app.expression, app.time_range.date_value());
+            let url = app.client.summary_url(&app.expression, app.time_range.date_value(), &app.active_view);
             let client = app.client.clone_for_fetch();
             summary_handle = Some(tokio::spawn(async move {
                 let body = client.fetch_post(&url, &[("fields", field.as_str())]).await?;
@@ -198,7 +198,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     return Ok(());
                 }
                 if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
-                    && !app.show_column_editor && !app.show_layout_popup && !app.show_help && !app.show_debug {
+                    && !app.show_column_editor && !app.show_layout_popup && !app.show_view_popup && !app.show_help && !app.show_debug {
                     return Ok(());
                 }
                 app.handle_key(key).await;

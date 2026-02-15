@@ -141,6 +141,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.show_layout_popup {
         draw_layout_popup(f, app, f.area());
     }
+    if app.show_view_popup {
+        draw_view_popup(f, app, f.area());
+    }
     if app.show_help {
         draw_help(f, app, f.area());
     }
@@ -493,10 +496,15 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let end = (app.page_start + app.sessions.len() as u64).min(app.sessions_filtered);
-    let page_label = if app.sessions_filtered > 0 {
-        format!(" Sessions [{}-{} of {}] ◄ ► ", app.page_start + 1, end, app.sessions_filtered)
+    let view_label = if let Some(ref v) = app.active_view {
+        format!(" [view: {}]", v)
     } else {
-        " Sessions [0] ".into()
+        String::new()
+    };
+    let page_label = if app.sessions_filtered > 0 {
+        format!(" Sessions{} [{}-{} of {}] ◄ ► ", view_label, app.page_start + 1, end, app.sessions_filtered)
+    } else {
+        format!(" Sessions{} [0] ", view_label)
     };
 
     let table = Table::new(rows, widths)
@@ -724,11 +732,16 @@ fn format_number(n: u64) -> String {
 }
 
 fn draw_arkime(f: &mut Frame, app: &mut App, area: Rect) {
+    let arkime_title = if let Some(ref v) = app.active_view {
+        format!(" Arkime Summary [view: {}] ", v)
+    } else {
+        " Arkime Summary ".to_string()
+    };
     if app.summary_field.is_empty() {
         // Show prompt to select a field
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Arkime Summary ");
+            .title(arkime_title);
         let text = Paragraph::new(Line::from(vec![
             Span::raw("Press "),
             Span::styled("f", Style::default().fg(Color::Yellow)),
@@ -1662,6 +1675,7 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
             Line::from(vec![key("t / T"), Span::raw("Cycle time range")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
+            Line::from(vec![key("v"), Span::raw("Views")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else if app.show_column_editor {
@@ -1719,6 +1733,7 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("a"), Span::raw("Session actions")]),
             Line::from(vec![key("A"), Span::raw("All sessions actions")]),
             Line::from(vec![key("c"), Span::raw("Columns & layouts")]),
+            Line::from(vec![key("v"), Span::raw("Views")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     };
@@ -2112,6 +2127,150 @@ fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
 
             lines.push(Line::from(""));
             lines.push(Line::from("  Enter: save  Esc: cancel").style(Style::default().fg(Color::DarkGray)));
+
+            let paragraph = Paragraph::new(lines);
+            f.render_widget(paragraph, inner);
+        }
+    }
+}
+
+fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
+    use crate::app::ViewPopupMode;
+
+    let filtered = app.view_filtered_indices();
+    let popup_height = (filtered.len() as u16 + 8).min(area.height - 2).max(8);
+    let popup_width = 60u16.min(area.width - 4);
+    let x = (area.width.saturating_sub(popup_width)) / 2;
+    let y = (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(x, y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let title = match app.view_popup_mode {
+        ViewPopupMode::SaveInput => " Save View ",
+        ViewPopupMode::ConfirmDelete => " Confirm Delete ",
+        _ => " Views ",
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .title(title);
+    f.render_widget(block, popup_area);
+
+    let inner = Rect::new(popup_area.x + 1, popup_area.y + 1, popup_area.width - 2, popup_area.height - 2);
+
+    match app.view_popup_mode {
+        ViewPopupMode::SaveInput => {
+            let lines = vec![
+                Line::from("Enter view name:"),
+                Line::from(""),
+                Line::from(Span::styled(&app.view_save_name, Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED))),
+                Line::from(""),
+                Line::from(Span::styled("Expression: ", Style::default().fg(Color::DarkGray))),
+                Line::from(Span::styled(app.expression.clone(), Style::default().fg(Color::Gray))),
+            ];
+            let paragraph = Paragraph::new(lines);
+            f.render_widget(paragraph, inner);
+            // cursor
+            let cursor_x = inner.x + app.view_save_cursor as u16;
+            let cursor_y = inner.y + 2;
+            if cursor_x < inner.right() {
+                f.set_cursor_position((cursor_x, cursor_y));
+            }
+        }
+        ViewPopupMode::ConfirmDelete => {
+            let lines = vec![
+                Line::from(vec![
+                    Span::raw("Delete view "),
+                    Span::styled(&app.view_delete_name, Style::default().fg(Color::Yellow)),
+                    Span::raw("?"),
+                ]),
+                Line::from(""),
+                Line::from(Span::styled("y/N", Style::default().fg(Color::Red))),
+            ];
+            let paragraph = Paragraph::new(lines);
+            f.render_widget(paragraph, inner);
+        }
+        ViewPopupMode::List => {
+            let mut lines: Vec<Line> = Vec::new();
+            let active_marker = |name: &str| -> &str {
+                if app.active_view.as_deref() == Some(name) { " ●" } else { "" }
+            };
+
+            // Option 0: Save current expression as view
+            let save_style = if app.view_popup_selected == 0 {
+                Style::default().bg(Color::DarkGray).fg(Color::White)
+            } else {
+                Style::default().fg(Color::Green)
+            };
+            lines.push(Line::from(Span::styled("💾 Save Current Expression as View", save_style)));
+
+            // Option 1: Clear view
+            let clear_style = if app.view_popup_selected == 1 {
+                Style::default().bg(Color::DarkGray).fg(Color::White)
+            } else {
+                Style::default().fg(Color::Red)
+            };
+            let clear_label = if app.active_view.is_some() { "✖ Clear Active View" } else { "✖ No View Active" };
+            lines.push(Line::from(Span::styled(clear_label, clear_style)));
+
+            // Separator
+            lines.push(Line::from(Span::styled("─".repeat(inner.width as usize), Style::default().fg(Color::DarkGray))));
+
+            // Filter indicator
+            if !app.view_filter.is_empty() {
+                lines.push(Line::from(vec![
+                    Span::styled("Filter: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(&app.view_filter, Style::default().fg(Color::Yellow)),
+                ]));
+            }
+
+            // Views
+            for (fi, &idx) in filtered.iter().enumerate() {
+                let view = &app.saved_views[idx];
+                let selected = app.view_popup_selected == fi + 2;
+                let base_style = if selected {
+                    Style::default().bg(Color::DarkGray).fg(Color::White)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                let mut spans = Vec::new();
+                if view.shared {
+                    spans.push(Span::styled("🔗 ", Style::default().fg(Color::Cyan)));
+                } else {
+                    spans.push(Span::raw("   "));
+                }
+                spans.push(Span::styled(&view.name, base_style));
+                let marker = active_marker(&view.name);
+                if !marker.is_empty() {
+                    spans.push(Span::styled(marker, Style::default().fg(Color::Green)));
+                }
+                // Show expression in gray
+                let remaining = inner.width as usize - view.name.len() - 4 - marker.len();
+                if remaining > 5 {
+                    let expr_display = if view.expression.len() > remaining {
+                        format!(" {}..", &view.expression[..remaining - 3])
+                    } else {
+                        format!(" {}", view.expression)
+                    };
+                    spans.push(Span::styled(expr_display, Style::default().fg(Color::DarkGray)));
+                }
+                lines.push(Line::from(spans));
+            }
+
+            if filtered.is_empty() && !app.saved_views.is_empty() {
+                lines.push(Line::from(Span::styled("  (no matching views)", Style::default().fg(Color::DarkGray))));
+            } else if app.saved_views.is_empty() {
+                lines.push(Line::from(Span::styled("  (no saved views)", Style::default().fg(Color::DarkGray))));
+            }
+
+            // Footer
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Enter=select  x=delete  Esc=close  type=filter",
+                Style::default().fg(Color::DarkGray),
+            )));
 
             let paragraph = Paragraph::new(lines);
             f.render_widget(paragraph, inner);
