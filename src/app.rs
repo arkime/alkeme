@@ -887,6 +887,14 @@ impl App {
         }
     }
 
+    async fn refresh_for_active_tab(&mut self) {
+        if self.active_tab == Tab::Arkime {
+            self.request_summary_fetch();
+        } else {
+            self.fetch_sessions().await;
+        }
+    }
+
     pub async fn fetch_sessions(&mut self) {
         self.status_msg = "Fetching sessions...".into();
         let sort_field = self.session_fields.get(self.sort_column)
@@ -1781,7 +1789,7 @@ impl App {
                                     self.active_view_name = Some(name);
                                     self.page_start = 0;
                                     self.show_view_popup = false;
-                                    self.fetch_sessions().await;
+                                    self.refresh_for_active_tab().await;
                                 }
                                 Err(e) => self.status_msg = format!("Error creating view: {e}"),
                             }
@@ -1888,7 +1896,7 @@ impl App {
                                 self.active_view_name = None;
                                 self.page_start = 0;
                                 self.show_view_popup = false;
-                                self.fetch_sessions().await;
+                                self.refresh_for_active_tab().await;
                             } else {
                                 self.show_view_popup = false;
                             }
@@ -1902,7 +1910,7 @@ impl App {
                                 self.active_view_name = Some(view_name);
                                 self.page_start = 0;
                                 self.show_view_popup = false;
-                                self.fetch_sessions().await;
+                                self.refresh_for_active_tab().await;
                             }
                         }
                     }

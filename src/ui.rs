@@ -1709,6 +1709,21 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
             Line::from(vec![key("q"), Span::raw("Close")]),
         ])
+    } else if app.show_view_popup {
+        ("Views", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate views")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Select view / save new view")]),
+            Line::from(vec![key("/"), Span::raw("Filter views")]),
+            Line::from(vec![key("x"), Span::raw("Delete selected view")]),
+            Line::from(vec![key("Tab"), Span::raw("Toggle save columns (in save dialog)")]),
+            Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
+            Line::from(vec![key("q"), Span::raw("Close")]),
+        ])
     } else {
         ("Sessions", vec![
             hdr!("Navigation"),

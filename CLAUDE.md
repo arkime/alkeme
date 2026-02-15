@@ -241,7 +241,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 ## Context-sensitive help
 
 - `h` or `?` shows help overlay tailored to the current view
-- 8 contexts: Sessions list, Session detail, Packets view, Stats list, Stats detail, Arkime summary, Column editor, Layouts
+- 9 contexts: Sessions list, Session detail, Packets view, Stats list, Stats detail, Arkime summary, Column editor, Layouts, Views
 - Help renders last in draw order (on top of all overlays including packets)
 - Uses `macro_rules! hdr` for section headers to avoid closure lifetime issues
 
