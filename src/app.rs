@@ -505,9 +505,11 @@ pub struct App {
     pub view_popup_selected: usize,
     pub view_save_name: String,
     pub view_save_cursor: usize,
+    pub view_save_columns: bool,
     pub view_delete_id: String,
     pub view_delete_name: String,
     pub view_filter: String,
+    pub view_filter_active: bool,
     pub page_start: u64,
     pub page_size: u64,
     pub selected_session: usize,
@@ -631,9 +633,11 @@ impl App {
             view_popup_selected: 0,
             view_save_name: String::new(),
             view_save_cursor: 0,
+            view_save_columns: false,
             view_delete_id: String::new(),
             view_delete_name: String::new(),
             view_filter: String::new(),
+            view_filter_active: false,
             page_start: 0,
             page_size: 100,
             selected_session: 0,
@@ -1733,6 +1737,7 @@ impl App {
         self.view_popup_mode = ViewPopupMode::List;
         self.view_popup_selected = 0;
         self.view_filter.clear();
+        self.view_filter_active = false;
         self.show_view_popup = true;
     }
 
@@ -1754,7 +1759,17 @@ impl App {
                     KeyCode::Enter => {
                         let name = self.view_save_name.trim().to_string();
                         if !name.is_empty() && !self.expression.is_empty() {
-                            match self.client.create_view(&name, &self.expression).await {
+                            let col_config = if self.view_save_columns {
+                                let cols: Vec<String> = self.columns.iter().map(|c| c.exp.clone()).collect();
+                                let sort_field = self.session_fields.get(self.sort_column)
+                                    .cloned().unwrap_or_else(|| "firstPacket".into());
+                                let sort_dir = if self.sort_desc { "desc" } else { "asc" };
+                                Some((cols, sort_field, sort_dir.to_string()))
+                            } else {
+                                None
+                            };
+                            let config_ref = col_config.as_ref().map(|(c, sf, sd)| (c.as_slice(), sf.as_str(), sd.as_str()));
+                            match self.client.create_view(&name, &self.expression, config_ref).await {
                                 Ok(resp) => {
                                     self.status_msg = format!("View '{}' created", name);
                                     let view_id = resp.get("view")
@@ -1777,6 +1792,9 @@ impl App {
                     }
                     KeyCode::Esc => {
                         self.view_popup_mode = ViewPopupMode::List;
+                    }
+                    KeyCode::Tab => {
+                        self.view_save_columns = !self.view_save_columns;
                     }
                     KeyCode::Left => {
                         if self.view_save_cursor > 0 {
@@ -1829,9 +1847,6 @@ impl App {
                 let filtered = self.view_filtered_indices();
                 let total_items = 2 + filtered.len(); // 0=Save, 1=Clear, 2+=views
                 match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') => {
-                        self.show_view_popup = false;
-                    }
                     KeyCode::Down | KeyCode::Char('j') => {
                         if total_items > 0 {
                             self.view_popup_selected = (self.view_popup_selected + 1).min(total_items - 1);
@@ -1863,6 +1878,7 @@ impl App {
                             } else {
                                 self.view_save_name.clear();
                                 self.view_save_cursor = 0;
+                                self.view_save_columns = false;
                                 self.view_popup_mode = ViewPopupMode::SaveInput;
                             }
                         } else if self.view_popup_selected == 1 {
@@ -1890,15 +1906,32 @@ impl App {
                             }
                         }
                     }
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        if self.view_filter_active {
+                            self.view_filter.clear();
+                            self.view_filter_active = false;
+                        } else {
+                            self.show_view_popup = false;
+                        }
+                    }
+                    KeyCode::Char('/') => {
+                        if !self.view_filter_active {
+                            self.view_filter_active = true;
+                            self.view_filter.clear();
+                        }
+                    }
                     KeyCode::Char(c) => {
-                        if self.view_popup_selected >= 2 || !self.view_filter.is_empty() {
+                        if self.view_filter_active {
                             self.view_filter.push(c);
                             self.view_popup_selected = 2; // reset to first view
                         }
                     }
                     KeyCode::Backspace => {
-                        if !self.view_filter.is_empty() {
+                        if self.view_filter_active {
                             self.view_filter.pop();
+                            if self.view_filter.is_empty() {
+                                self.view_filter_active = false;
+                            }
                         }
                     }
                     _ => {}

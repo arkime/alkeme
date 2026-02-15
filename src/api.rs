@@ -1266,12 +1266,18 @@ impl ArkimeClient {
         Ok(views)
     }
 
-    pub async fn create_view(&self, name: &str, expression: &str) -> Result<Value> {
+    pub async fn create_view(&self, name: &str, expression: &str, col_config: Option<(&[String], &str, &str)>) -> Result<Value> {
         let url = format!("{}/api/view", self.base_url);
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "name": name,
             "expression": expression,
         });
+        if let Some((columns, sort_field, sort_dir)) = col_config {
+            body["sessionsColConfig"] = serde_json::json!({
+                "visibleHeaders": columns,
+                "order": [[sort_field, sort_dir]],
+            });
+        }
         self.authenticated_post_json(&url, &body).await
     }
 

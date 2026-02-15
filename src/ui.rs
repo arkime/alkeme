@@ -2162,17 +2162,22 @@ fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
 
     match app.view_popup_mode {
         ViewPopupMode::SaveInput => {
+            let checkbox = if app.view_save_columns { "[x]" } else { "[ ]" };
             let lines = vec![
                 Line::from("Enter view name:"),
                 Line::from(""),
                 Line::from(Span::styled(&app.view_save_name, Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED))),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled(checkbox, Style::default().fg(Color::Cyan)),
+                    Span::styled(" Save current columns (Tab to toggle)", Style::default().fg(Color::Gray)),
+                ]),
                 Line::from(""),
                 Line::from(Span::styled("Expression: ", Style::default().fg(Color::DarkGray))),
                 Line::from(Span::styled(app.expression.clone(), Style::default().fg(Color::Gray))),
             ];
             let paragraph = Paragraph::new(lines);
             f.render_widget(paragraph, inner);
-            // cursor
             let cursor_x = inner.x + app.view_save_cursor as u16;
             let cursor_y = inner.y + 2;
             if cursor_x < inner.right() {
@@ -2219,9 +2224,9 @@ fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
             lines.push(Line::from(Span::styled("─".repeat(inner.width as usize), Style::default().fg(Color::DarkGray))));
 
             // Filter indicator
-            if !app.view_filter.is_empty() {
+            if app.view_filter_active {
                 lines.push(Line::from(vec![
-                    Span::styled("Filter: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("/", Style::default().fg(Color::DarkGray)),
                     Span::styled(&app.view_filter, Style::default().fg(Color::Yellow)),
                 ]));
             }
@@ -2268,7 +2273,7 @@ fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
             // Footer
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "Enter=select  x=delete  Esc=close  type=filter",
+                "Enter=select  x=delete  /=filter  Esc=close",
                 Style::default().fg(Color::DarkGray),
             )));
 
