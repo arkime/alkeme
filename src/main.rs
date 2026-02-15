@@ -198,7 +198,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     return Ok(());
                 }
                 if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
-                    && !app.show_column_editor && !app.show_layout_popup && !app.show_help {
+                    && !app.show_column_editor && !app.show_layout_popup && !app.show_help && !app.show_debug {
                     return Ok(());
                 }
                 app.handle_key(key).await;

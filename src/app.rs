@@ -1,4 +1,4 @@
-use crate::api::{ArkimeClient, ArkimeField, GraphData, SummaryItem};
+use crate::api::{ArkimeClient, ArkimeField, GraphData, HttpLog, SummaryItem};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::TableState;
 use serde_json::Value;
@@ -515,6 +515,9 @@ pub struct App {
     pub graph_type: GraphType,
     pub graph_data: Option<GraphData>,
     pub status_msg: String,
+    pub show_debug: bool,
+    pub debug_scroll: usize,
+    pub http_log: HttpLog,
     // Stats tab state
     pub stats_tab: StatsTab,
     pub stats_data: Vec<Value>,
@@ -553,8 +556,10 @@ pub struct App {
 
 impl App {
     pub fn new(base_url: &str, auth_mode: crate::api::AuthMode, username: Option<String>, password: Option<String>) -> Self {
+        let client = ArkimeClient::new(base_url, auth_mode, username, password);
+        let http_log = client.http_log();
         Self {
-            client: ArkimeClient::new(base_url, auth_mode, username, password),
+            client,
             user: Value::Null,
             active_tab: Tab::Sessions,
             time_range: TimeRange::All,
@@ -625,6 +630,9 @@ impl App {
             graph_type: GraphType::Sessions,
             graph_data: None,
             status_msg: String::new(),
+            show_debug: false,
+            debug_scroll: 0,
+            http_log,
             // Stats tab state
             stats_tab: StatsTab::Capture,
             stats_data: Vec::new(),
@@ -676,7 +684,8 @@ impl App {
 
     /// Apply a saved layout
     pub fn apply_layout(&mut self, layout: &SavedLayout) {
-        let mut cols = Vec::new();
+        // Always start with the special ipProtocol column
+        let mut cols = vec![ColumnDef::new("ipProtocol", "ip.protocol", "IP", 4)];
         for field in &layout.columns {
             // Resolve to dbField and exp names (layout may store exp or dbField)
             let found = self.all_fields.iter()
@@ -1024,6 +1033,18 @@ impl App {
             self.show_help = false;
             return;
         }
+        if self.show_debug {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('D') | KeyCode::Char('q') => self.show_debug = false,
+                KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => self.debug_scroll = self.debug_scroll.saturating_sub(10),
+                KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => self.debug_scroll += 10,
+                KeyCode::Up | KeyCode::Char('k') => self.debug_scroll = self.debug_scroll.saturating_sub(1),
+                KeyCode::Down | KeyCode::Char('j') => self.debug_scroll += 1,
+                KeyCode::Home => self.debug_scroll = 0,
+                _ => {}
+            }
+            return;
+        }
         if self.action_menu.is_some() {
             self.handle_action_menu_key(key);
             return;
@@ -1058,6 +1079,11 @@ impl App {
         }
         if self.show_layout_popup {
             self.handle_layout_popup_key(key).await;
+            return;
+        }
+        if key.code == KeyCode::Char('D') {
+            self.show_debug = true;
+            self.debug_scroll = 0;
             return;
         }
         match self.active_tab {
@@ -1607,7 +1633,10 @@ impl App {
                     KeyCode::Enter => {
                         if !self.layout_save_name.is_empty() {
                             let name = self.layout_save_name.clone();
-                            let columns: Vec<String> = self.columns.iter().map(|c| c.field.clone()).collect();
+                            let columns: Vec<String> = self.columns.iter()
+                                .enumerate()
+                                .filter(|(i, c)| !(*i == 0 && c.field == "ipProtocol"))
+                                .map(|(_, c)| c.field.clone()).collect();
                             let sort_field = self.columns.get(self.sort_column)
                                 .map(|c| c.field.clone())
                                 .unwrap_or_default();

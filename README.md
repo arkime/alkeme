@@ -127,6 +127,7 @@ alkeme http://viewer.example.com:8005 --auth basic
 | `p` | View packet hex dump (sessions list or detail) |
 | `c` | Open column editor (toggle/reorder fields) |
 | `C` | Open layouts popup (save/load/delete named layouts) |
+| `D` | Show HTTP debug log (request timing, status codes) |
 | `h` / `?` | Show context-sensitive help overlay |
 | `q` | Quit |
 

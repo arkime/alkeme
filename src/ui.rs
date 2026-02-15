@@ -144,6 +144,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.show_help {
         draw_help(f, app, f.area());
     }
+    if app.show_debug {
+        draw_debug(f, app, f.area());
+    }
     if app.show_loading {
         draw_loading(f, app, f.area());
     }
@@ -461,9 +464,9 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         .sessions
         .iter()
         .map(|session| {
-            let cells = app.columns.iter().map(|col| {
+            let cells = app.columns.iter().enumerate().map(|(col_idx, col)| {
                 let val = session.get(&col.field).unwrap_or(&serde_json::Value::Null);
-                let text = if col.field == "ipProtocol" {
+                let text = if col.field == "ipProtocol" && col_idx == 0 {
                     ip_protocol_str(val)
                 } else if let Some(field_type) = app.date_fields.get(col.field.as_str()) {
                     format_epoch(val, field_type)
@@ -1481,6 +1484,78 @@ fn draw_action_prompt(f: &mut Frame, app: &App, area: Rect) {
                 .title(title),
         );
     f.render_widget(paragraph, popup_area);
+}
+
+fn draw_debug(f: &mut Frame, app: &App, area: Rect) {
+    let entries = app.http_log.lock().unwrap();
+    let total = entries.len();
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Header line
+    lines.push(Line::from(vec![
+        Span::styled(format!(" {:<23}", "Timestamp"), Style::default().fg(Color::Yellow)),
+        Span::styled(format!(" {:<6}", "Method"), Style::default().fg(Color::Yellow)),
+        Span::styled(format!(" {:>4}", "Code"), Style::default().fg(Color::Yellow)),
+        Span::styled(format!(" {:>6}", "First"), Style::default().fg(Color::Yellow)),
+        Span::styled(format!(" {:>6}", "Last"), Style::default().fg(Color::Yellow)),
+        Span::styled("  URL", Style::default().fg(Color::Yellow)),
+    ]));
+    lines.push(Line::from(""));
+
+    // Newest first
+    let visible_height = area.height.saturating_sub(6) as usize; // borders + header + hints
+    let scroll = app.debug_scroll.min(total.saturating_sub(1));
+    let start = total.saturating_sub(scroll + visible_height);
+    let end = total.saturating_sub(scroll);
+
+    for entry in entries[start..end].iter().rev() {
+        let ts = entry.timestamp.format("%Y/%m/%d %H:%M:%S%.3f").to_string();
+        let status_color = if entry.status >= 400 { Color::Red }
+            else if entry.status >= 300 { Color::Yellow }
+            else { Color::Green };
+
+        lines.push(Line::from(vec![
+            Span::raw(format!(" {:<23}", ts)),
+            Span::styled(format!(" {:<6}", entry.method), Style::default().fg(Color::Cyan)),
+            Span::styled(format!(" {:>4}", entry.status), Style::default().fg(status_color)),
+            Span::raw(format!(" {:>5}ms", entry.first_byte_ms)),
+            Span::raw(format!(" {:>5}ms", entry.last_byte_ms)),
+            Span::raw(format!("  {}", entry.url)),
+        ]));
+
+        if let Some(ref data) = entry.post_data {
+            let truncated = if data.len() > 120 { &data[..120] } else { data.as_str() };
+            lines.push(Line::from(vec![
+                Span::raw("                          "),
+                Span::styled(format!("↳ {}", truncated), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+    }
+
+    drop(entries);
+
+    let popup_width = area.width.saturating_sub(4).min(140);
+    let popup_height = area.height.saturating_sub(4);
+    let popup_area = Rect::new(
+        area.x + (area.width.saturating_sub(popup_width)) / 2,
+        area.y + (area.height.saturating_sub(popup_height)) / 2,
+        popup_width,
+        popup_height,
+    );
+
+    f.render_widget(Clear, popup_area);
+    let title = format!(" HTTP Debug Log ({} requests) ", total);
+    let block = Block::default()
+        .title(title)
+        .title_bottom(Line::from(" Esc:close  ↑↓:scroll  Home:top ").centered())
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Magenta));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    f.render_widget(paragraph, inner);
 }
 
 fn draw_help(f: &mut Frame, app: &App, area: Rect) {

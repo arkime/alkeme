@@ -54,6 +54,7 @@ src/
 - `SavedLayout` — Server-stored layout: `name`, `columns` (Vec<String>), `sort_field`, `sort_dir`.
 - `ColumnEditorMode` — Enum: `Browse` | `Reorder`. Controls column editor key behavior.
 - `LayoutPopupMode` — Enum: `List` | `SaveInput` | `ConfirmDelete`. Controls layout popup state.
+- `HttpLogEntry` — Records HTTP request: timestamp, method, url, post_data, status, first_byte_ms, last_byte_ms. Stored in `HttpLog` (`Arc<Mutex<Vec<HttpLogEntry>>>`), shared between `ArkimeClient` and `FetchClient`.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
@@ -84,6 +85,7 @@ src/
 | p | View packet hex dump (session list or detail) |
 | c | Column editor (toggle/reorder fields) |
 | C | Layouts popup (save/load/delete named layouts) |
+| D | HTTP debug log overlay |
 | h / ? | Show context-sensitive help overlay |
 | q | Quit |
 
