@@ -1293,11 +1293,7 @@ impl App {
             KeyCode::Char('p') => {
                 self.request_packets();
             }
-            KeyCode::Char('c') => {
-                self.build_column_editor();
-                self.show_column_editor = true;
-            }
-            KeyCode::Char('C') => {
+            KeyCode::Char('c') | KeyCode::Char('C') => {
                 self.fetch_layouts().await;
                 self.layout_popup_mode = LayoutPopupMode::List;
                 self.layout_popup_selected = 0;
@@ -1498,7 +1494,7 @@ impl App {
                             Ok(_) => {
                                 self.saved_layouts.retain(|l| l.name != name);
                                 self.status_msg = format!("Deleted layout '{name}'");
-                                let max = self.saved_layouts.len() + 2;
+                                let max = self.saved_layouts.len() + 3;
                                 if self.layout_popup_selected >= max {
                                     self.layout_popup_selected = max.saturating_sub(1);
                                 }
@@ -1516,7 +1512,7 @@ impl App {
                 // Filter mode active
                 if !self.layout_filter.is_empty() {
                     let filtered = self.layout_filtered_indices();
-                    let cur_pos = filtered.iter().position(|&i| i + 2 == self.layout_popup_selected);
+                    let cur_pos = filtered.iter().position(|&i| i + 3 == self.layout_popup_selected);
                     match key.code {
                         KeyCode::Esc => {
                             self.layout_filter.clear();
@@ -1530,12 +1526,12 @@ impl App {
                             } else {
                                 let filtered = self.layout_filtered_indices();
                                 if let Some(&first) = filtered.first() {
-                                    self.layout_popup_selected = first + 2;
+                                    self.layout_popup_selected = first + 3;
                                 }
                             }
                         }
                         KeyCode::Enter => {
-                            if let Some(&idx) = filtered.iter().find(|&&i| i + 2 == self.layout_popup_selected) {
+                            if let Some(&idx) = filtered.iter().find(|&&i| i + 3 == self.layout_popup_selected) {
                                 if let Some(layout) = self.saved_layouts.get(idx).cloned() {
                                     self.apply_layout(&layout);
                                     self.show_layout_popup = false;
@@ -1548,16 +1544,16 @@ impl App {
                         KeyCode::Down => {
                             if let Some(pos) = cur_pos {
                                 if pos + 1 < filtered.len() {
-                                    self.layout_popup_selected = filtered[pos + 1] + 2;
+                                    self.layout_popup_selected = filtered[pos + 1] + 3;
                                 }
                             } else if let Some(&first) = filtered.first() {
-                                self.layout_popup_selected = first + 2;
+                                self.layout_popup_selected = first + 3;
                             }
                         }
                         KeyCode::Up => {
                             if let Some(pos) = cur_pos {
                                 if pos > 0 {
-                                    self.layout_popup_selected = filtered[pos - 1] + 2;
+                                    self.layout_popup_selected = filtered[pos - 1] + 3;
                                 }
                             }
                         }
@@ -1565,7 +1561,7 @@ impl App {
                             self.layout_filter.push(c);
                             let filtered = self.layout_filtered_indices();
                             if let Some(&first) = filtered.first() {
-                                self.layout_popup_selected = first + 2;
+                                self.layout_popup_selected = first + 3;
                             }
                         }
                         _ => {}
@@ -1585,7 +1581,7 @@ impl App {
                         self.layout_filter = "\0".to_string();
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        let max = self.saved_layouts.len() + 2;
+                        let max = self.saved_layouts.len() + 3;
                         if self.layout_popup_selected + 1 < max {
                             self.layout_popup_selected += 1;
                         }
@@ -1595,17 +1591,22 @@ impl App {
                     }
                     KeyCode::Enter => {
                         if self.layout_popup_selected == 0 {
+                            // Edit Columns
+                            self.build_column_editor();
+                            self.show_layout_popup = false;
+                            self.show_column_editor = true;
+                        } else if self.layout_popup_selected == 1 {
                             self.layout_popup_mode = LayoutPopupMode::SaveInput;
                             self.layout_save_name.clear();
                             self.layout_save_cursor = 0;
-                        } else if self.layout_popup_selected == 1 {
+                        } else if self.layout_popup_selected == 2 {
                             self.columns = default_columns();
                             self.sync_session_fields();
                             self.show_layout_popup = false;
                             self.page_start = 0;
                             self.fetch_sessions().await;
                         } else {
-                            let idx = self.layout_popup_selected - 2;
+                            let idx = self.layout_popup_selected - 3;
                             if let Some(layout) = self.saved_layouts.get(idx).cloned() {
                                 self.apply_layout(&layout);
                                 self.show_layout_popup = false;
@@ -1615,7 +1616,7 @@ impl App {
                         }
                     }
                     KeyCode::Char('x') | KeyCode::Delete => {
-                        if let Some(idx) = self.layout_popup_selected.checked_sub(2) {
+                        if let Some(idx) = self.layout_popup_selected.checked_sub(3) {
                             if let Some(layout) = self.saved_layouts.get(idx) {
                                 self.layout_delete_name = layout.name.clone();
                                 self.layout_popup_mode = LayoutPopupMode::ConfirmDelete;

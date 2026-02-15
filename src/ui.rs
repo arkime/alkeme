@@ -1718,8 +1718,7 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("a"), Span::raw("Session actions")]),
             Line::from(vec![key("A"), Span::raw("All sessions actions")]),
-            Line::from(vec![key("c"), Span::raw("Column editor")]),
-            Line::from(vec![key("C"), Span::raw("Layouts (save/load)")]),
+            Line::from(vec![key("c"), Span::raw("Columns & layouts")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     };
@@ -1980,7 +1979,7 @@ fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
     let popup_width = 44u16.min(area.width.saturating_sub(4));
-    let popup_height = (app.saved_layouts.len() as u16 + 8).min(area.height.saturating_sub(4));
+    let popup_height = (app.saved_layouts.len() as u16 + 9).min(area.height.saturating_sub(4));
     let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
     let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
@@ -2024,8 +2023,16 @@ fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
             let mut lines: Vec<Line> = Vec::new();
 
             if !filter_active {
-                // "Save Current" option
+                // "Edit Columns" option
                 let style = if app.layout_popup_selected == 0 {
+                    Style::default().fg(Color::Black).bg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::Magenta)
+                };
+                lines.push(Line::from("  ⚙ Edit Columns").style(style));
+
+                // "Save Current" option
+                let style = if app.layout_popup_selected == 1 {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
                     Style::default().fg(Color::Cyan)
@@ -2033,7 +2040,7 @@ fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
                 lines.push(Line::from("  [+] Save Current Layout").style(style));
 
                 // "Default" option
-                let style = if app.layout_popup_selected == 1 {
+                let style = if app.layout_popup_selected == 2 {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
                     Style::default().fg(Color::White)
@@ -2060,7 +2067,7 @@ fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
                     continue;
                 }
                 any_shown = true;
-                let is_selected = app.layout_popup_selected == i + 2;
+                let is_selected = app.layout_popup_selected == i + 3;
                 let style = if is_selected {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {

@@ -125,8 +125,7 @@ alkeme http://viewer.example.com:8005 --auth basic
 | `f` | Open field selector (summary tab) |
 | `1` / `2` / `3` | Switch stats sub-tab (Capture / DB Stats / DB Indices) |
 | `p` | View packet hex dump (sessions list or detail) |
-| `c` | Open column editor (toggle/reorder fields) |
-| `C` | Open layouts popup (save/load/delete named layouts) |
+| `c` | Open columns & layouts menu |
 | `D` | Show HTTP debug log (request timing, status codes) |
 | `h` / `?` | Show context-sensitive help overlay |
 | `q` | Quit |

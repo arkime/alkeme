@@ -83,8 +83,7 @@ src/
 | 1 / 2 / 3 | Switch stats sub-tab (Capture/DB Stats/DB Indices) |
 | f | Open field selector (arkime tab) |
 | p | View packet hex dump (session list or detail) |
-| c | Column editor (toggle/reorder fields) |
-| C | Layouts popup (save/load/delete named layouts) |
+| c | Columns & layouts menu |
 | D | HTTP debug log overlay |
 | h / ? | Show context-sensitive help overlay |
 | q | Quit |
@@ -95,7 +94,7 @@ ipProtocol (4-char mapped: TCP/UDP/ICMP/ICM6/etc), firstPacket, lastPacket, sour
 source.port, destination.ip, destination.port, protocol (array, comma-joined),
 source.packets, destination.packets, source.bytes, destination.bytes
 
-Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`. `session_fields` stays in sync via `sync_session_fields()`. Column editor (`c`) lets users toggle fields on/off and reorder; shows expression names (exp) not dbField; `/` activates filter. Layout popup (`C`) saves/loads named layouts via Arkime API (`/api/user/layouts/sessionstable`); `/` filters layouts, `x` deletes with confirmation.
+Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`. `session_fields` stays in sync via `sync_session_fields()`. `c` opens the Columns & Layouts popup: "Edit Columns" opens the column editor (toggle/reorder fields, `/` filter, exp names); "Save Current Layout" saves to Arkime API; saved layouts can be loaded or deleted (`x`). Layout API: `/api/user/layouts/sessionstable`; `/` filters layouts.
 
 ## Column Layout API
 
