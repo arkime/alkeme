@@ -98,18 +98,34 @@ impl App {
             self.debug_scroll = 0;
             return;
         }
-        match self.active_tab {
-            Tab::Stats => {
-                match self.stats_view {
-                    StatsView::List => self.handle_stats_key(key).await,
-                    StatsView::Detail => self.handle_stats_detail_key(key),
+        match self.app_mode {
+            crate::app::AppMode::Viewer => {
+                match self.active_tab {
+                    Tab::Stats => {
+                        match self.stats_view {
+                            StatsView::List => self.handle_stats_key(key).await,
+                            StatsView::Detail => self.handle_stats_detail_key(key),
+                        }
+                    }
+                    Tab::Arkime => self.handle_arkime_key(key).await,
+                    _ => {
+                        match self.session_view {
+                            SessionView::List => self.handle_list_key(key).await,
+                            SessionView::Detail => self.handle_detail_key(key).await,
+                        }
+                    }
                 }
             }
-            Tab::Arkime => self.handle_arkime_key(key).await,
+            crate::app::AppMode::Cont3xt => {
+                self.handle_cont3xt_key(key).await;
+            }
             _ => {
-                match self.session_view {
-                    SessionView::List => self.handle_list_key(key).await,
-                    SessionView::Detail => self.handle_detail_key(key).await,
+                // Placeholder modes: just tab switching
+                match key.code {
+                    KeyCode::Tab => self.next_tab(),
+                    KeyCode::BackTab => self.prev_tab(),
+                    KeyCode::Char('h') | KeyCode::Char('?') => self.show_help = true,
+                    _ => {}
                 }
             }
         }
@@ -128,10 +144,17 @@ impl App {
                     self.expression = self.expression_edit.clone();
                     self.input_mode = InputMode::Normal;
                     self.page_start = 0;
-                    if self.active_tab == Tab::Arkime {
-                        self.request_summary_fetch();
-                    } else {
-                        self.fetch_sessions().await;
+                    match self.app_mode {
+                        crate::app::AppMode::Cont3xt => {
+                            self.request_c3_search();
+                        }
+                        _ => {
+                            if self.active_tab == Tab::Arkime {
+                                self.request_summary_fetch();
+                            } else {
+                                self.fetch_sessions().await;
+                            }
+                        }
                     }
                 }
             }
@@ -181,15 +204,13 @@ impl App {
     async fn handle_list_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Tab => {
-                let idx = Tab::ALL.iter().position(|&t| t == self.active_tab).unwrap_or(0);
-                self.active_tab = Tab::ALL[(idx + 1) % Tab::ALL.len()];
+                self.next_tab();
                 if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
                     self.fetch_stats().await;
                 }
             }
             KeyCode::BackTab => {
-                let idx = Tab::ALL.iter().position(|&t| t == self.active_tab).unwrap_or(0);
-                self.active_tab = Tab::ALL[(idx + Tab::ALL.len() - 1) % Tab::ALL.len()];
+                self.prev_tab();
                 if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
                     self.fetch_stats().await;
                 }
@@ -222,7 +243,7 @@ impl App {
             KeyCode::Char('r') => {
                 self.fetch_sessions().await;
             }
-            KeyCode::Char('/') => {
+            KeyCode::Char('/') | KeyCode::Char('E') => {
                 self.expression_edit = self.expression.clone();
                 self.expression_cursor = self.expression_edit.len();
                 self.input_mode = InputMode::Expression;
@@ -1029,6 +1050,11 @@ impl App {
             KeyCode::Char('/') => {
                 self.input_mode = InputMode::DetailFilter;
             }
+            KeyCode::Char('E') => {
+                self.expression_edit = self.expression.clone();
+                self.expression_cursor = self.expression_edit.len();
+                self.input_mode = InputMode::Expression;
+            }
             KeyCode::Char('p') => {
                 self.request_packets();
             }
@@ -1489,12 +1515,10 @@ impl App {
     async fn handle_stats_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Tab => {
-                let idx = Tab::ALL.iter().position(|&t| t == self.active_tab).unwrap_or(0);
-                self.active_tab = Tab::ALL[(idx + 1) % Tab::ALL.len()];
+                self.next_tab();
             }
             KeyCode::BackTab => {
-                let idx = Tab::ALL.iter().position(|&t| t == self.active_tab).unwrap_or(0);
-                self.active_tab = Tab::ALL[(idx + Tab::ALL.len() - 1) % Tab::ALL.len()];
+                self.prev_tab();
             }
             KeyCode::Char('1') => {
                 if self.stats_tab != StatsTab::Capture {
@@ -1538,7 +1562,7 @@ impl App {
             KeyCode::Char('r') => {
                 self.fetch_stats().await;
             }
-            KeyCode::Char('/') => {
+            KeyCode::Char('/') | KeyCode::Char('E') => {
                 self.stats_filter_edit = self.stats_filter.clone();
                 self.expression_cursor = self.stats_filter_edit.len();
                 self.input_mode = InputMode::Expression;
@@ -1608,6 +1632,11 @@ impl App {
             KeyCode::Char('/') => {
                 self.input_mode = InputMode::DetailFilter;
             }
+            KeyCode::Char('E') => {
+                self.stats_filter_edit = self.stats_filter.clone();
+                self.expression_cursor = self.stats_filter_edit.len();
+                self.input_mode = InputMode::Expression;
+            }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
             }
@@ -1618,20 +1647,18 @@ impl App {
     async fn handle_arkime_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Tab => {
-                let idx = Tab::ALL.iter().position(|&t| t == self.active_tab).unwrap_or(0);
-                self.active_tab = Tab::ALL[(idx + 1) % Tab::ALL.len()];
+                self.next_tab();
                 if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
                     self.fetch_stats().await;
                 }
             }
             KeyCode::BackTab => {
-                let idx = Tab::ALL.iter().position(|&t| t == self.active_tab).unwrap_or(0);
-                self.active_tab = Tab::ALL[(idx + Tab::ALL.len() - 1) % Tab::ALL.len()];
+                self.prev_tab();
                 if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
                     self.fetch_stats().await;
                 }
             }
-            KeyCode::Char('/') => {
+            KeyCode::Char('/') | KeyCode::Char('E') => {
                 self.expression_edit = self.expression.clone();
                 self.expression_cursor = self.expression_edit.len();
                 self.input_mode = InputMode::Expression;
@@ -1764,6 +1791,276 @@ impl App {
             KeyCode::Backspace => {
                 self.field_filter.pop();
                 self.field_filter_selected = 0;
+            }
+            _ => {}
+        }
+    }
+
+    async fn handle_cont3xt_key(&mut self, key: KeyEvent) {
+        if self.input_mode == InputMode::Expression {
+            match key.code {
+                KeyCode::Enter => {
+                    self.expression = self.expression_edit.clone();
+                    self.input_mode = InputMode::Normal;
+                    self.request_c3_search();
+                }
+                KeyCode::Esc => {
+                    self.expression_edit = self.expression.clone();
+                    self.input_mode = InputMode::Normal;
+                }
+                KeyCode::Left => {
+                    if self.expression_cursor > 0 {
+                        self.expression_cursor -= 1;
+                    }
+                }
+                KeyCode::Right => {
+                    if self.expression_cursor < self.expression_edit.len() {
+                        self.expression_cursor += 1;
+                    }
+                }
+                KeyCode::Home => self.expression_cursor = 0,
+                KeyCode::End => self.expression_cursor = self.expression_edit.len(),
+                KeyCode::Backspace => {
+                    if self.expression_cursor > 0 {
+                        self.expression_cursor -= 1;
+                        self.expression_edit.remove(self.expression_cursor);
+                    }
+                }
+                KeyCode::Delete => {
+                    if self.expression_cursor < self.expression_edit.len() {
+                        self.expression_edit.remove(self.expression_cursor);
+                    }
+                }
+                KeyCode::Char(c) => {
+                    self.expression_edit.insert(self.expression_cursor, c);
+                    self.expression_cursor += 1;
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // Integration popup handler
+        if self.show_integration_popup {
+            let filtered: Vec<usize> = self.c3_integrations.iter().enumerate()
+                .filter(|(_, int)| {
+                    self.integration_popup_filter.is_empty()
+                    || int.name.to_lowercase().contains(&self.integration_popup_filter.to_lowercase())
+                })
+                .map(|(i, _)| i)
+                .collect();
+
+            // When filtering mode is active, capture text input
+            if self.integration_popup_filtering {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.integration_popup_filtering = false;
+                        if self.integration_popup_filter.is_empty() {
+                            // nothing to clear, close popup
+                        }
+                    }
+                    KeyCode::Enter => {
+                        self.integration_popup_filtering = false;
+                    }
+                    KeyCode::Backspace => {
+                        self.integration_popup_filter.pop();
+                        self.integration_popup_selected = 0;
+                    }
+                    KeyCode::Char(c) => {
+                        self.integration_popup_filter.push(c);
+                        self.integration_popup_selected = 0;
+                    }
+                    _ => {}
+                }
+                return;
+            }
+
+            match key.code {
+                KeyCode::Esc => {
+                    if !self.integration_popup_filter.is_empty() {
+                        self.integration_popup_filter.clear();
+                        self.integration_popup_selected = 0;
+                    } else {
+                        self.show_integration_popup = false;
+                    }
+                }
+                KeyCode::Char('q') => self.show_integration_popup = false,
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if !filtered.is_empty() {
+                        self.integration_popup_selected = (self.integration_popup_selected + 1).min(filtered.len() - 1);
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.integration_popup_selected = self.integration_popup_selected.saturating_sub(1);
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    if let Some(&idx) = filtered.get(self.integration_popup_selected) {
+                        let name = self.c3_integrations[idx].name.clone();
+                        if self.c3_disabled_integrations.contains(&name) {
+                            self.c3_disabled_integrations.remove(&name);
+                        } else {
+                            self.c3_disabled_integrations.insert(name);
+                        }
+                    }
+                }
+                KeyCode::Char('/') => {
+                    self.integration_popup_filtering = true;
+                }
+                KeyCode::Char('a') => {
+                    // All on — enable all (clear disabled set)
+                    self.c3_disabled_integrations.clear();
+                }
+                KeyCode::Char('n') => {
+                    // None — disable all
+                    for int in &self.c3_integrations {
+                        self.c3_disabled_integrations.insert(int.name.clone());
+                    }
+                }
+                KeyCode::Char('!') => {
+                    // Invert selection
+                    let all_names: Vec<String> = self.c3_integrations.iter().map(|i| i.name.clone()).collect();
+                    for name in all_names {
+                        if self.c3_disabled_integrations.contains(&name) {
+                            self.c3_disabled_integrations.remove(&name);
+                        } else {
+                            self.c3_disabled_integrations.insert(name);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Tab if self.active_tab == Tab::Search => {
+                // Tab toggles focus between results list and detail pane
+                self.c3_focus = match self.c3_focus {
+                    Cont3xtFocus::Results => Cont3xtFocus::Detail,
+                    Cont3xtFocus::Detail => Cont3xtFocus::Results,
+                };
+            }
+            KeyCode::Tab => self.next_tab(),
+            KeyCode::BackTab => self.prev_tab(),
+            KeyCode::Char('/') | KeyCode::Char('E') => {
+                self.expression_edit = self.expression.clone();
+                self.expression_cursor = self.expression_edit.len();
+                self.input_mode = InputMode::Expression;
+            }
+            KeyCode::Char('h') | KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('R') if self.active_tab == Tab::Search => {
+                self.c3_raw_view = !self.c3_raw_view;
+                self.c3_detail_scroll = 0;
+                self.c3_detail_hscroll = 0;
+            }
+            KeyCode::Char('r') => {
+                self.request_c3_search();
+            }
+            KeyCode::Char('i') if self.active_tab == Tab::Search => {
+                self.show_integration_popup = true;
+                self.integration_popup_selected = 0;
+                self.integration_popup_filter.clear();
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if self.active_tab == Tab::Search {
+                    match self.c3_focus {
+                        Cont3xtFocus::Results => {
+                            if !self.c3_results.is_empty() {
+                                self.c3_selected = (self.c3_selected + self.visible_rows).min(self.c3_results.len() - 1);
+                                self.c3_detail_scroll = 0;
+                                self.c3_detail_hscroll = 0;
+                            }
+                        }
+                        Cont3xtFocus::Detail => {
+                            self.c3_detail_scroll = self.c3_detail_scroll.saturating_add(self.visible_rows as u16);
+                        }
+                    }
+                }
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if self.active_tab == Tab::Search {
+                    match self.c3_focus {
+                        Cont3xtFocus::Results => {
+                            self.c3_selected = self.c3_selected.saturating_sub(self.visible_rows);
+                            self.c3_detail_scroll = 0;
+                            self.c3_detail_hscroll = 0;
+                        }
+                        Cont3xtFocus::Detail => {
+                            self.c3_detail_scroll = self.c3_detail_scroll.saturating_sub(self.visible_rows as u16);
+                        }
+                    }
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.active_tab == Tab::Search {
+                    match self.c3_focus {
+                        Cont3xtFocus::Results => {
+                            if !self.c3_results.is_empty() {
+                                self.c3_selected = (self.c3_selected + 1).min(self.c3_results.len() - 1);
+                                self.c3_detail_scroll = 0;
+                                self.c3_detail_hscroll = 0;
+                            }
+                        }
+                        Cont3xtFocus::Detail => {
+                            self.c3_detail_scroll = self.c3_detail_scroll.saturating_add(1);
+                        }
+                    }
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.active_tab == Tab::Search {
+                    match self.c3_focus {
+                        Cont3xtFocus::Results => {
+                            self.c3_selected = self.c3_selected.saturating_sub(1);
+                            self.c3_detail_scroll = 0;
+                            self.c3_detail_hscroll = 0;
+                        }
+                        Cont3xtFocus::Detail => {
+                            self.c3_detail_scroll = self.c3_detail_scroll.saturating_sub(1);
+                        }
+                    }
+                }
+            }
+            KeyCode::PageDown => {
+                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
+                    self.c3_detail_scroll = self.c3_detail_scroll.saturating_add(self.visible_rows as u16);
+                }
+            }
+            KeyCode::PageUp => {
+                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
+                    self.c3_detail_scroll = self.c3_detail_scroll.saturating_sub(self.visible_rows as u16);
+                }
+            }
+            KeyCode::Home => {
+                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
+                    self.c3_detail_scroll = 0;
+                    self.c3_detail_hscroll = 0;
+                }
+            }
+            KeyCode::End => {
+                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
+                    self.c3_detail_scroll = u16::MAX;
+                }
+            }
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
+                    self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_sub(20);
+                }
+            }
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
+                    self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_add(20);
+                }
+            }
+            KeyCode::Left => {
+                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
+                    self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_sub(4);
+                }
+            }
+            KeyCode::Right => {
+                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
+                    self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_add(4);
+                }
             }
             _ => {}
         }

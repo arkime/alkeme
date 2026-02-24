@@ -8,6 +8,12 @@ pub fn is_non_actionable_field(key: &str) -> bool {
     key == "@timestamp"
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Cont3xtFocus {
+    Results,
+    Detail,
+}
+
 #[derive(Clone)]
 pub struct ColumnDef {
     pub field: String,    // dbField name (used for API calls)
@@ -85,22 +91,60 @@ pub enum ViewPopupMode {
     ConfirmDelete,
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum AppMode {
+    Viewer,
+    Cont3xt,
+    Wise,
+    Parliament,
+}
+
+impl AppMode {
+    pub fn tabs(&self) -> &'static [Tab] {
+        match self {
+            AppMode::Viewer => &[Tab::Arkime, Tab::Sessions, Tab::Stats, Tab::Settings],
+            AppMode::Cont3xt => &[Tab::Search, Tab::History, Tab::Settings],
+            AppMode::Wise => &[Tab::Settings],
+            AppMode::Parliament => &[Tab::Settings],
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            AppMode::Viewer => "Viewer",
+            AppMode::Cont3xt => "Cont3xt",
+            AppMode::Wise => "WISE",
+            AppMode::Parliament => "Parliament",
+        }
+    }
+
+    pub fn default_tab(&self) -> Tab {
+        match self {
+            AppMode::Viewer => Tab::Sessions,
+            AppMode::Cont3xt => Tab::Search,
+            _ => self.tabs()[0],
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tab {
     Arkime,
     Sessions,
     Stats,
+    Search,
+    History,
     Settings,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 4] = [Tab::Arkime, Tab::Sessions, Tab::Stats, Tab::Settings];
-
     pub fn name(&self) -> &'static str {
         match self {
             Tab::Arkime => "Arkime",
             Tab::Sessions => "Sessions",
             Tab::Stats => "Stats",
+            Tab::Search => "Search",
+            Tab::History => "History",
             Tab::Settings => "Settings",
         }
     }

@@ -154,6 +154,14 @@ pub(super) fn draw_debug(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled(format!("↳ {}", truncated), Style::default().fg(Color::DarkGray)),
             ]));
         }
+
+        if let Some(ref resp) = entry.response_body {
+            let truncated = if resp.len() > 120 { &resp[..120] } else { resp.as_str() };
+            lines.push(Line::from(vec![
+                Span::raw("                          "),
+                Span::styled(format!("← {}", truncated), Style::default().fg(Color::Red)),
+            ]));
+        }
     }
 
     drop(entries);
@@ -226,7 +234,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             blank(),
             Line::from(vec![key("Enter"), Span::raw("Add field to expression")]),
             Line::from(vec![key("/"), Span::raw("Filter fields")]),
-            Line::from(vec![key("p"), Span::raw("View packets")]),
+            Line::from(vec![key("E"), Span::raw("Edit expression")]),
             Line::from(vec![key("a"), Span::raw("Session actions")]),
             Line::from(vec![key("A"), Span::raw("All sessions actions")]),
             Line::from(vec![key("Esc / q"), Span::raw("Close detail")]),
@@ -244,6 +252,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             hdr!("Actions"),
             blank(),
             Line::from(vec![key("/"), Span::raw("Filter fields")]),
+            Line::from(vec![key("E"), Span::raw("Edit expression")]),
             Line::from(vec![key("Esc / q"), Span::raw("Close detail")]),
         ])
     } else if app.active_tab == Tab::Stats {
@@ -257,7 +266,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             hdr!("Actions"),
             blank(),
             Line::from(vec![key("Enter"), Span::raw("Open detail")]),
-            Line::from(vec![key("/"), Span::raw("Filter")]),
+            Line::from(vec![key("/ / E"), Span::raw("Filter / edit expression")]),
             Line::from(vec![key("s"), Span::raw("Next sort column")]),
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
@@ -278,7 +287,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             hdr!("Actions"),
             blank(),
             Line::from(vec![key("Enter"), Span::raw("Add to expression")]),
-            Line::from(vec![key("/"), Span::raw("Edit expression")]),
+            Line::from(vec![key("/ / E"), Span::raw("Edit expression")]),
             Line::from(vec![key("f"), Span::raw("Select field")]),
             Line::from(vec![key("G"), Span::raw("Cycle graph metric")]),
             Line::from(vec![key("s"), Span::raw("Next sort column")]),
@@ -334,6 +343,28 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
             Line::from(vec![key("q"), Span::raw("Close")]),
         ])
+    } else if app.app_mode == AppMode::Cont3xt {
+        ("Cont3xt Search", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate results / scroll")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            Line::from(vec![key("PgUp / PgDn"), Span::raw("Page up / down (detail)")]),
+            Line::from(vec![key("← / →"), Span::raw("Scroll detail left / right")]),
+            Line::from(vec![key("Home"), Span::raw("Jump to top, reset scroll")]),
+            Line::from(vec![key("End"), Span::raw("Jump to bottom")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("/"), Span::raw("Edit search indicator")]),
+            Line::from(vec![key("Tab (in results)"), Span::raw("Toggle results / detail focus")]),
+            Line::from(vec![key("R"), Span::raw("Toggle raw JSON / card view")]),
+            Line::from(vec![key("i"), Span::raw("Toggle integrations on/off")]),
+            Line::from(vec![key("r"), Span::raw("Re-run search")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ])
     } else {
         ("Sessions", vec![
             hdr!("Navigation"),
@@ -348,7 +379,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             blank(),
             Line::from(vec![key("Enter"), Span::raw("Open session detail")]),
             Line::from(vec![key("p"), Span::raw("View packets")]),
-            Line::from(vec![key("/"), Span::raw("Edit expression")]),
+            Line::from(vec![key("/ / E"), Span::raw("Edit expression")]),
             Line::from(vec![key("t / T"), Span::raw("Cycle time range")]),
             Line::from(vec![key("s"), Span::raw("Next sort column")]),
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),

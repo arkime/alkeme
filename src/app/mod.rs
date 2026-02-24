@@ -3,13 +3,14 @@ mod keys;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, GraphData, HttpLog, SummaryItem};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtResult, GraphData, HttpLog, SummaryItem, parse_card};
 use ratatui::widgets::TableState;
 use serde_json::Value;
 use std::collections::HashMap;
 
 pub struct App {
     pub client: ArkimeClient,
+    pub app_mode: AppMode,
     pub user: Value,
     pub active_tab: Tab,
     pub time_range: TimeRange,
@@ -118,16 +119,35 @@ pub struct App {
     pub owl_frame: usize,
     pub owl_tick: std::time::Instant,
     pub anim_start: std::time::Instant,
+    // Cont3xt state
+    pub c3_integrations: Vec<Cont3xtIntegration>,
+    pub c3_results: Vec<Cont3xtResult>,
+    pub c3_selected: usize,           // selected integration result
+    pub c3_detail_scroll: u16,        // scroll in detail pane
+    pub c3_detail_hscroll: u16,       // horizontal scroll in detail pane
+    pub c3_search_total: u64,
+    pub c3_search_itype: String,
+    pub c3_focus: Cont3xtFocus,       // which pane has focus
+    pub c3_raw_view: bool,            // show raw JSON instead of card
+    pub c3_disabled_integrations: std::collections::HashSet<String>, // user-toggled off
+    pub show_integration_popup: bool,
+    pub integration_popup_selected: usize,
+    pub integration_popup_filter: String,
+    pub integration_popup_filtering: bool,
+    pub c3_searching: bool,           // streaming search in progress
+    pub pending_c3_search: bool,
 }
 
 impl App {
-    pub fn new(base_url: &str, auth_mode: crate::api::AuthMode, username: Option<String>, password: Option<String>) -> Self {
+    pub fn new(base_url: &str, auth_mode: crate::api::AuthMode, username: Option<String>, password: Option<String>, app_mode: AppMode) -> Self {
         let client = ArkimeClient::new(base_url, auth_mode, username, password);
         let http_log = client.http_log();
+        let active_tab = app_mode.default_tab();
         Self {
             client,
+            app_mode,
             user: Value::Null,
-            active_tab: Tab::Sessions,
+            active_tab,
             time_range: TimeRange::All,
             expression: String::new(),
             expression_edit: String::new(),
@@ -246,11 +266,44 @@ impl App {
             owl_frame: 0,
             owl_tick: std::time::Instant::now(),
             anim_start: std::time::Instant::now(),
+            // Cont3xt state
+            c3_integrations: Vec::new(),
+            c3_results: Vec::new(),
+            c3_selected: 0,
+            c3_detail_scroll: 0,
+            c3_detail_hscroll: 0,
+            c3_search_total: 0,
+            c3_search_itype: String::new(),
+            c3_focus: Cont3xtFocus::Results,
+            c3_raw_view: false,
+            c3_disabled_integrations: std::collections::HashSet::new(),
+            show_integration_popup: false,
+            integration_popup_selected: 0,
+            integration_popup_filter: String::new(),
+            integration_popup_filtering: false,
+            c3_searching: false,
+            pending_c3_search: false,
         }
     }
 
     pub fn is_detail_view(&self) -> bool {
         self.session_view == SessionView::Detail || self.stats_view == StatsView::Detail
+    }
+
+    pub fn tabs(&self) -> &'static [Tab] {
+        self.app_mode.tabs()
+    }
+
+    pub fn next_tab(&mut self) {
+        let tabs = self.tabs();
+        let idx = tabs.iter().position(|&t| t == self.active_tab).unwrap_or(0);
+        self.active_tab = tabs[(idx + 1) % tabs.len()];
+    }
+
+    pub fn prev_tab(&mut self) {
+        let tabs = self.tabs();
+        let idx = tabs.iter().position(|&t| t == self.active_tab).unwrap_or(0);
+        self.active_tab = tabs[(idx + tabs.len() - 1) % tabs.len()];
     }
 
     /// Rebuild session_fields from columns
@@ -579,5 +632,39 @@ impl App {
                 .filter(|f| f.exp.to_lowercase().contains(&filter) || f.friendly_name.to_lowercase().contains(&filter))
                 .collect()
         }
+    }
+
+    pub async fn fetch_integrations(&mut self) {
+        match self.client.get_integrations().await {
+            Ok(val) => {
+                let mut integrations = Vec::new();
+                if let Some(obj) = val.get("integrations").and_then(|v| v.as_object()) {
+                    for (name, info) in obj {
+                        let doable = info.get("doable").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let order = info.get("order").and_then(|v| v.as_u64()).unwrap_or(10000) as u32;
+                        let card = info.get("card").and_then(|c| parse_card(c));
+                        integrations.push(Cont3xtIntegration {
+                            name: name.clone(),
+                            doable,
+                            order,
+                            card,
+                        });
+                    }
+                }
+                integrations.sort_by(|a, b| a.order.cmp(&b.order).then(a.name.cmp(&b.name)));
+                self.c3_integrations = integrations;
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching integrations: {e}");
+            }
+        }
+    }
+
+    pub fn request_c3_search(&mut self) {
+        if self.expression.is_empty() {
+            return;
+        }
+        self.show_loading = true;
+        self.pending_c3_search = true;
     }
 }

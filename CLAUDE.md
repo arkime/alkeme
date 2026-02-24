@@ -1,7 +1,7 @@
 # CLAUDE.md - Alkeme Development Guide
 
 ## What is this?
-Rust/ratatui TUI for Arkime. Talks to the Arkime viewer REST API. Run: `cargo run -- http://localhost:8005`
+Rust/ratatui TUI for Arkime ecosystem. Auto-detects app mode (Viewer, Cont3xt, WISE, Parliament) via `/api/appversion`. Run: `cargo run -- http://localhost:8005`
 
 ## Build
 ```
@@ -10,23 +10,49 @@ cargo run -- URL                                               # no auth
 cargo run -- URL --auth digest --user admin:admin              # digest auth
 cargo run -- URL --auth basic --user admin:admin               # basic auth
 cargo run -- URL --auth form --user admin:admin                # form auth (cookie-based)
-cargo run -- URL --auth digest                                 # prompts for credentials
+cargo run -- URL --auth digest                                 # prompts for both user+pass
+cargo run -- URL --auth digest --user admin                    # prompts for password only
+cargo run -- URL --app cont3xt --auth form --user admin:admin  # force cont3xt mode
 ```
 
 ## Architecture
 
 ```
 src/
-  main.rs   - Entry point, clap CLI parsing, terminal setup, event loop (crossterm polling)
-  app.rs    - All state + input handling (App struct, enums, key handlers)
-  api.rs    - ArkimeClient: HTTP calls to viewer (reqwest + digest_auth + serde_json::Value)
-  ui.rs     - All rendering (ratatui Frame draws, one fn per view)
+  main.rs       - Entry point, clap CLI parsing, terminal setup, event loop (crossterm polling)
+  app/mod.rs    - App struct, state, fetch methods
+  app/types.rs  - Enums (AppMode, Tab, TimeRange, InputMode, etc.)
+  app/keys.rs   - All key event handlers (mode-aware routing)
+  api.rs        - ArkimeClient + FetchClient: HTTP calls (reqwest + digest_auth + serde_json::Value)
+  ui/mod.rs     - All rendering (ratatui Frame draws, one fn per view)
+  ui/sessions.rs - Session list/detail rendering
+  ui/stats.rs   - Stats tab rendering
+  ui/arkime.rs  - Summary tab + owl animation rendering
+  ui/popups.rs  - Help overlays, debug log, action menus
 ```
+
+## App Mode / Multi-App
+
+- At startup, `/api/appversion` is the first API call (after login/cookie)
+- `result.app` determines `AppMode`: "viewer" (default if empty), "cont3xt", "wise"/"wiseService", "parliament"
+- If `/api/appversion` fails, exits with "please upgrade to Arkime 6" message
+- `--app <mode>` CLI flag skips appversion call and forces a mode
+- `/api/user` provides user info (separate call)
+- Each mode has its own tab set via `AppMode::tabs()`:
+  - **Viewer**: Arkime, Sessions, Stats, Settings (defaults to Sessions)
+  - **Cont3xt**: Search, History, Settings (defaults to Search)
+  - **Wise/Parliament**: Settings (placeholder)
+- `AppMode::default_tab()` returns the starting tab for each mode
+- UI rendering routes through `draw_viewer()`, `draw_cont3xt()`, or `draw_placeholder()` based on mode
+- Key handling routes through mode-specific handlers in `handle_key()`
+- Viewer-specific background tasks (packets/summary fetch, stats auto-refresh) only run in Viewer mode
+- `--user username` (no colon) prompts only for password; `--auth` with no `--user` prompts for both
 
 ## Key types
 
 - `App` — All mutable state. Passed as `&mut` to handlers and renderers.
-- `Tab` — Enum with `ALL` const array. Tabs: Arkime, Sessions, Stats, Settings.
+- `AppMode` — Enum: `Viewer` | `Cont3xt` | `Wise` | `Parliament`. Determined at startup from `/api/appversion` `result.app` or `--app` flag. Has `tabs()`, `default_tab()`, `label()`.
+- `Tab` — Enum: `Arkime` | `Sessions` | `Stats` | `Search` | `History` | `Settings`. Which tabs are available depends on `AppMode::tabs()`.
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
 - `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
 - `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
@@ -56,11 +82,16 @@ src/
 - `LayoutPopupMode` — Enum: `List` | `SaveInput` | `ConfirmDelete`. Controls layout popup state.
 - `ArkimeView` — Server view: `id`, `name`, `expression`, `user`, `shared` (bool). Fetched from `/api/views`.
 - `ViewPopupMode` — Enum: `List` | `SaveInput` | `ConfirmDelete`. Controls view popup state.
-- `HttpLogEntry` — Records HTTP request: timestamp, method, url, post_data, status, first_byte_ms, last_byte_ms. Stored in `HttpLog` (`Arc<Mutex<Vec<HttpLogEntry>>>`), shared between `ArkimeClient` and `FetchClient`.
+- `HttpLogEntry` — Records HTTP request: timestamp, method, url, post_data, status, first_byte_ms, last_byte_ms, response_body (Option, first 200 chars for non-200). Stored in `HttpLog` (`Arc<Mutex<Vec<HttpLogEntry>>>`), shared between `ArkimeClient` and `FetchClient`.
+- `Cont3xtFocus` — Enum: `Results` | `Detail`. Controls which pane has focus in cont3xt search.
+- `Cont3xtIntegration` — Integration definition from `/api/integration`: name, doable, order, card (Option<Cont3xtCard>).
+- `Cont3xtCard` — Card display definition: title, fields (Vec<CardField>).
+- `CardField` — Card field: label, field (dot-joined path), field_type (string/url/date/ms/seconds/array/table/json/dnsRecords), join, fields (sub-fields for tables), defang, field_root, filter_empty.
+- `Cont3xtResult` — Search result from one integration: name, indicator, itype, data (Value), has_data.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
-## Current keybindings
+## Viewer keybindings
 
 | Key | Action |
 |---|---|
@@ -74,7 +105,7 @@ src/
 | Enter | Open session/stats detail; in detail or summary, open expression menu |
 | Esc | Close overlay |
 | r | Refresh data |
-| / | Search expression or filter (Enter to apply, Esc to cancel); in session detail, live-filter fields |
+| / or E | Search expression or filter (Enter to apply, Esc to cancel); in session detail, live-filter fields |
 | t / T | Cycle time range forward/backward (sessions) |
 | s | Next sort column |
 | S | Toggle sort direction (asc/desc) |
@@ -91,6 +122,26 @@ src/
 | h / ? | Show context-sensitive help overlay |
 | q | Quit |
 
+## Cont3xt keybindings
+
+| Key | Action |
+|---|---|
+| Tab / Shift+Tab | Switch tabs; toggle results/detail focus (in Search) |
+| j / k / ↑ / ↓ | Navigate results list or scroll detail |
+| Shift+↑ / Shift+↓ | Page up/down |
+| PgUp / PgDn | Page up/down (detail) |
+| ← / → | Scroll detail left/right |
+| Shift+← / Shift+→ | Fast scroll detail left/right |
+| Home | Jump to top, reset horizontal scroll |
+| End | Jump to bottom |
+| / or E | Edit search indicator |
+| R | Toggle raw JSON / card view |
+| i | Integration filter popup (Space:toggle, a:all, n:none, !:invert, /:filter) |
+| r | Re-run search |
+| D | HTTP debug log overlay |
+| h / ? | Show help |
+| q | Quit |
+
 ## Session columns (default)
 
 ipProtocol (4-char mapped: TCP/UDP/ICMP/ICM6/etc), firstPacket, lastPacket, source.ip,
@@ -105,10 +156,10 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - `POST /api/user/layouts/sessionstable` — body: `{name, columns: [field_names], order: [[sortField, dir]]}`
 - `PUT /api/user/layouts/sessionstable` — same body, updates existing
 - `DELETE /api/user/layouts/sessionstable/:name` — deletes layout
-- All mutating calls require `x-arkime-cookie` header (CSRF token from `ARKIME-COOKIE` response cookie)
+- All mutating calls require `x-arkime-cookie` or `x-cont3xt-cookie` header (CSRF token from `ARKIME-COOKIE` or `CONT3XT-COOKIE` response cookie)
 - `ArkimeClient::fetch_cookie()` captures the cookie at startup for all auth modes
-- `authenticated_get_with_cookie()` sends `x-arkime-cookie` header for GET endpoints with `checkCookieToken`
-- `extract_cookie()` helper shared between `login()` and `fetch_cookie()`
+- `authenticated_get_with_cookie()` sends the appropriate cookie header for GET endpoints with `checkCookieToken`
+- `extract_cookie()` handles both cookie names and sets `cookie_header_name` dynamically
 
 ## Views
 
@@ -188,6 +239,45 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Fetch is async via `tokio::spawn` + `FetchClient::fetch_post` — shows walking owl loading popup during fetch
 - `pending_summary_fetch` flag triggers spawn in main loop; result polled via `JoinHandle::is_finished()`
 - Fields with `regex` or `noFacet="true"` are hidden from field selector (`is_visible()` filter)
+
+## Cont3xt mode
+
+### Integration search
+- `POST /api/integration/search` with JSON body `{"query":"..."}` — streaming response
+- Response is a JSON array, one object per line: `{"purpose":"init",...}`, `{"purpose":"data","name":"IntName","data":{...}}`, `{"purpose":"finish",...}`
+- `FetchClient::fetch_post_json_streaming()` uses `reqwest::Response::bytes_stream()` via `futures_util::StreamExt`
+- Parsed results pushed into `Arc<Mutex<Vec<Cont3xtResult>>>`, polled by main event loop every 100ms
+- `c3_searching` flag tracks active search; results appear incrementally in the UI
+
+### Integration list
+- `GET /api/integration` returns `{"success":true,"integrations":{"Name":{doable,order,card,...},...}}`
+- Cards are server-normalized: `field` → `path` (array), `fieldRoot` → `fieldRootPath` (array)
+- `parse_card_field()` reads `path` array and joins to dot-notation for `get_by_path()` traversal
+
+### Card rendering
+- `render_card_lines()` builds `Vec<JsonLine>` from card definition + data
+- Supports types: string, url, date, ms, seconds, array (with join), table (with sub-fields), json, dnsRecords
+- `get_by_path()` tries full key first (handles flattened ES keys like `"source.ip"`), then nested dot traversal
+- `align_table_columns()` post-processes lines to compute max column widths per table block
+- `format_table_cells()` pads cells to computed widths; horizontal scroll via `c3_detail_hscroll`
+- `R` toggles between card view and raw JSON; `flatten_json_to_lines()` renders raw
+
+### Integration popup
+- `i` key opens popup; `/` enters filter mode for type-to-search
+- Space/Enter toggles individual integrations; `a` enables all, `n` disables all, `!` inverts
+- `c3_disabled_integrations: HashSet<String>` filters results during streaming search
+
+### Cookie handling
+- Cont3xt uses `CONT3XT-COOKIE` (not `ARKIME-COOKIE`)
+- CSRF token header is `x-cont3xt-cookie` (not `x-arkime-cookie`)
+- `extract_cookie()` handles both cookie names; `cookie_header_name` field set dynamically
+- For Form auth, reqwest cookie jar handles session cookies; only CSRF token sent via custom header
+
+### Cont3xt state fields
+- `c3_integrations`, `c3_results`, `c3_selected`, `c3_detail_scroll`, `c3_detail_hscroll`
+- `c3_search_total`, `c3_search_itype`, `c3_focus`, `c3_raw_view`
+- `c3_disabled_integrations`, `show_integration_popup`, `integration_popup_selected`, `integration_popup_filter`, `integration_popup_filtering`
+- `c3_searching`, `pending_c3_search`
 
 ## Owl animation
 - Settings tab shows a 90s "Under Construction" page with animated owl

@@ -5,7 +5,8 @@ mod popups;
 
 // Re-export app types for sub-modules via `use super::*`
 #[allow(unused_imports)]
-use crate::app::{App, ActionTarget, ColumnEditorMode, DetailActionMenu, GraphType, InputMode, LayoutPopupMode, LineMode, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, ViewPopupMode, is_hidden_detail_field};
+use crate::app::{App, AppMode, ActionTarget, ColumnEditorMode, Cont3xtFocus, DetailActionMenu, GraphType, InputMode, LayoutPopupMode, LineMode, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, ViewPopupMode, is_hidden_detail_field};
+use crate::api::{CardField, Cont3xtCard};
 use chrono::{DateTime, Local};
 use ratatui::{
     prelude::*,
@@ -122,6 +123,25 @@ pub(super) fn ip_protocol_str(val: &serde_json::Value) -> String {
 }
 
 pub fn draw(f: &mut Frame, app: &mut App) {
+    match app.app_mode {
+        AppMode::Viewer => draw_viewer(f, app),
+        AppMode::Cont3xt => draw_cont3xt(f, app),
+        _ => draw_placeholder(f, app),
+    }
+
+    // Common overlays (shared across modes)
+    if app.show_help {
+        popups::draw_help(f, app, f.area());
+    }
+    if app.show_debug {
+        popups::draw_debug(f, app, f.area());
+    }
+    if app.show_loading {
+        popups::draw_loading(f, app, f.area());
+    }
+}
+
+fn draw_viewer(f: &mut Frame, app: &mut App) {
     match app.active_tab {
         Tab::Stats => draw_stats_layout(f, app),
         _ => draw_default_layout(f, app),
@@ -151,15 +171,679 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.show_view_popup {
         popups::draw_view_popup(f, app, f.area());
     }
-    if app.show_help {
-        popups::draw_help(f, app, f.area());
+}
+
+fn draw_cont3xt(f: &mut Frame, app: &mut App) {
+    let status_h = status_bar_height(app);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // tabs
+            Constraint::Length(3), // search bar
+            Constraint::Min(0),   // content
+            Constraint::Length(status_h), // status bar
+        ])
+        .split(f.area());
+
+    draw_tabs(f, app, chunks[0]);
+
+    match app.active_tab {
+        Tab::Search => {
+            draw_cont3xt_search_bar(f, app, chunks[1]);
+            draw_cont3xt_results(f, app, chunks[2]);
+        }
+        Tab::History => {
+            let block = Block::default().borders(Borders::ALL).title(" History ");
+            f.render_widget(block, chunks[1]);
+            let block = Block::default().borders(Borders::ALL).title(" Query History ");
+            let placeholder = Paragraph::new("  History coming soon...")
+                .style(Style::default().fg(Color::DarkGray))
+                .block(block);
+            f.render_widget(placeholder, chunks[2]);
+        }
+        Tab::Settings => {
+            let block = Block::default().borders(Borders::ALL).title(" Settings ");
+            f.render_widget(block, chunks[1]);
+            arkime::draw_under_construction(f, app, chunks[2]);
+            arkime::draw_owl(f, app, chunks[2]);
+        }
+        _ => {}
     }
-    if app.show_debug {
-        popups::draw_debug(f, app, f.area());
+
+    draw_status_bar(f, app, chunks[3]);
+
+    if app.show_integration_popup {
+        draw_integration_popup(f, app, f.area());
     }
-    if app.show_loading {
-        popups::draw_loading(f, app, f.area());
+}
+
+fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
+    let expr_display = if app.input_mode == InputMode::Expression {
+        &app.expression_edit
+    } else {
+        &app.expression
+    };
+    let expr_style = if app.input_mode == InputMode::Expression {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let itype_label = if !app.c3_search_itype.is_empty() {
+        format!(" [{}] ", app.c3_search_itype)
+    } else {
+        String::new()
+    };
+
+    let expr_widget = Paragraph::new(Span::styled(expr_display.as_str(), expr_style))
+        .block(Block::default().borders(Borders::ALL).title(format!(" Search (/) {itype_label}")));
+    f.render_widget(expr_widget, area);
+
+    if app.input_mode == InputMode::Expression {
+        f.set_cursor_position((
+            area.x + app.expression_cursor as u16 + 1,
+            area.y + 1,
+        ));
     }
+}
+
+fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
+    if app.c3_results.is_empty() && app.expression.is_empty() {
+        let block = Block::default().borders(Borders::ALL).title(" Results ");
+        let placeholder = Paragraph::new("  Enter an indicator to search (IP, domain, hash, email, ...)")
+            .style(Style::default().fg(Color::DarkGray))
+            .block(block);
+        f.render_widget(placeholder, area);
+        return;
+    }
+    if app.c3_results.is_empty() {
+        let block = Block::default().borders(Borders::ALL).title(" Results ");
+        let text = if app.show_loading {
+            "  Searching...".to_string()
+        } else {
+            format!("  No results for: {}", app.expression)
+        };
+        let content = Paragraph::new(text)
+            .style(Style::default().fg(Color::DarkGray))
+            .block(block);
+        f.render_widget(content, area);
+        return;
+    }
+
+    // Split into left (integration list) and right (detail)
+    let horiz = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(30),  // integration list
+            Constraint::Min(0),     // detail pane
+        ])
+        .split(area);
+
+    // Left pane: integration results list
+    let results_focused = app.c3_focus == Cont3xtFocus::Results;
+    let results_border_style = if results_focused {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let results_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(results_border_style)
+        .title(format!(" Integrations ({}) ", app.c3_results.len()));
+
+    let inner = results_block.inner(horiz[0]);
+    f.render_widget(results_block, horiz[0]);
+
+    let visible_height = inner.height as usize;
+    app.visible_rows = visible_height;
+
+    // Scroll the list to keep selection visible
+    let scroll_offset = if app.c3_selected >= visible_height {
+        app.c3_selected - visible_height + 1
+    } else {
+        0
+    };
+
+    for (i, result) in app.c3_results.iter().enumerate().skip(scroll_offset).take(visible_height) {
+        let y = inner.y + (i - scroll_offset) as u16;
+        if y >= inner.y + inner.height { break; }
+
+        let is_selected = i == app.c3_selected;
+        let style = if is_selected && results_focused {
+            Style::default().fg(Color::Black).bg(Color::Cyan)
+        } else if is_selected {
+            Style::default().fg(Color::Black).bg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let indicator_suffix = if result.indicator != app.expression {
+            format!(" ({})", result.indicator)
+        } else {
+            String::new()
+        };
+        let label = format!(" {}{}", result.name, indicator_suffix);
+        let truncated = if label.len() > inner.width as usize {
+            format!("{}…", &label[..inner.width as usize - 1])
+        } else {
+            format!("{:<width$}", label, width = inner.width as usize)
+        };
+
+        let span = Span::styled(truncated, style);
+        f.render_widget(Paragraph::new(span), Rect::new(inner.x, y, inner.width, 1));
+    }
+
+    // Right pane: detail for selected integration
+    let detail_focused = app.c3_focus == Cont3xtFocus::Detail;
+    let detail_border_style = if detail_focused {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    if let Some(result) = app.c3_results.get(app.c3_selected) {
+        // Find the card definition for this integration
+        let card = if !app.c3_raw_view {
+            app.c3_integrations.iter()
+                .find(|i| i.name == result.name)
+                .and_then(|i| i.card.as_ref())
+        } else {
+            None
+        };
+
+        let view_label = if app.c3_raw_view { " [RAW] " } else { "" };
+        let detail_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(detail_border_style)
+            .title(format!(" {} — {} {view_label}", result.name, result.indicator));
+
+        let detail_inner = detail_block.inner(horiz[1]);
+        f.render_widget(detail_block, horiz[1]);
+
+        // Build lines based on card definition or raw JSON
+        let mut lines = if let Some(card) = card {
+            render_card_lines(card, &result.data, &result.indicator)
+        } else {
+            flatten_json_to_lines(&result.data, "", 0)
+        };
+        align_table_columns(&mut lines);
+        let total_lines = lines.len();
+
+        // Clamp scroll
+        let max_scroll = total_lines.saturating_sub(detail_inner.height as usize);
+        let scroll = (app.c3_detail_scroll as usize).min(max_scroll);
+        app.c3_detail_scroll = scroll as u16;
+
+        for (i, line) in lines.iter().skip(scroll).take(detail_inner.height as usize).enumerate() {
+            let y = detail_inner.y + i as u16;
+            if y >= detail_inner.y + detail_inner.height { break; }
+
+            let spans = match line {
+                JsonLine::KeyValue(key, value) => {
+                    vec![
+                        Span::styled(format!(" {}: ", key), Style::default().fg(Color::Yellow)),
+                        Span::styled(value.clone(), Style::default().fg(Color::White)),
+                    ]
+                }
+                JsonLine::Header(key, is_array) => {
+                    let suffix = if *is_array { " [" } else { " {" };
+                    vec![Span::styled(format!(" {}{}", key, suffix), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]
+                }
+                JsonLine::Close(bracket) => {
+                    vec![Span::styled(format!(" {bracket}"), Style::default().fg(Color::DarkGray))]
+                }
+                JsonLine::ArrayValue(value) => {
+                    vec![
+                        Span::styled("   • ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(value.clone(), Style::default().fg(Color::White)),
+                    ]
+                }
+                JsonLine::TableRow(cells, widths) => {
+                    let row_str = format_table_cells(cells, widths, " │ ");
+                    let hscroll = app.c3_detail_hscroll as usize;
+                    let visible: String = row_str.chars().skip(hscroll).collect();
+                    vec![
+                        Span::raw("  "),
+                        Span::styled(visible, Style::default().fg(Color::White)),
+                    ]
+                }
+                JsonLine::TableHeader(cells, widths) => {
+                    let row_str = format_table_cells(cells, widths, " │ ");
+                    let hscroll = app.c3_detail_hscroll as usize;
+                    let visible: String = row_str.chars().skip(hscroll).collect();
+                    vec![
+                        Span::raw("  "),
+                        Span::styled(visible, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    ]
+                }
+            };
+
+            f.render_widget(Paragraph::new(Line::from(spans)), Rect::new(detail_inner.x, y, detail_inner.width, 1));
+        }
+
+        // Scrollbar indicator + raw toggle hint
+        let hint = if detail_focused { " R:toggle raw " } else { "" };
+        if total_lines > detail_inner.height as usize {
+            let pct = if max_scroll > 0 { scroll * 100 / max_scroll } else { 0 };
+            let indicator = format!(" {}/{} ({}%){hint}", scroll + 1, total_lines, pct);
+            let x = horiz[1].x + horiz[1].width.saturating_sub(indicator.len() as u16 + 1);
+            f.render_widget(
+                Paragraph::new(Span::styled(&indicator, Style::default().fg(Color::DarkGray))),
+                Rect::new(x, horiz[1].y, indicator.len() as u16, 1),
+            );
+        } else if !hint.is_empty() {
+            let x = horiz[1].x + horiz[1].width.saturating_sub(hint.len() as u16 + 1);
+            f.render_widget(
+                Paragraph::new(Span::styled(hint, Style::default().fg(Color::DarkGray))),
+                Rect::new(x, horiz[1].y, hint.len() as u16, 1),
+            );
+        }
+    } else {
+        let detail_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(detail_border_style)
+            .title(" Detail ");
+        f.render_widget(detail_block, horiz[1]);
+    }
+}
+
+enum JsonLine {
+    KeyValue(String, String),
+    Header(String, bool),    // name, is_array
+    Close(String),
+    ArrayValue(String),
+    TableHeader(Vec<String>, Vec<usize>),  // cells, column widths
+    TableRow(Vec<String>, Vec<usize>),     // cells, column widths
+}
+
+/// Post-process lines to compute aligned column widths for table blocks
+fn align_table_columns(lines: &mut Vec<JsonLine>) {
+    // Find contiguous blocks of TableHeader + TableRows and compute max col widths
+    let mut i = 0;
+    while i < lines.len() {
+        if matches!(&lines[i], JsonLine::TableHeader(_, _)) {
+            let start = i;
+            // Collect all column widths in this table block
+            let mut col_widths: Vec<usize> = Vec::new();
+            let mut j = i;
+            while j < lines.len() {
+                let cells = match &lines[j] {
+                    JsonLine::TableHeader(c, _) => Some(c),
+                    JsonLine::TableRow(c, _) => Some(c),
+                    _ => None,
+                };
+                if let Some(cells) = cells {
+                    for (col, cell) in cells.iter().enumerate() {
+                        let w = cell.chars().count();
+                        if col >= col_widths.len() {
+                            col_widths.push(w);
+                        } else if w > col_widths[col] {
+                            col_widths[col] = w;
+                        }
+                    }
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            // Apply widths back to the lines
+            for k in start..j {
+                match &mut lines[k] {
+                    JsonLine::TableHeader(_, widths) |
+                    JsonLine::TableRow(_, widths) => {
+                        *widths = col_widths.clone();
+                    }
+                    _ => {}
+                }
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+}
+
+fn flatten_json_to_lines(value: &serde_json::Value, prefix: &str, depth: usize) -> Vec<JsonLine> {
+    let mut lines = Vec::new();
+    let indent = "  ".repeat(depth);
+
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, val) in map {
+                if key == "_cont3xt" { continue; }
+                let display_key = if prefix.is_empty() {
+                    format!("{indent}{key}")
+                } else {
+                    format!("{indent}{prefix}.{key}")
+                };
+                match val {
+                    serde_json::Value::Object(_) => {
+                        lines.push(JsonLine::Header(display_key, false));
+                        lines.extend(flatten_json_to_lines(val, "", depth + 1));
+                        lines.push(JsonLine::Close(format!("{}}}",  "  ".repeat(depth + 1))));
+                    }
+                    serde_json::Value::Array(arr) => {
+                        if arr.iter().all(|v| !v.is_object() && !v.is_array()) {
+                            // Simple array: show inline
+                            let vals: Vec<String> = arr.iter().map(|v| format_json_value(v)).collect();
+                            lines.push(JsonLine::KeyValue(display_key, vals.join(", ")));
+                        } else {
+                            lines.push(JsonLine::Header(display_key, true));
+                            for item in arr {
+                                if item.is_object() {
+                                    lines.extend(flatten_json_to_lines(item, "", depth + 1));
+                                    lines.push(JsonLine::Close(format!("{}---", "  ".repeat(depth + 1))));
+                                } else {
+                                    lines.push(JsonLine::ArrayValue(format_json_value(item)));
+                                }
+                            }
+                            lines.push(JsonLine::Close(format!("{}]", "  ".repeat(depth + 1))));
+                        }
+                    }
+                    _ => {
+                        lines.push(JsonLine::KeyValue(display_key, format_json_value(val)));
+                    }
+                }
+            }
+        }
+        _ => {
+            lines.push(JsonLine::KeyValue(format!("{indent}{prefix}"), format_json_value(value)));
+        }
+    }
+    lines
+}
+
+fn format_json_value(val: &serde_json::Value) -> String {
+    match val {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Null => "null".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Format table cells with aligned column widths
+fn format_table_cells(cells: &[String], widths: &[usize], sep: &str) -> String {
+    let mut out = String::new();
+    for (j, cell) in cells.iter().enumerate() {
+        if j > 0 { out.push_str(sep); }
+        let w = widths.get(j).copied().unwrap_or(0);
+        let char_count = cell.chars().count();
+        out.push_str(cell);
+        if char_count < w {
+            for _ in 0..(w - char_count) {
+                out.push(' ');
+            }
+        }
+    }
+    out
+}
+
+/// Navigate a dotted path like "foo.bar.baz" into a JSON value
+fn get_by_path<'a>(data: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    if path.is_empty() {
+        return Some(data);
+    }
+    // Try full key first (handles flattened keys like "source.ip")
+    if let Some(v) = data.get(path) {
+        return Some(v);
+    }
+    // Fall back to nested traversal
+    let mut current = data;
+    for part in path.split('.') {
+        current = current.get(part)?;
+    }
+    Some(current)
+}
+
+fn defang_string(s: &str) -> String {
+    s.replace("http", "hXXp").replace('.', "[.]")
+}
+
+fn format_card_value(val: &serde_json::Value, field: &CardField) -> String {
+    let raw = match &field.field_type[..] {
+        "date" => {
+            // Try parsing as ISO date string or epoch ms
+            if let Some(s) = val.as_str() {
+                s.to_string()
+            } else if let Some(n) = val.as_f64() {
+                let secs = if n > 1e12 { (n / 1000.0) as i64 } else { n as i64 };
+                chrono::DateTime::from_timestamp(secs, 0)
+                    .map(|dt| dt.format("%Y/%m/%d %H:%M:%S").to_string())
+                    .unwrap_or_else(|| format_json_value(val))
+            } else {
+                format_json_value(val)
+            }
+        }
+        "ms" => {
+            if let Some(n) = val.as_f64() {
+                let secs = (n / 1000.0) as i64;
+                chrono::DateTime::from_timestamp(secs, 0)
+                    .map(|dt| dt.format("%Y/%m/%d %H:%M:%S").to_string())
+                    .unwrap_or_else(|| format_json_value(val))
+            } else {
+                format_json_value(val)
+            }
+        }
+        "seconds" => {
+            if let Some(n) = val.as_f64() {
+                chrono::DateTime::from_timestamp(n as i64, 0)
+                    .map(|dt| dt.format("%Y/%m/%d %H:%M:%S").to_string())
+                    .unwrap_or_else(|| format_json_value(val))
+            } else {
+                format_json_value(val)
+            }
+        }
+        _ => format_json_value(val),
+    };
+    if field.defang { defang_string(&raw) } else { raw }
+}
+
+fn render_card_lines(card: &Cont3xtCard, data: &serde_json::Value, _indicator: &str) -> Vec<JsonLine> {
+    let mut lines = Vec::new();
+
+    for field_def in &card.fields {
+        let val = get_by_path(data, &field_def.field);
+
+        match &field_def.field_type[..] {
+            "table" => {
+                lines.push(JsonLine::Header(field_def.label.clone(), true));
+                if let Some(arr) = val.and_then(|v| v.as_array()) {
+                    // Table header
+                    if !field_def.fields.is_empty() {
+                        let headers: Vec<String> = field_def.fields.iter()
+                            .map(|f| f.label.clone())
+                            .collect();
+                        lines.push(JsonLine::TableHeader(headers, vec![]));
+                    }
+                    // Table rows
+                    for item in arr {
+                        let row_data = if let Some(ref fr) = field_def.field_root {
+                            get_by_path(item, fr).unwrap_or(item)
+                        } else {
+                            item
+                        };
+                        if field_def.fields.is_empty() {
+                            lines.push(JsonLine::ArrayValue(format_json_value(row_data)));
+                        } else {
+                            let cells: Vec<String> = field_def.fields.iter().map(|sub| {
+                                get_by_path(row_data, &sub.field)
+                                    .map(|v| format_card_value(v, sub))
+                                    .unwrap_or_default()
+                            }).collect();
+                            lines.push(JsonLine::TableRow(cells, vec![]));
+                        }
+                    }
+                }
+                lines.push(JsonLine::Close(format!("  ]")));
+            }
+            "array" => {
+                if let Some(arr) = val.and_then(|v| v.as_array()) {
+                    let items: Vec<serde_json::Value> = if let Some(ref fr) = field_def.field_root {
+                        arr.iter().filter_map(|item| get_by_path(item, fr).cloned()).collect()
+                    } else {
+                        arr.clone()
+                    };
+                    // Filter empty if applicable
+                    let items: Vec<&serde_json::Value> = items.iter()
+                        .filter(|v| !v.is_null() && v.as_str().map(|s| !s.is_empty()).unwrap_or(true))
+                        .collect();
+                    if let Some(ref join) = field_def.join {
+                        let joined: Vec<String> = items.iter().map(|v| format_json_value(v)).collect();
+                        lines.push(JsonLine::KeyValue(field_def.label.clone(), joined.join(join)));
+                    } else {
+                        lines.push(JsonLine::Header(field_def.label.clone(), true));
+                        for item in items {
+                            lines.push(JsonLine::ArrayValue(format_json_value(item)));
+                        }
+                        lines.push(JsonLine::Close(format!("  ]")));
+                    }
+                } else if let Some(v) = val {
+                    lines.push(JsonLine::KeyValue(field_def.label.clone(), format_card_value(v, field_def)));
+                }
+            }
+            "json" => {
+                lines.push(JsonLine::Header(field_def.label.clone(), false));
+                if let Some(v) = val {
+                    let pretty = serde_json::to_string_pretty(v).unwrap_or_else(|_| format_json_value(v));
+                    for json_line in pretty.lines() {
+                        lines.push(JsonLine::ArrayValue(json_line.to_string()));
+                    }
+                }
+                lines.push(JsonLine::Close(format!("  }}")));
+            }
+            "dnsRecords" => {
+                // DNS records: data is an object with record types as keys
+                if let Some(obj) = val.or(Some(data)).and_then(|v| v.as_object()) {
+                    for (rtype, rdata) in obj {
+                        if rtype == "_cont3xt" { continue; }
+                        lines.push(JsonLine::Header(rtype.clone(), false));
+                        if let Some(answers) = rdata.get("Answer").and_then(|a| a.as_array()) {
+                            for ans in answers {
+                                let name = ans.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                                let data_str = ans.get("data").and_then(|v| v.as_str()).unwrap_or("");
+                                let ttl = ans.get("TTL").and_then(|v| v.as_u64()).unwrap_or(0);
+                                lines.push(JsonLine::ArrayValue(format!("{name} → {data_str} (TTL: {ttl})")));
+                            }
+                        } else {
+                            let status = rdata.get("Status").and_then(|v| v.as_u64()).unwrap_or(0);
+                            lines.push(JsonLine::ArrayValue(format!("Status: {status}")));
+                        }
+                    }
+                }
+            }
+            _ => {
+                // string, url, externalLink, date, ms, seconds
+                if let Some(v) = val {
+                    if v.is_null() { continue; }
+                    if let Some(s) = v.as_str() {
+                        if s.is_empty() { continue; }
+                    }
+                    lines.push(JsonLine::KeyValue(field_def.label.clone(), format_card_value(v, field_def)));
+                }
+            }
+        }
+    }
+
+    if lines.is_empty() {
+        lines.push(JsonLine::KeyValue("(no card fields matched)".to_string(), String::new()));
+    }
+
+    lines
+}
+
+fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
+    let filtered: Vec<(usize, &crate::api::Cont3xtIntegration)> = app.c3_integrations.iter().enumerate()
+        .filter(|(_, int)| {
+            app.integration_popup_filter.is_empty()
+            || int.name.to_lowercase().contains(&app.integration_popup_filter.to_lowercase())
+        })
+        .collect();
+
+    let disabled_count = app.c3_disabled_integrations.len();
+    let total = app.c3_integrations.len();
+    let enabled = total - disabled_count;
+
+    let popup_width = 50u16.min(area.width.saturating_sub(4));
+    let popup_height = (filtered.len() as u16 + 5).min(area.height.saturating_sub(4));
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let bottom_line = if app.integration_popup_filtering {
+        let cursor = format!(" /{}█ ", app.integration_popup_filter);
+        Line::from(Span::styled(cursor, Style::default().fg(Color::Yellow))).centered()
+    } else if !app.integration_popup_filter.is_empty() {
+        Line::from(format!(" /{} │ Space:toggle a:all n:none !:invert ", app.integration_popup_filter)).centered()
+    } else {
+        Line::from(" Space:toggle  a:all  n:none  !:invert  /:filter ").centered()
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(format!(" Integrations ({enabled}/{total}) "))
+        .title_bottom(bottom_line);
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    // Handle scrolling when list is longer than inner height
+    let visible_height = inner.height as usize;
+    let scroll_offset = if filtered.len() > visible_height {
+        let sel = app.integration_popup_selected;
+        if sel >= visible_height {
+            sel - visible_height + 1
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    for (i, (_, integ)) in filtered.iter().enumerate().skip(scroll_offset).take(visible_height) {
+        let y = inner.y + (i - scroll_offset) as u16;
+        let is_selected = i == app.integration_popup_selected;
+        let is_disabled = app.c3_disabled_integrations.contains(&integ.name);
+
+        let check = if is_disabled { "✗" } else { "✓" };
+        let check_color = if is_disabled { Color::Red } else { Color::Green };
+
+        let style = if is_selected {
+            Style::default().fg(Color::Black).bg(Color::Cyan)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        if is_selected {
+            let label = format!(" {check} {}", integ.name);
+            f.render_widget(Paragraph::new(Span::styled(label, style)), Rect::new(inner.x, y, inner.width, 1));
+        } else {
+            let line = Line::from(vec![
+                Span::styled(format!(" {check} "), Style::default().fg(check_color)),
+                Span::styled(integ.name.clone(), style),
+            ]);
+            f.render_widget(Paragraph::new(line), Rect::new(inner.x, y, inner.width, 1));
+        }
+    }
+}
+
+fn draw_placeholder(f: &mut Frame, app: &mut App, ) {
+    let status_h = status_bar_height(app);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(status_h),
+        ])
+        .split(f.area());
+
+    draw_tabs(f, app, chunks[0]);
+    arkime::draw_under_construction(f, app, chunks[1]);
+    arkime::draw_owl(f, app, chunks[1]);
+    draw_status_bar(f, app, chunks[2]);
 }
 
 fn status_bar_height(app: &App) -> u16 {
@@ -229,13 +913,14 @@ fn draw_stats_layout(f: &mut Frame, app: &mut App) {
 }
 
 fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
-    let titles: Vec<Line> = Tab::ALL
+    let tabs_list = app.app_mode.tabs();
+    let titles: Vec<Line> = tabs_list
         .iter()
         .map(|t| Line::from(t.name()))
         .collect();
     let tabs = Tabs::new(titles)
-        .block(Block::default().borders(Borders::ALL).title(" Alkeme "))
-        .select(Tab::ALL.iter().position(|&t| t == app.active_tab).unwrap_or(0))
+        .block(Block::default().borders(Borders::ALL).title(format!(" Alkeme ({}) ", app.app_mode.label())))
+        .select(tabs_list.iter().position(|&t| t == app.active_tab).unwrap_or(0))
         .style(Style::default().fg(Color::White))
         .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
     f.render_widget(tabs, area);

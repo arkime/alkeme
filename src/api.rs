@@ -15,6 +15,7 @@ pub struct HttpLogEntry {
     pub status: u16,
     pub first_byte_ms: u64,
     pub last_byte_ms: u64,
+    pub response_body: Option<String>,
 }
 
 pub type HttpLog = Arc<Mutex<Vec<HttpLogEntry>>>;
@@ -23,8 +24,16 @@ pub fn new_http_log() -> HttpLog {
     Arc::new(Mutex::new(Vec::new()))
 }
 
-fn log_http(log: &HttpLog, method: &str, url: &str, post_data: Option<String>, status: u16, first_byte_ms: u64, last_byte_ms: u64) {
+fn log_http(log: &HttpLog, method: &str, url: &str, post_data: Option<String>, status: u16, first_byte_ms: u64, last_byte_ms: u64, response_body: Option<&str>) {
     if let Ok(mut entries) = log.lock() {
+        let resp = if status >= 300 {
+            response_body.map(|b| {
+                let truncated = if b.len() > 200 { &b[..200] } else { b };
+                truncated.to_string()
+            })
+        } else {
+            None
+        };
         entries.push(HttpLogEntry {
             timestamp: chrono::Local::now(),
             method: method.to_string(),
@@ -33,6 +42,7 @@ fn log_http(log: &HttpLog, method: &str, url: &str, post_data: Option<String>, s
             status,
             first_byte_ms,
             last_byte_ms,
+            response_body: resp,
         });
     }
 }
@@ -135,12 +145,122 @@ pub struct SummaryItem {
     pub packets: u64,
 }
 
+/// A cont3xt integration definition from /api/integration
+#[derive(Clone)]
+pub struct Cont3xtIntegration {
+    pub name: String,
+    #[allow(dead_code)]
+    pub doable: bool,
+    pub order: u32,
+    pub card: Option<Cont3xtCard>,
+}
+
+/// Card display definition for an integration
+#[derive(Clone)]
+pub struct Cont3xtCard {
+    #[allow(dead_code)]
+    pub title: String,
+    pub fields: Vec<CardField>,
+}
+
+/// A field in a card definition
+#[derive(Clone)]
+pub struct CardField {
+    pub label: String,
+    pub field: String,              // dot-joined path for data traversal
+    pub field_type: String,         // string, url, date, ms, seconds, array, table, json, dnsRecords
+    pub join: Option<String>,       // for array type, join separator
+    pub fields: Vec<CardField>,     // for table type, sub-fields
+    pub defang: bool,
+    pub field_root: Option<String>, // dot-joined fieldRootPath
+    #[allow(dead_code)]
+    pub filter_empty: bool,         // filter null/empty values from arrays/tables
+}
+
+/// A search result from one integration
+#[derive(Clone)]
+pub struct Cont3xtResult {
+    pub name: String,
+    pub indicator: String,
+    #[allow(dead_code)]
+    pub itype: String,
+    pub data: Value,
+    #[allow(dead_code)]
+    pub has_data: bool,
+}
+
+pub fn parse_card_field(val: &Value) -> CardField {
+    match val {
+        Value::String(s) => CardField {
+            label: s.clone(),
+            field: s.clone(),
+            field_type: "string".to_string(),
+            join: None,
+            fields: Vec::new(),
+            defang: false,
+            field_root: None,
+            filter_empty: false,
+        },
+        Value::Object(obj) => {
+            let label = obj.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            // Server normalizes "field" -> "path" (array of strings)
+            let field = if let Some(path_arr) = obj.get("path").and_then(|v| v.as_array()) {
+                path_arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(".")
+            } else {
+                obj.get("field").and_then(|v| v.as_str()).unwrap_or(&label).to_string()
+            };
+            let field_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("string").to_string();
+            let join = obj.get("join").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let defang = obj.get("defang").and_then(|v| v.as_bool()).unwrap_or(false);
+            // Server normalizes "fieldRoot" -> "fieldRootPath" (array of strings)
+            let field_root = if let Some(path_arr) = obj.get("fieldRootPath").and_then(|v| v.as_array()) {
+                Some(path_arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join("."))
+            } else {
+                obj.get("fieldRoot").and_then(|v| v.as_str()).map(|s| s.to_string())
+            };
+            let filter_empty = obj.get("filterEmpty").and_then(|v| v.as_bool()).unwrap_or(false);
+            let fields = obj.get("fields")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().map(parse_card_field).collect())
+                .unwrap_or_default();
+            CardField { label, field, field_type, join, fields, defang, field_root, filter_empty }
+        }
+        _ => CardField {
+            label: String::new(),
+            field: String::new(),
+            field_type: "string".to_string(),
+            join: None,
+            fields: Vec::new(),
+            defang: false,
+            field_root: None,
+            filter_empty: false,
+        },
+    }
+}
+
+pub fn parse_card(val: &Value) -> Option<Cont3xtCard> {
+    let obj = val.as_object()?;
+    let title = obj.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let fields = obj.get("fields")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().map(parse_card_field).collect())
+        .unwrap_or_default();
+    Some(Cont3xtCard { title, fields })
+}
+
 pub struct FetchClient {
     client: Client,
     auth_mode: AuthMode,
     username: Option<String>,
     password: Option<String>,
     arkime_cookie: Option<String>,
+    cookie_header_name: &'static str,
     http_log: HttpLog,
 }
 
@@ -154,7 +274,7 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 return Ok(body);
             }
         };
@@ -166,7 +286,7 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Basic => {
@@ -177,7 +297,7 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Digest => {
@@ -186,7 +306,7 @@ impl FetchClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                     return Ok(body);
                 }
                 let www_auth = resp.headers().get("www-authenticate")
@@ -205,7 +325,7 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Form => {
@@ -217,7 +337,7 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
         }
@@ -233,7 +353,7 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 return Ok(body);
             }
         };
@@ -245,7 +365,7 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Basic => {
@@ -253,13 +373,13 @@ impl FetchClient {
                     .basic_auth(username, Some(password))
                     .form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("x-arkime-cookie", cookie.as_str());
+                    req = req.header(self.cookie_header_name, cookie.as_str());
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Digest => {
@@ -268,7 +388,7 @@ impl FetchClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
-                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                     return Ok(body);
                 }
                 let www_auth = resp.headers().get("www-authenticate")
@@ -283,29 +403,230 @@ impl FetchClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 let mut req = self.client.post(url).header("Authorization", auth_header).form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("x-arkime-cookie", cookie.as_str());
+                    req = req.header(self.cookie_header_name, cookie.as_str());
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Form => {
                 let mut req = self.client.post(url).form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("Cookie", cookie.as_str());
-                    req = req.header("x-arkime-cookie", cookie.as_str());
+                    req = req.header(self.cookie_header_name, cookie.as_str());
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
         }
+    }
+
+    #[allow(dead_code)]
+    pub async fn fetch_post_json(&self, url: &str, json_body: &str) -> Result<String> {
+        let start = Instant::now();
+        let post_data = Some(json_body.to_string());
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => {
+                let resp = self.client.post(url)
+                    .header("Content-Type", "application/json")
+                    .body(json_body.to_string())
+                    .send().await?;
+                let first_byte = start.elapsed().as_millis() as u64;
+                let status = resp.status().as_u16();
+                let body = resp.text().await?;
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                return Ok(body);
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        let mut req = match self.auth_mode {
+            AuthMode::None => self.client.post(url),
+            AuthMode::Basic => self.client.post(url).basic_auth(username, Some(password)),
+            AuthMode::Digest => {
+                let resp = self.client.post(url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    let first_byte = start.elapsed().as_millis() as u64;
+                    let status = resp.status().as_u16();
+                    let body = resp.text().await?;
+                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                    return Ok(body);
+                }
+                let www_auth = resp.headers().get("www-authenticate")
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?.to_string();
+                let parsed_url = reqwest::Url::parse(url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else { parsed_url.path().to_string() };
+                let context = digest_auth::AuthContext::new_post::<_, _, _, &[u8]>(username, password, &uri, None);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+                self.client.post(url).header("Authorization", auth_header)
+            }
+            AuthMode::Form => self.client.post(url),
+        };
+        req = req.header("Content-Type", "application/json").body(json_body.to_string());
+        if let Some(ref cookie) = self.arkime_cookie {
+            if self.auth_mode != AuthMode::Form {
+                req = req.header("Cookie", cookie.as_str());
+            }
+            req = req.header(self.cookie_header_name, cookie.as_str());
+        }
+        let resp = req.send().await?;
+        let first_byte = start.elapsed().as_millis() as u64;
+        let status = resp.status().as_u16();
+        let body = resp.text().await?;
+        log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+        Ok(body)
+    }
+
+    /// Like fetch_post_json but streams the response line by line, pushing parsed results
+    /// into a shared vec as they arrive. Returns (total, itype) when finished.
+    pub async fn fetch_post_json_streaming(
+        &self,
+        url: &str,
+        json_body: &str,
+        results: Arc<Mutex<Vec<Cont3xtResult>>>,
+        disabled: std::collections::HashSet<String>,
+    ) -> Result<(u64, String)> {
+        let start = Instant::now();
+        let post_data = Some(json_body.to_string());
+        let username = match self.username.as_deref() {
+            Some(u) => u,
+            None => {
+                let resp = self.client.post(url)
+                    .header("Content-Type", "application/json")
+                    .body(json_body.to_string())
+                    .send().await?;
+                let first_byte = start.elapsed().as_millis() as u64;
+                let status = resp.status().as_u16();
+                log_http(&self.http_log, "POST", url, post_data.clone(), status, first_byte, first_byte, None);
+                return self.stream_response_lines(resp, results, disabled).await;
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("");
+
+        let mut req = match self.auth_mode {
+            AuthMode::None => self.client.post(url),
+            AuthMode::Basic => self.client.post(url).basic_auth(username, Some(password)),
+            AuthMode::Digest => {
+                let resp = self.client.post(url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    let first_byte = start.elapsed().as_millis() as u64;
+                    let status = resp.status().as_u16();
+                    log_http(&self.http_log, "POST", url, post_data.clone(), status, first_byte, first_byte, None);
+                    return self.stream_response_lines(resp, results, disabled).await;
+                }
+                let www_auth = resp.headers().get("www-authenticate")
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?.to_string();
+                let parsed_url = reqwest::Url::parse(url)?;
+                let uri = if let Some(q) = parsed_url.query() {
+                    format!("{}?{}", parsed_url.path(), q)
+                } else { parsed_url.path().to_string() };
+                let context = digest_auth::AuthContext::new_post::<_, _, _, &[u8]>(username, password, &uri, None);
+                let mut prompt = digest_auth::parse(&www_auth)?;
+                let auth_header = prompt.respond(&context)?.to_header_string();
+                self.client.post(url).header("Authorization", auth_header)
+            }
+            AuthMode::Form => self.client.post(url),
+        };
+        req = req.header("Content-Type", "application/json").body(json_body.to_string());
+        if let Some(ref cookie) = self.arkime_cookie {
+            if self.auth_mode != AuthMode::Form {
+                req = req.header("Cookie", cookie.as_str());
+            }
+            req = req.header(self.cookie_header_name, cookie.as_str());
+        }
+        let resp = req.send().await?;
+        let first_byte = start.elapsed().as_millis() as u64;
+        let status = resp.status().as_u16();
+        log_http(&self.http_log, "POST", url, post_data, status, first_byte, first_byte, None);
+        self.stream_response_lines(resp, results, disabled).await
+    }
+
+    async fn stream_response_lines(
+        &self,
+        resp: reqwest::Response,
+        results: Arc<Mutex<Vec<Cont3xtResult>>>,
+        disabled: std::collections::HashSet<String>,
+    ) -> Result<(u64, String)> {
+        use futures_util::StreamExt;
+        let mut total = 0u64;
+        let mut itype = String::new();
+        let mut buffer = String::new();
+        let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+            // Process complete lines
+            while let Some(newline_pos) = buffer.find('\n') {
+                let line = buffer[..newline_pos].to_string();
+                buffer = buffer[newline_pos + 1..].to_string();
+
+                let line = line.trim().trim_start_matches('[').trim_end_matches(']').trim_end_matches(',');
+                if line.is_empty() { continue; }
+                let obj: Value = match serde_json::from_str(line) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                let purpose = obj.get("purpose").and_then(|v| v.as_str()).unwrap_or("");
+                match purpose {
+                    "init" => {
+                        total = obj.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+                        if let Some(indicators) = obj.get("indicators").and_then(|v| v.as_array()) {
+                            if let Some(first) = indicators.first() {
+                                itype = first.get("itype").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            }
+                        }
+                    }
+                    "data" => {
+                        let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if disabled.contains(&name) { continue; }
+                        let indicator = obj.get("indicator")
+                            .and_then(|v| v.get("query"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("").to_string();
+                        let ind_itype = obj.get("indicator")
+                            .and_then(|v| v.get("itype"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("").to_string();
+                        let data = obj.get("data").cloned().unwrap_or(Value::Null);
+                        let has_data = data.as_object()
+                            .map(|o| o.keys().any(|k| k != "_cont3xt"))
+                            .unwrap_or(false);
+                        if has_data {
+                            let key = (name.clone(), indicator.clone());
+                            if !seen.contains(&key) {
+                                seen.insert(key);
+                                if let Ok(mut vec) = results.lock() {
+                                    vec.push(Cont3xtResult {
+                                        name,
+                                        indicator,
+                                        itype: ind_itype,
+                                        data,
+                                        has_data,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok((total, itype))
     }
 }
 
@@ -317,6 +638,7 @@ pub struct ArkimeClient {
     password: Option<String>,
     logged_in: bool,
     arkime_cookie: Option<String>,
+    cookie_header_name: &'static str,
     http_log: HttpLog,
 }
 
@@ -335,6 +657,7 @@ impl ArkimeClient {
             password,
             logged_in: false,
             arkime_cookie: None,
+            cookie_header_name: "x-arkime-cookie",
             http_log: new_http_log(),
         }
     }
@@ -350,6 +673,7 @@ impl ArkimeClient {
             username: self.username.clone(),
             password: self.password.clone(),
             arkime_cookie: self.arkime_cookie.clone(),
+            cookie_header_name: self.cookie_header_name,
             http_log: self.http_log.clone(),
         }
     }
@@ -385,7 +709,7 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 return Ok(body);
             }
         };
@@ -397,7 +721,7 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Basic => {
@@ -408,11 +732,11 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed", status);
                 }
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Digest => {
@@ -421,7 +745,7 @@ impl ArkimeClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                     return Ok(body);
                 }
 
@@ -451,12 +775,12 @@ impl ArkimeClient {
                 let status = resp.status().as_u16();
 
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed", status);
                 }
 
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Form => {
@@ -464,11 +788,11 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed (session expired?)", status);
                 }
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
         }
@@ -482,13 +806,13 @@ impl ArkimeClient {
             None => {
                 let mut req = self.client.get(url);
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("x-arkime-cookie", cookie);
+                    req = req.header(self.cookie_header_name, cookie);
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 return Ok(body);
             }
         };
@@ -498,30 +822,30 @@ impl ArkimeClient {
             AuthMode::None => {
                 let mut req = self.client.get(url);
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("x-arkime-cookie", cookie);
+                    req = req.header(self.cookie_header_name, cookie);
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Basic => {
                 let mut req = self.client.get(url)
                     .basic_auth(username, Some(password));
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("x-arkime-cookie", cookie);
+                    req = req.header(self.cookie_header_name, cookie);
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed", status);
                 }
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Digest => {
@@ -530,7 +854,7 @@ impl ArkimeClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                     return Ok(body);
                 }
                 let www_auth = resp.headers().get("www-authenticate")
@@ -546,34 +870,34 @@ impl ArkimeClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 let mut req = self.client.get(url).header("Authorization", auth_header);
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("x-arkime-cookie", cookie);
+                    req = req.header(self.cookie_header_name, cookie);
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 if !resp.status().is_success() {
                     let text = resp.text().await.unwrap_or_default();
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
                     anyhow::bail!("HTTP {}: {}", status, text);
                 }
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Form => {
                 let mut req = self.client.get(url);
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("x-arkime-cookie", cookie);
+                    req = req.header(self.cookie_header_name, cookie);
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed (session expired?)", status);
                 }
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
         }
@@ -589,7 +913,7 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 return Ok(body);
             }
         };
@@ -601,7 +925,7 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Basic => {
@@ -609,17 +933,17 @@ impl ArkimeClient {
                     .basic_auth(username, Some(password))
                     .form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("x-arkime-cookie", cookie);
+                    req = req.header(self.cookie_header_name, cookie);
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, first_byte);
+                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed", status);
                 }
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Digest => {
@@ -628,7 +952,7 @@ impl ArkimeClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
-                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                     return Ok(body);
                 }
 
@@ -654,35 +978,35 @@ impl ArkimeClient {
                     .header("Authorization", auth_header)
                     .form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("x-arkime-cookie", cookie);
+                    req = req.header(self.cookie_header_name, cookie);
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
 
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, first_byte);
+                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed", status);
                 }
 
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
             AuthMode::Form => {
                 let mut req = self.client.post(url).form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("x-arkime-cookie", cookie);
+                    req = req.header(self.cookie_header_name, cookie);
                 }
                 let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, first_byte);
+                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed (session expired?)", status);
                 }
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
         }
@@ -697,7 +1021,7 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let bytes = resp.bytes().await?.to_vec();
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
                 return Ok(bytes);
             }
         };
@@ -709,7 +1033,7 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let bytes = resp.bytes().await?.to_vec();
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
                 Ok(bytes)
             }
             AuthMode::Basic => {
@@ -720,11 +1044,11 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed", status);
                 }
                 let bytes = resp.bytes().await?.to_vec();
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
                 Ok(bytes)
             }
             AuthMode::Digest => {
@@ -733,7 +1057,7 @@ impl ArkimeClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let bytes = resp.bytes().await?.to_vec();
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
                     return Ok(bytes);
                 }
 
@@ -763,12 +1087,12 @@ impl ArkimeClient {
                 let status = resp.status().as_u16();
 
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed", status);
                 }
 
                 let bytes = resp.bytes().await?.to_vec();
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
                 Ok(bytes)
             }
             AuthMode::Form => {
@@ -776,11 +1100,11 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 if !resp.status().is_success() {
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte);
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, first_byte, None);
                     anyhow::bail!("HTTP {}: Authentication failed (session expired?)", status);
                 }
                 let bytes = resp.bytes().await?.to_vec();
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
                 Ok(bytes)
             }
         }
@@ -873,6 +1197,24 @@ impl ArkimeClient {
         let body = self.authenticated_get(&url).await?;
         let user: Value = serde_json::from_str(&body)?;
         Ok(user)
+    }
+
+    pub async fn get_appversion(&self) -> Result<Value> {
+        let url = format!("{}/api/appversion", self.base_url);
+        let body = self.authenticated_get(&url).await?;
+        let val: Value = serde_json::from_str(&body)?;
+        Ok(val)
+    }
+
+    pub async fn get_integrations(&self) -> Result<Value> {
+        let url = format!("{}/api/integration", self.base_url);
+        let body = self.authenticated_get(&url).await?;
+        let val: Value = serde_json::from_str(&body)?;
+        Ok(val)
+    }
+
+    pub fn cont3xt_search_url(&self) -> String {
+        format!("{}/api/integration/search", self.base_url)
     }
 
     pub async fn get_fields(&self) -> Result<(Vec<ArkimeField>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>)> {
@@ -1023,12 +1365,17 @@ impl ArkimeClient {
 
     fn extract_cookie(&mut self, resp: &reqwest::Response) {
         for cookie_val in resp.headers().get_all("set-cookie") {
-            if let Ok(s) = cookie_val.to_str()
-                && s.starts_with("ARKIME-COOKIE=")
-                    && let Some(val) = s.strip_prefix("ARKIME-COOKIE=") {
-                        let val = val.split(';').next().unwrap_or(val);
-                        self.arkime_cookie = Some(val.to_string());
-                    }
+            if let Ok(s) = cookie_val.to_str() {
+                if let Some(val) = s.strip_prefix("CONT3XT-COOKIE=") {
+                    let val = val.split(';').next().unwrap_or(val);
+                    self.arkime_cookie = Some(val.to_string());
+                    self.cookie_header_name = "x-cont3xt-cookie";
+                } else if let Some(val) = s.strip_prefix("ARKIME-COOKIE=") {
+                    let val = val.split(';').next().unwrap_or(val);
+                    self.arkime_cookie = Some(val.to_string());
+                    self.cookie_header_name = "x-arkime-cookie";
+                }
+            }
         }
     }
 
@@ -1045,7 +1392,7 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let result = resp.json().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, None);
                 return Ok(result);
             }
         };
@@ -1060,7 +1407,7 @@ impl ArkimeClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let text = resp.text().await?;
-                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
                     return Ok(serde_json::from_str(&text)?);
                 }
                 let www_auth = resp.headers().get("www-authenticate")
@@ -1077,7 +1424,7 @@ impl ArkimeClient {
             AuthMode::Form => self.client.post(url),
         };
         if let Some(ref cookie) = self.arkime_cookie {
-            req = req.header("x-arkime-cookie", cookie);
+            req = req.header(self.cookie_header_name, cookie);
         }
         let resp = req
             .header("Content-Type", "application/json")
@@ -1087,11 +1434,11 @@ impl ArkimeClient {
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
-            log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+            log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
             anyhow::bail!("HTTP {}: {}", status, text);
         }
         let result = resp.json().await?;
-        log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+        log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, None);
         Ok(result)
     }
 
@@ -1108,7 +1455,7 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let result = resp.json().await?;
-                log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, None);
                 return Ok(result);
             }
         };
@@ -1123,7 +1470,7 @@ impl ArkimeClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let text = resp.text().await?;
-                    log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+                    log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
                     return Ok(serde_json::from_str(&text)?);
                 }
                 let www_auth = resp.headers().get("www-authenticate")
@@ -1140,7 +1487,7 @@ impl ArkimeClient {
             AuthMode::Form => self.client.put(url),
         };
         if let Some(ref cookie) = self.arkime_cookie {
-            req = req.header("x-arkime-cookie", cookie);
+            req = req.header(self.cookie_header_name, cookie);
         }
         let resp = req
             .header("Content-Type", "application/json")
@@ -1150,11 +1497,11 @@ impl ArkimeClient {
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
-            log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+            log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
             anyhow::bail!("HTTP {}: {}", status, text);
         }
         let result = resp.json().await?;
-        log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64);
+        log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, None);
         Ok(result)
     }
 
@@ -1167,7 +1514,7 @@ impl ArkimeClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let result = resp.json().await?;
-                log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
                 return Ok(result);
             }
         };
@@ -1182,7 +1529,7 @@ impl ArkimeClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let text = resp.text().await?;
-                    log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+                    log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
                     return Ok(serde_json::from_str(&text)?);
                 }
                 let www_auth = resp.headers().get("www-authenticate")
@@ -1199,18 +1546,18 @@ impl ArkimeClient {
             AuthMode::Form => self.client.delete(url),
         };
         if let Some(ref cookie) = self.arkime_cookie {
-            req = req.header("x-arkime-cookie", cookie);
+            req = req.header(self.cookie_header_name, cookie);
         }
         let resp = req.send().await?;
         let first_byte = start.elapsed().as_millis() as u64;
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
-            log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+            log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
             anyhow::bail!("HTTP {}: {}", status, text);
         }
         let result = resp.json().await?;
-        log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64);
+        log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
         Ok(result)
     }
 
