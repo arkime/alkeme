@@ -1650,7 +1650,7 @@ impl ArkimeClient {
         let body = self.authenticated_get_with_cookie(&url).await?;
         let parsed: Value = serde_json::from_str(&body)?;
         let mut views = Vec::new();
-        if let Some(data) = parsed.get("data").and_then(|d| d.as_array()) {
+        if let Some(data) = parsed.get("views").and_then(|d| d.as_array()) {
             let current_user = self.username.as_deref().unwrap_or("");
             for item in data {
                 let id = item.get("_id").or_else(|| item.get("id"))
