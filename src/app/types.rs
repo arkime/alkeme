@@ -362,8 +362,8 @@ impl C3StatsTab {
 
     pub fn name(&self) -> &'static str {
         match self {
-            C3StatsTab::Integrations => "Integrations",
-            C3StatsTab::ITypes => "iTypes",
+            C3StatsTab::Integrations => "(1) Integrations",
+            C3StatsTab::ITypes => "(2) iTypes",
         }
     }
 
