@@ -3,7 +3,7 @@ mod keys;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtResult, GraphData, HttpLog, SummaryItem, parse_card};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtResult, Cont3xtView, GraphData, HttpLog, SummaryItem, parse_card};
 use ratatui::widgets::TableState;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -134,8 +134,21 @@ pub struct App {
     pub integration_popup_selected: usize,
     pub integration_popup_filter: String,
     pub integration_popup_filtering: bool,
+    pub integration_popup_mode: IntegrationPopupMode, // which sub-view of integration popup
+    pub c3_views: Vec<Cont3xtView>,
+    pub c3_view_selected: usize,
+    pub c3_view_save_name: String,
     pub c3_searching: bool,           // streaming search in progress
     pub pending_c3_search: bool,
+    // Cont3xt stats
+    pub c3_stats_tab: C3StatsTab,
+    pub c3_stats_data: Vec<serde_json::Value>,       // integration stats
+    pub c3_itype_stats_data: Vec<serde_json::Value>, // itype stats
+    pub c3_stats_selected: usize,
+    pub c3_stats_filter: String,
+    pub c3_stats_filtering: bool,
+    pub c3_stats_sort_col: usize,
+    pub c3_stats_sort_desc: bool,
 }
 
 impl App {
@@ -281,8 +294,20 @@ impl App {
             integration_popup_selected: 0,
             integration_popup_filter: String::new(),
             integration_popup_filtering: false,
+            integration_popup_mode: IntegrationPopupMode::Integrations,
+            c3_views: Vec::new(),
+            c3_view_selected: 0,
+            c3_view_save_name: String::new(),
             c3_searching: false,
             pending_c3_search: false,
+            c3_stats_tab: C3StatsTab::Integrations,
+            c3_stats_data: Vec::new(),
+            c3_itype_stats_data: Vec::new(),
+            c3_stats_selected: 0,
+            c3_stats_filter: String::new(),
+            c3_stats_filtering: false,
+            c3_stats_sort_col: 0,
+            c3_stats_sort_desc: false,
         }
     }
 
@@ -666,5 +691,57 @@ impl App {
         }
         self.show_loading = true;
         self.pending_c3_search = true;
+    }
+
+    pub async fn fetch_c3_views(&mut self) {
+        match self.client.get_c3_views().await {
+            Ok(views) => {
+                self.c3_views = views;
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching views: {e}");
+            }
+        }
+    }
+
+    /// Get the list of currently enabled integration names
+    pub fn enabled_integration_names(&self) -> Vec<String> {
+        self.c3_integrations.iter()
+            .filter(|i| !self.c3_disabled_integrations.contains(&i.name))
+            .map(|i| i.name.clone())
+            .collect()
+    }
+
+    /// Apply a view: set disabled integrations to everything NOT in the view's list
+    pub fn apply_c3_view(&mut self, integrations: &[String]) {
+        self.c3_disabled_integrations.clear();
+        for int in &self.c3_integrations {
+            if !integrations.contains(&int.name) {
+                self.c3_disabled_integrations.insert(int.name.clone());
+            }
+        }
+    }
+
+    pub async fn fetch_c3_stats(&mut self) {
+        match self.client.get_c3_stats().await {
+            Ok(val) => {
+                if let Some(stats) = val.get("stats").and_then(|v| v.as_array()) {
+                    self.c3_stats_data = stats.clone();
+                }
+                if let Some(itype_stats) = val.get("itypeStats").and_then(|v| v.as_array()) {
+                    self.c3_itype_stats_data = itype_stats.clone();
+                }
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching stats: {e}");
+            }
+        }
+    }
+
+    pub fn c3_stats_current_data(&self) -> &Vec<serde_json::Value> {
+        match self.c3_stats_tab {
+            C3StatsTab::Integrations => &self.c3_stats_data,
+            C3StatsTab::ITypes => &self.c3_itype_stats_data,
+        }
     }
 }

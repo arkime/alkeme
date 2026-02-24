@@ -131,6 +131,7 @@ async fn main() -> Result<()> {
         }
         app::AppMode::Cont3xt => {
             app.fetch_integrations().await;
+            app.fetch_c3_views().await;
         }
         _ => {}
     }

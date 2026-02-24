@@ -1842,90 +1842,233 @@ impl App {
 
         // Integration popup handler
         if self.show_integration_popup {
-            let filtered: Vec<usize> = self.c3_integrations.iter().enumerate()
-                .filter(|(_, int)| {
-                    self.integration_popup_filter.is_empty()
-                    || int.name.to_lowercase().contains(&self.integration_popup_filter.to_lowercase())
-                })
-                .map(|(i, _)| i)
-                .collect();
-
-            // When filtering mode is active, capture text input
-            if self.integration_popup_filtering {
-                match key.code {
-                    KeyCode::Esc => {
-                        self.integration_popup_filtering = false;
-                        if self.integration_popup_filter.is_empty() {
-                            // nothing to clear, close popup
+            match self.integration_popup_mode {
+                IntegrationPopupMode::SaveInput => {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.integration_popup_mode = IntegrationPopupMode::Views;
+                        }
+                        KeyCode::Enter => {
+                            if !self.c3_view_save_name.is_empty() {
+                                let name = self.c3_view_save_name.clone();
+                                let integrations = self.enabled_integration_names();
+                                let status = tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(
+                                        self.client.create_c3_view(&name, &integrations)
+                                    )
+                                });
+                                match status {
+                                    Ok(_) => {
+                                        self.status_msg = format!("Saved view: {name}");
+                                        tokio::task::block_in_place(|| {
+                                            tokio::runtime::Handle::current().block_on(self.fetch_c3_views())
+                                        });
+                                    }
+                                    Err(e) => self.status_msg = format!("Error saving view: {e}"),
+                                }
+                                self.c3_view_save_name.clear();
+                                self.integration_popup_mode = IntegrationPopupMode::Views;
+                            }
+                        }
+                        KeyCode::Backspace => { self.c3_view_save_name.pop(); }
+                        KeyCode::Char(c) => { self.c3_view_save_name.push(c); }
+                        _ => {}
+                    }
+                }
+                IntegrationPopupMode::ConfirmDelete => {
+                    match key.code {
+                        KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            if let Some(view) = self.c3_views.get(self.c3_view_selected.saturating_sub(1)) {
+                                let id = view.id.clone();
+                                let name = view.name.clone();
+                                let status = tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(
+                                        self.client.delete_c3_view(&id)
+                                    )
+                                });
+                                match status {
+                                    Ok(_) => {
+                                        self.status_msg = format!("Deleted view: {name}");
+                                        tokio::task::block_in_place(|| {
+                                            tokio::runtime::Handle::current().block_on(self.fetch_c3_views())
+                                        });
+                                        if self.c3_view_selected > self.c3_views.len() {
+                                            self.c3_view_selected = self.c3_views.len();
+                                        }
+                                    }
+                                    Err(e) => self.status_msg = format!("Error deleting view: {e}"),
+                                }
+                            }
+                            self.integration_popup_mode = IntegrationPopupMode::Views;
+                        }
+                        _ => {
+                            self.integration_popup_mode = IntegrationPopupMode::Views;
                         }
                     }
-                    KeyCode::Enter => {
-                        self.integration_popup_filtering = false;
-                    }
-                    KeyCode::Backspace => {
-                        self.integration_popup_filter.pop();
-                        self.integration_popup_selected = 0;
-                    }
-                    KeyCode::Char(c) => {
-                        self.integration_popup_filter.push(c);
-                        self.integration_popup_selected = 0;
-                    }
-                    _ => {}
                 }
-                return;
-            }
+                IntegrationPopupMode::Views => {
+                    // +1 for "Save Current" option at top
+                    let list_len = self.c3_views.len() + 1;
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.integration_popup_mode = IntegrationPopupMode::Integrations;
+                        }
+                        KeyCode::Char('q') => self.show_integration_popup = false,
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            if list_len > 0 {
+                                self.c3_view_selected = (self.c3_view_selected + 1).min(list_len - 1);
+                            }
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            self.c3_view_selected = self.c3_view_selected.saturating_sub(1);
+                        }
+                        KeyCode::Enter => {
+                            if self.c3_view_selected == 0 {
+                                // "Save Current" option
+                                self.c3_view_save_name.clear();
+                                self.integration_popup_mode = IntegrationPopupMode::SaveInput;
+                            } else {
+                                // Load a view
+                                let view_idx = self.c3_view_selected - 1;
+                                if let Some(view) = self.c3_views.get(view_idx) {
+                                    let integrations = view.integrations.clone();
+                                    let name = view.name.clone();
+                                    self.apply_c3_view(&integrations);
+                                    self.status_msg = format!("Loaded view: {name}");
+                                    self.show_integration_popup = false;
+                                }
+                            }
+                        }
+                        KeyCode::Char('x') => {
+                            // Delete selected view
+                            if self.c3_view_selected > 0 {
+                                let view_idx = self.c3_view_selected - 1;
+                                if let Some(view) = self.c3_views.get(view_idx) {
+                                    if view.editable {
+                                        self.integration_popup_mode = IntegrationPopupMode::ConfirmDelete;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                IntegrationPopupMode::Integrations => {
+                    let filtered: Vec<usize> = self.c3_integrations.iter().enumerate()
+                        .filter(|(_, int)| {
+                            self.integration_popup_filter.is_empty()
+                            || int.name.to_lowercase().contains(&self.integration_popup_filter.to_lowercase())
+                        })
+                        .map(|(i, _)| i)
+                        .collect();
 
+                    // When filtering mode is active, capture text input
+                    if self.integration_popup_filtering {
+                        match key.code {
+                            KeyCode::Esc => {
+                                self.integration_popup_filtering = false;
+                                if self.integration_popup_filter.is_empty() {
+                                    // nothing to clear, close popup
+                                }
+                            }
+                            KeyCode::Enter => {
+                                self.integration_popup_filtering = false;
+                            }
+                            KeyCode::Backspace => {
+                                self.integration_popup_filter.pop();
+                                self.integration_popup_selected = 0;
+                            }
+                            KeyCode::Char(c) => {
+                                self.integration_popup_filter.push(c);
+                                self.integration_popup_selected = 0;
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+
+                    match key.code {
+                        KeyCode::Esc => {
+                            if !self.integration_popup_filter.is_empty() {
+                                self.integration_popup_filter.clear();
+                                self.integration_popup_selected = 0;
+                            } else {
+                                self.show_integration_popup = false;
+                            }
+                        }
+                        KeyCode::Char('q') => self.show_integration_popup = false,
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            if !filtered.is_empty() {
+                                self.integration_popup_selected = (self.integration_popup_selected + 1).min(filtered.len() - 1);
+                            }
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            self.integration_popup_selected = self.integration_popup_selected.saturating_sub(1);
+                        }
+                        KeyCode::Enter | KeyCode::Char(' ') => {
+                            if let Some(&idx) = filtered.get(self.integration_popup_selected) {
+                                let name = self.c3_integrations[idx].name.clone();
+                                if self.c3_disabled_integrations.contains(&name) {
+                                    self.c3_disabled_integrations.remove(&name);
+                                } else {
+                                    self.c3_disabled_integrations.insert(name);
+                                }
+                            }
+                        }
+                        KeyCode::Char('/') => {
+                            self.integration_popup_filtering = true;
+                        }
+                        KeyCode::Char('a') => {
+                            self.c3_disabled_integrations.clear();
+                        }
+                        KeyCode::Char('n') => {
+                            for int in &self.c3_integrations {
+                                self.c3_disabled_integrations.insert(int.name.clone());
+                            }
+                        }
+                        KeyCode::Char('!') => {
+                            let all_names: Vec<String> = self.c3_integrations.iter().map(|i| i.name.clone()).collect();
+                            for name in all_names {
+                                if self.c3_disabled_integrations.contains(&name) {
+                                    self.c3_disabled_integrations.remove(&name);
+                                } else {
+                                    self.c3_disabled_integrations.insert(name);
+                                }
+                            }
+                        }
+                        KeyCode::Char('v') => {
+                            // Switch to views mode, re-fetch views
+                            self.c3_view_selected = 0;
+                            self.integration_popup_mode = IntegrationPopupMode::Views;
+                            tokio::task::block_in_place(|| {
+                                tokio::runtime::Handle::current().block_on(self.fetch_c3_views())
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            return;
+        }
+
+        // C3 stats filter mode
+        if self.c3_stats_filtering {
             match key.code {
                 KeyCode::Esc => {
-                    if !self.integration_popup_filter.is_empty() {
-                        self.integration_popup_filter.clear();
-                        self.integration_popup_selected = 0;
-                    } else {
-                        self.show_integration_popup = false;
+                    self.c3_stats_filtering = false;
+                    if self.c3_stats_filter.is_empty() {
+                        // nothing to clear
                     }
                 }
-                KeyCode::Char('q') => self.show_integration_popup = false,
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if !filtered.is_empty() {
-                        self.integration_popup_selected = (self.integration_popup_selected + 1).min(filtered.len() - 1);
-                    }
+                KeyCode::Enter => {
+                    self.c3_stats_filtering = false;
                 }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.integration_popup_selected = self.integration_popup_selected.saturating_sub(1);
+                KeyCode::Backspace => {
+                    self.c3_stats_filter.pop();
                 }
-                KeyCode::Enter | KeyCode::Char(' ') => {
-                    if let Some(&idx) = filtered.get(self.integration_popup_selected) {
-                        let name = self.c3_integrations[idx].name.clone();
-                        if self.c3_disabled_integrations.contains(&name) {
-                            self.c3_disabled_integrations.remove(&name);
-                        } else {
-                            self.c3_disabled_integrations.insert(name);
-                        }
-                    }
-                }
-                KeyCode::Char('/') => {
-                    self.integration_popup_filtering = true;
-                }
-                KeyCode::Char('a') => {
-                    // All on — enable all (clear disabled set)
-                    self.c3_disabled_integrations.clear();
-                }
-                KeyCode::Char('n') => {
-                    // None — disable all
-                    for int in &self.c3_integrations {
-                        self.c3_disabled_integrations.insert(int.name.clone());
-                    }
-                }
-                KeyCode::Char('!') => {
-                    // Invert selection
-                    let all_names: Vec<String> = self.c3_integrations.iter().map(|i| i.name.clone()).collect();
-                    for name in all_names {
-                        if self.c3_disabled_integrations.contains(&name) {
-                            self.c3_disabled_integrations.remove(&name);
-                        } else {
-                            self.c3_disabled_integrations.insert(name);
-                        }
-                    }
+                KeyCode::Char(c) => {
+                    self.c3_stats_filter.push(c);
+                    self.c3_stats_selected = 0;
                 }
                 _ => {}
             }
@@ -1940,12 +2083,29 @@ impl App {
                     Cont3xtFocus::Detail => Cont3xtFocus::Results,
                 };
             }
-            KeyCode::Tab => self.next_tab(),
-            KeyCode::BackTab => self.prev_tab(),
-            KeyCode::Char('/') | KeyCode::Char('E') => {
+            KeyCode::Tab => {
+                self.next_tab();
+                if self.active_tab == Tab::C3Stats && self.c3_stats_data.is_empty() {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(self.fetch_c3_stats())
+                    });
+                }
+            }
+            KeyCode::BackTab => {
+                self.prev_tab();
+                if self.active_tab == Tab::C3Stats && self.c3_stats_data.is_empty() {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(self.fetch_c3_stats())
+                    });
+                }
+            }
+            KeyCode::Char('/') | KeyCode::Char('E') if self.active_tab == Tab::Search => {
                 self.expression_edit = self.expression.clone();
                 self.expression_cursor = self.expression_edit.len();
                 self.input_mode = InputMode::Expression;
+            }
+            KeyCode::Char('/') if self.active_tab == Tab::C3Stats => {
+                self.c3_stats_filtering = true;
             }
             KeyCode::Char('h') | KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('R') if self.active_tab == Tab::Search => {
@@ -1953,13 +2113,19 @@ impl App {
                 self.c3_detail_scroll = 0;
                 self.c3_detail_hscroll = 0;
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('r') if self.active_tab == Tab::Search => {
                 self.request_c3_search();
+            }
+            KeyCode::Char('r') if self.active_tab == Tab::C3Stats => {
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(self.fetch_c3_stats())
+                });
             }
             KeyCode::Char('i') if self.active_tab == Tab::Search => {
                 self.show_integration_popup = true;
                 self.integration_popup_selected = 0;
                 self.integration_popup_filter.clear();
+                self.integration_popup_mode = IntegrationPopupMode::Integrations;
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 if self.active_tab == Tab::Search {
@@ -2005,6 +2171,16 @@ impl App {
                             self.c3_detail_scroll = self.c3_detail_scroll.saturating_add(1);
                         }
                     }
+                } else if self.active_tab == Tab::C3Stats {
+                    let data = self.c3_stats_current_data();
+                    let filtered_len = data.iter()
+                        .filter(|item| self.c3_stats_filter.is_empty()
+                            || item.get("name").and_then(|v| v.as_str()).unwrap_or("")
+                                .to_lowercase().contains(&self.c3_stats_filter.to_lowercase()))
+                        .count();
+                    if filtered_len > 0 {
+                        self.c3_stats_selected = (self.c3_stats_selected + 1).min(filtered_len - 1);
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -2019,6 +2195,8 @@ impl App {
                             self.c3_detail_scroll = self.c3_detail_scroll.saturating_sub(1);
                         }
                     }
+                } else if self.active_tab == Tab::C3Stats {
+                    self.c3_stats_selected = self.c3_stats_selected.saturating_sub(1);
                 }
             }
             KeyCode::PageDown => {
@@ -2061,6 +2239,26 @@ impl App {
                 if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
                     self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_add(4);
                 }
+            }
+            // C3 Stats tab keys
+            KeyCode::Char('1') if self.active_tab == Tab::C3Stats => {
+                if self.c3_stats_tab != C3StatsTab::Integrations {
+                    self.c3_stats_tab = C3StatsTab::Integrations;
+                    self.c3_stats_selected = 0;
+                }
+            }
+            KeyCode::Char('2') if self.active_tab == Tab::C3Stats => {
+                if self.c3_stats_tab != C3StatsTab::ITypes {
+                    self.c3_stats_tab = C3StatsTab::ITypes;
+                    self.c3_stats_selected = 0;
+                }
+            }
+            KeyCode::Char('s') if self.active_tab == Tab::C3Stats => {
+                let ncols = self.c3_stats_tab.columns().len();
+                self.c3_stats_sort_col = (self.c3_stats_sort_col + 1) % ncols;
+            }
+            KeyCode::Char('S') if self.active_tab == Tab::C3Stats => {
+                self.c3_stats_sort_desc = !self.c3_stats_sort_desc;
             }
             _ => {}
         }

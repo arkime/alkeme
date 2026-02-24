@@ -5,7 +5,7 @@ mod popups;
 
 // Re-export app types for sub-modules via `use super::*`
 #[allow(unused_imports)]
-use crate::app::{App, AppMode, ActionTarget, ColumnEditorMode, Cont3xtFocus, DetailActionMenu, GraphType, InputMode, LayoutPopupMode, LineMode, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, ViewPopupMode, is_hidden_detail_field};
+use crate::app::{App, AppMode, ActionTarget, C3StatsTab, ColumnEditorMode, Cont3xtFocus, DetailActionMenu, GraphType, InputMode, LayoutPopupMode, LineMode, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, ViewPopupMode, is_hidden_detail_field};
 use crate::api::{CardField, Cont3xtCard};
 use chrono::{DateTime, Local};
 use ratatui::{
@@ -191,6 +191,11 @@ fn draw_cont3xt(f: &mut Frame, app: &mut App) {
         Tab::Search => {
             draw_cont3xt_search_bar(f, app, chunks[1]);
             draw_cont3xt_results(f, app, chunks[2]);
+        }
+        Tab::C3Stats => {
+            // Merge search bar and content area for stats
+            let stats_area = Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, chunks[1].height + chunks[2].height);
+            draw_c3_stats(f, app, stats_area);
         }
         Tab::History => {
             let block = Block::default().borders(Borders::ALL).title(" History ");
@@ -753,78 +758,252 @@ fn render_card_lines(card: &Cont3xtCard, data: &serde_json::Value, _indicator: &
     lines
 }
 
-fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
-    let filtered: Vec<(usize, &crate::api::Cont3xtIntegration)> = app.c3_integrations.iter().enumerate()
-        .filter(|(_, int)| {
-            app.integration_popup_filter.is_empty()
-            || int.name.to_lowercase().contains(&app.integration_popup_filter.to_lowercase())
+fn draw_c3_stats(f: &mut Frame, app: &App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // sub-tab bar
+            Constraint::Min(0),   // table
+        ])
+        .split(area);
+
+    // Sub-tab bar
+    let titles: Vec<Line> = C3StatsTab::ALL
+        .iter()
+        .map(|t| Line::from(format!(" {} ", t.name())))
+        .collect();
+    let tabs_widget = Tabs::new(titles)
+        .block(Block::default().borders(Borders::ALL))
+        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .select(C3StatsTab::ALL.iter().position(|&t| t == app.c3_stats_tab).unwrap_or(0));
+    f.render_widget(tabs_widget, chunks[0]);
+
+    let columns = app.c3_stats_tab.columns();
+    let all_data = app.c3_stats_current_data();
+
+    // Filter
+    let mut filtered: Vec<&serde_json::Value> = all_data.iter()
+        .filter(|item| {
+            app.c3_stats_filter.is_empty()
+            || item.get("name").and_then(|v| v.as_str()).unwrap_or("")
+                .to_lowercase().contains(&app.c3_stats_filter.to_lowercase())
         })
         .collect();
 
-    let disabled_count = app.c3_disabled_integrations.len();
-    let total = app.c3_integrations.len();
-    let enabled = total - disabled_count;
-
-    let popup_width = 50u16.min(area.width.saturating_sub(4));
-    let popup_height = (filtered.len() as u16 + 5).min(area.height.saturating_sub(4));
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
-
-    f.render_widget(Clear, popup_area);
-
-    let bottom_line = if app.integration_popup_filtering {
-        let cursor = format!(" /{}█ ", app.integration_popup_filter);
-        Line::from(Span::styled(cursor, Style::default().fg(Color::Yellow))).centered()
-    } else if !app.integration_popup_filter.is_empty() {
-        Line::from(format!(" /{} │ Space:toggle a:all n:none !:invert ", app.integration_popup_filter)).centered()
-    } else {
-        Line::from(" Space:toggle  a:all  n:none  !:invert  /:filter ").centered()
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(format!(" Integrations ({enabled}/{total}) "))
-        .title_bottom(bottom_line);
-    let inner = block.inner(popup_area);
-    f.render_widget(block, popup_area);
-
-    // Handle scrolling when list is longer than inner height
-    let visible_height = inner.height as usize;
-    let scroll_offset = if filtered.len() > visible_height {
-        let sel = app.integration_popup_selected;
-        if sel >= visible_height {
-            sel - visible_height + 1
+    // Sort
+    let sort_field = columns.get(app.c3_stats_sort_col).map(|c| c.0).unwrap_or("name");
+    filtered.sort_by(|a, b| {
+        let cmp = if sort_field == "name" {
+            let va = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let vb = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            va.to_lowercase().cmp(&vb.to_lowercase())
         } else {
-            0
+            let va = a.get(sort_field).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let vb = b.get(sort_field).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
+        };
+        if app.c3_stats_sort_desc { cmp.reverse() } else { cmp }
+    });
+
+    // Build header
+    let header_cells: Vec<Cell> = columns.iter().enumerate().map(|(i, &(_, label, _))| {
+        let arrow = if i == app.c3_stats_sort_col {
+            if app.c3_stats_sort_desc { " ▼" } else { " ▲" }
+        } else { "" };
+        let text = format!("{label}{arrow}");
+        if i == 0 {
+            Cell::from(text).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        } else {
+            Cell::from(text).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         }
-    } else {
-        0
-    };
+    }).collect();
+    let header = Row::new(header_cells).height(1);
 
-    for (i, (_, integ)) in filtered.iter().enumerate().skip(scroll_offset).take(visible_height) {
-        let y = inner.y + (i - scroll_offset) as u16;
-        let is_selected = i == app.integration_popup_selected;
-        let is_disabled = app.c3_disabled_integrations.contains(&integ.name);
+    // Build rows
+    let rows: Vec<Row> = filtered.iter().enumerate().map(|(i, item)| {
+        let cells: Vec<Cell> = columns.iter().map(|&(field, _, _)| {
+            let val = item.get(field);
+            let text = match field {
+                "name" => val.and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                "cacheRecentAvgMS" | "directRecentAvgMS" => {
+                    val.and_then(|v| v.as_f64())
+                        .map(|v| format!("{:.2}", v))
+                        .unwrap_or_else(|| "0".to_string())
+                }
+                _ => {
+                    val.and_then(|v| v.as_u64())
+                        .map(|v| format_number(v))
+                        .unwrap_or_else(|| "0".to_string())
+                }
+            };
+            if field == "name" {
+                Cell::from(text)
+            } else {
+                Cell::from(text).style(Style::default().fg(Color::White))
+            }
+        }).collect();
 
-        let check = if is_disabled { "✗" } else { "✓" };
-        let check_color = if is_disabled { Color::Red } else { Color::Green };
-
-        let style = if is_selected {
+        let style = if i == app.c3_stats_selected {
             Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
-            Style::default().fg(Color::White)
+            Style::default()
         };
+        Row::new(cells).style(style)
+    }).collect();
 
-        if is_selected {
-            let label = format!(" {check} {}", integ.name);
-            f.render_widget(Paragraph::new(Span::styled(label, style)), Rect::new(inner.x, y, inner.width, 1));
-        } else {
-            let line = Line::from(vec![
-                Span::styled(format!(" {check} "), Style::default().fg(check_color)),
-                Span::styled(integ.name.clone(), style),
-            ]);
-            f.render_widget(Paragraph::new(line), Rect::new(inner.x, y, inner.width, 1));
+    let widths: Vec<Constraint> = columns.iter().map(|&(_, _, w)| Constraint::Length(w)).collect();
+
+    let filter_info = if app.c3_stats_filtering {
+        format!(" /{}█ ", app.c3_stats_filter)
+    } else if !app.c3_stats_filter.is_empty() {
+        format!(" /{} ", app.c3_stats_filter)
+    } else {
+        String::new()
+    };
+
+    let title = format!(" {} ({}) {}", app.c3_stats_tab.name(), filtered.len(), filter_info);
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .row_highlight_style(Style::default());
+    f.render_widget(table, chunks[1]);
+}
+
+fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
+    use crate::app::IntegrationPopupMode;
+
+    let popup_width = 50u16.min(area.width.saturating_sub(4));
+
+    match app.integration_popup_mode {
+        IntegrationPopupMode::Views | IntegrationPopupMode::SaveInput | IntegrationPopupMode::ConfirmDelete => {
+            // Views list: "Save Current" + saved views
+            let list_len = app.c3_views.len() + 1; // +1 for "Save Current"
+            let popup_height = (list_len as u16 + 4).min(area.height.saturating_sub(4)).max(6);
+            let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+            let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+            let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+            f.render_widget(Clear, popup_area);
+
+            let bottom_line = match app.integration_popup_mode {
+                IntegrationPopupMode::SaveInput => {
+                    let cursor = format!(" Name: {}█ ", app.c3_view_save_name);
+                    Line::from(Span::styled(cursor, Style::default().fg(Color::Yellow))).centered()
+                }
+                IntegrationPopupMode::ConfirmDelete => {
+                    let name = app.c3_views.get(app.c3_view_selected.saturating_sub(1))
+                        .map(|v| v.name.as_str()).unwrap_or("?");
+                    Line::from(Span::styled(
+                        format!(" Delete '{name}'? (y/n) "),
+                        Style::default().fg(Color::Red)
+                    )).centered()
+                }
+                _ => Line::from(" Enter:load  x:delete  Esc:back ").centered(),
+            };
+
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Magenta))
+                .title(" Views ")
+                .title_bottom(bottom_line);
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+
+            let visible_height = inner.height as usize;
+            let scroll_offset = if list_len > visible_height {
+                let sel = app.c3_view_selected;
+                if sel >= visible_height { sel - visible_height + 1 } else { 0 }
+            } else { 0 };
+
+            for i in scroll_offset..(scroll_offset + visible_height).min(list_len) {
+                let y = inner.y + (i - scroll_offset) as u16;
+                let is_selected = i == app.c3_view_selected;
+                let style = if is_selected {
+                    Style::default().fg(Color::Black).bg(Color::Magenta)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+
+                if i == 0 {
+                    // "Save Current" option
+                    let enabled = app.c3_integrations.len() - app.c3_disabled_integrations.len();
+                    let label = format!(" 💾 Save Current ({enabled} integrations)");
+                    f.render_widget(Paragraph::new(Span::styled(label, style)), Rect::new(inner.x, y, inner.width, 1));
+                } else {
+                    let view = &app.c3_views[i - 1];
+                    let count = view.integrations.len();
+                    let shared = if !view.editable { " 🔗" } else { "" };
+                    let label = format!(" {} ({count}){shared}", view.name);
+                    f.render_widget(Paragraph::new(Span::styled(label, style)), Rect::new(inner.x, y, inner.width, 1));
+                }
+            }
+        }
+        IntegrationPopupMode::Integrations => {
+            let filtered: Vec<(usize, &crate::api::Cont3xtIntegration)> = app.c3_integrations.iter().enumerate()
+                .filter(|(_, int)| {
+                    app.integration_popup_filter.is_empty()
+                    || int.name.to_lowercase().contains(&app.integration_popup_filter.to_lowercase())
+                })
+                .collect();
+
+            let disabled_count = app.c3_disabled_integrations.len();
+            let total = app.c3_integrations.len();
+            let enabled = total - disabled_count;
+
+            let popup_height = (filtered.len() as u16 + 5).min(area.height.saturating_sub(4));
+            let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+            let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+            let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+            f.render_widget(Clear, popup_area);
+
+            let bottom_line = if app.integration_popup_filtering {
+                let cursor = format!(" /{}█ ", app.integration_popup_filter);
+                Line::from(Span::styled(cursor, Style::default().fg(Color::Yellow))).centered()
+            } else if !app.integration_popup_filter.is_empty() {
+                Line::from(format!(" /{} │ Spc:toggle a:all n:none !:inv v:views ", app.integration_popup_filter)).centered()
+            } else {
+                Line::from(" Spc:toggle a:all n:none !:inv /:filter v:views ").centered()
+            };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(format!(" Integrations ({enabled}/{total}) "))
+                .title_bottom(bottom_line);
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+
+            let visible_height = inner.height as usize;
+            let scroll_offset = if filtered.len() > visible_height {
+                let sel = app.integration_popup_selected;
+                if sel >= visible_height { sel - visible_height + 1 } else { 0 }
+            } else { 0 };
+
+            for (i, (_, integ)) in filtered.iter().enumerate().skip(scroll_offset).take(visible_height) {
+                let y = inner.y + (i - scroll_offset) as u16;
+                let is_selected = i == app.integration_popup_selected;
+                let is_disabled = app.c3_disabled_integrations.contains(&integ.name);
+
+                let check = if is_disabled { "✗" } else { "✓" };
+                let check_color = if is_disabled { Color::Red } else { Color::Green };
+
+                let style = if is_selected {
+                    Style::default().fg(Color::Black).bg(Color::Cyan)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+
+                if is_selected {
+                    let label = format!(" {check} {}", integ.name);
+                    f.render_widget(Paragraph::new(Span::styled(label, style)), Rect::new(inner.x, y, inner.width, 1));
+                } else {
+                    let line = Line::from(vec![
+                        Span::styled(format!(" {check} "), Style::default().fg(check_color)),
+                        Span::styled(integ.name.clone(), style),
+                    ]);
+                    f.render_widget(Paragraph::new(line), Rect::new(inner.x, y, inner.width, 1));
+                }
+            }
         }
     }
 }

@@ -343,6 +343,23 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
             Line::from(vec![key("q"), Span::raw("Close")]),
         ])
+    } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::C3Stats {
+        ("Cont3xt Stats", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
+            Line::from(vec![key("1 / 2"), Span::raw("Switch sub-tab (Integrations / iTypes)")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("/"), Span::raw("Filter by name")]),
+            Line::from(vec![key("s"), Span::raw("Next sort column")]),
+            Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
+            Line::from(vec![key("r"), Span::raw("Refresh stats")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ])
     } else if app.app_mode == AppMode::Cont3xt {
         ("Cont3xt Search", vec![
             hdr!("Navigation"),
@@ -360,7 +377,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("/"), Span::raw("Edit search indicator")]),
             Line::from(vec![key("Tab (in results)"), Span::raw("Toggle results / detail focus")]),
             Line::from(vec![key("R"), Span::raw("Toggle raw JSON / card view")]),
-            Line::from(vec![key("i"), Span::raw("Toggle integrations on/off")]),
+            Line::from(vec![key("i"), Span::raw("Integrations popup (v:views inside)")]),
             Line::from(vec![key("r"), Span::raw("Re-run search")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),

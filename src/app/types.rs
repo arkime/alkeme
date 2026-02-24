@@ -91,6 +91,14 @@ pub enum ViewPopupMode {
     ConfirmDelete,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum IntegrationPopupMode {
+    Integrations,
+    Views,
+    SaveInput,
+    ConfirmDelete,
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum AppMode {
     Viewer,
@@ -103,7 +111,7 @@ impl AppMode {
     pub fn tabs(&self) -> &'static [Tab] {
         match self {
             AppMode::Viewer => &[Tab::Arkime, Tab::Sessions, Tab::Stats, Tab::Settings],
-            AppMode::Cont3xt => &[Tab::Search, Tab::History, Tab::Settings],
+            AppMode::Cont3xt => &[Tab::Search, Tab::C3Stats, Tab::History, Tab::Settings],
             AppMode::Wise => &[Tab::Settings],
             AppMode::Parliament => &[Tab::Settings],
         }
@@ -133,6 +141,7 @@ pub enum Tab {
     Sessions,
     Stats,
     Search,
+    C3Stats,
     History,
     Settings,
 }
@@ -144,6 +153,7 @@ impl Tab {
             Tab::Sessions => "Sessions",
             Tab::Stats => "Stats",
             Tab::Search => "Search",
+            Tab::C3Stats => "Stats",
             Tab::History => "History",
             Tab::Settings => "Settings",
         }
@@ -339,6 +349,42 @@ pub enum StatsTab {
     Capture,
     DBStats,
     DBIndices,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum C3StatsTab {
+    Integrations,
+    ITypes,
+}
+
+impl C3StatsTab {
+    pub const ALL: [C3StatsTab; 2] = [C3StatsTab::Integrations, C3StatsTab::ITypes];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            C3StatsTab::Integrations => "Integrations",
+            C3StatsTab::ITypes => "iTypes",
+        }
+    }
+
+    pub fn columns(&self) -> &[(&str, &str, u16)] {
+        // Both sub-tabs share the same columns
+        match self {
+            _ => &[
+                ("name", "Name", 20),
+                ("cacheLookup", "Cache Lookup", 13),
+                ("cacheFound", "Cache Found", 12),
+                ("cacheGood", "Cache Good", 11),
+                ("cacheRecentAvgMS", "Cache Avg MS", 13),
+                ("directLookup", "Direct Lookup", 14),
+                ("directFound", "Direct Found", 13),
+                ("directGood", "Direct Good", 12),
+                ("directError", "Direct Error", 13),
+                ("directRecentAvgMS", "Direct Avg MS", 14),
+                ("total", "Total", 10),
+            ],
+        }
+    }
 }
 
 impl StatsTab {

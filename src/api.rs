@@ -145,6 +145,17 @@ pub struct SummaryItem {
     pub packets: u64,
 }
 
+/// A saved cont3xt view (integration set)
+#[derive(Clone)]
+pub struct Cont3xtView {
+    pub id: String,
+    pub name: String,
+    pub integrations: Vec<String>,
+    #[allow(dead_code)]
+    pub creator: String,
+    pub editable: bool,
+}
+
 /// A cont3xt integration definition from /api/integration
 #[derive(Clone)]
 pub struct Cont3xtIntegration {
@@ -1631,6 +1642,55 @@ impl ArkimeClient {
     pub async fn delete_view(&self, id: &str) -> Result<Value> {
         let url = format!("{}/api/view/{}", self.base_url, urlencoding::encode(id));
         self.authenticated_delete(&url).await
+    }
+
+    /// Fetch cont3xt views (saved integration sets)
+    pub async fn get_c3_views(&self) -> Result<Vec<Cont3xtView>> {
+        let url = format!("{}/api/views", self.base_url);
+        let body = self.authenticated_get_with_cookie(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let mut views = Vec::new();
+        if let Some(data) = parsed.get("data").and_then(|d| d.as_array()) {
+            let current_user = self.username.as_deref().unwrap_or("");
+            for item in data {
+                let id = item.get("_id").or_else(|| item.get("id"))
+                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let creator = item.get("creator").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let integrations: Vec<String> = item.get("integrations")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let editable = item.get("_editable").and_then(|v| v.as_bool()).unwrap_or(false)
+                    || creator == current_user;
+                views.push(Cont3xtView { id, name, integrations, creator, editable });
+            }
+        }
+        Ok(views)
+    }
+
+    /// Create a cont3xt view (saved integration set)
+    pub async fn create_c3_view(&self, name: &str, integrations: &[String]) -> Result<Value> {
+        let url = format!("{}/api/view", self.base_url);
+        let body = serde_json::json!({
+            "name": name,
+            "integrations": integrations,
+        });
+        self.authenticated_post_json(&url, &body).await
+    }
+
+    /// Delete a cont3xt view
+    pub async fn delete_c3_view(&self, id: &str) -> Result<Value> {
+        let url = format!("{}/api/view/{}", self.base_url, urlencoding::encode(id));
+        self.authenticated_delete(&url).await
+    }
+
+    /// Fetch cont3xt integration stats
+    pub async fn get_c3_stats(&self) -> Result<Value> {
+        let url = format!("{}/api/integration/stats", self.base_url);
+        let body = self.authenticated_get_with_cookie(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
     }
 }
 
