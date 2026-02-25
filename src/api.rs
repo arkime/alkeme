@@ -1645,7 +1645,7 @@ impl ArkimeClient {
     }
 
     /// Fetch cont3xt views (saved integration sets)
-    pub async fn get_c3_views(&self) -> Result<Vec<Cont3xtView>> {
+    pub async fn c3_get_views(&self) -> Result<Vec<Cont3xtView>> {
         let url = format!("{}/api/views", self.base_url);
         let body = self.authenticated_get_with_cookie(&url).await?;
         let parsed: Value = serde_json::from_str(&body)?;
@@ -1670,7 +1670,7 @@ impl ArkimeClient {
     }
 
     /// Create a cont3xt view (saved integration set)
-    pub async fn create_c3_view(&self, name: &str, integrations: &[String]) -> Result<Value> {
+    pub async fn c3_create_view(&self, name: &str, integrations: &[String]) -> Result<Value> {
         let url = format!("{}/api/view", self.base_url);
         let body = serde_json::json!({
             "name": name,
@@ -1680,13 +1680,13 @@ impl ArkimeClient {
     }
 
     /// Delete a cont3xt view
-    pub async fn delete_c3_view(&self, id: &str) -> Result<Value> {
+    pub async fn c3_delete_view(&self, id: &str) -> Result<Value> {
         let url = format!("{}/api/view/{}", self.base_url, urlencoding::encode(id));
         self.authenticated_delete(&url).await
     }
 
     /// Fetch cont3xt integration stats
-    pub async fn get_c3_stats(&self) -> Result<Value> {
+    pub async fn c3_get_stats(&self) -> Result<Value> {
         let url = format!("{}/api/integration/stats", self.base_url);
         let body = self.authenticated_get_with_cookie(&url).await?;
         let parsed: Value = serde_json::from_str(&body)?;

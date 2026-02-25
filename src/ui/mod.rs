@@ -156,19 +156,19 @@ fn draw_viewer(f: &mut Frame, app: &mut App) {
     if app.input_mode == InputMode::FieldSelector {
         arkime::draw_field_selector(f, app, f.area());
     }
-    if app.detail_action_menu.is_some() && app.active_tab == Tab::Arkime {
+    if app.vr_detail_action_menu.is_some() && app.active_tab == Tab::Arkime {
         sessions::draw_detail_action_menu(f, app, f.area());
     }
-    if app.packets_view.is_some() {
+    if app.vr_packets_view.is_some() {
         popups::draw_packets(f, app, f.area());
     }
-    if app.show_column_editor {
+    if app.vr_show_column_editor {
         popups::draw_column_editor(f, app, f.area());
     }
-    if app.show_layout_popup {
+    if app.vr_show_layout_popup {
         popups::draw_layout_popup(f, app, f.area());
     }
-    if app.show_view_popup {
+    if app.vr_show_view_popup {
         popups::draw_view_popup(f, app, f.area());
     }
 }
@@ -195,7 +195,7 @@ fn draw_cont3xt(f: &mut Frame, app: &mut App) {
         Tab::C3Stats => {
             // Merge search bar and content area for stats
             let stats_area = Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, chunks[1].height + chunks[2].height);
-            draw_c3_stats(f, app, stats_area);
+            c3_draw_stats(f, app, stats_area);
         }
         Tab::History => {
             let block = Block::default().borders(Borders::ALL).title(" History ");
@@ -217,7 +217,7 @@ fn draw_cont3xt(f: &mut Frame, app: &mut App) {
 
     draw_status_bar(f, app, chunks[3]);
 
-    if app.show_integration_popup {
+    if app.c3_show_integration_popup {
         draw_integration_popup(f, app, f.area());
     }
 }
@@ -758,7 +758,7 @@ fn render_card_lines(card: &Cont3xtCard, data: &serde_json::Value, _indicator: &
     lines
 }
 
-fn draw_c3_stats(f: &mut Frame, app: &App, area: Rect) {
+fn c3_draw_stats(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -874,7 +874,7 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 
     let popup_width = 50u16.min(area.width.saturating_sub(4));
 
-    match app.integration_popup_mode {
+    match app.c3_integration_popup_mode {
         IntegrationPopupMode::Views | IntegrationPopupMode::SaveInput | IntegrationPopupMode::ConfirmDelete => {
             // Views list: "Save Current" + saved views
             let list_len = app.c3_views.len() + 1; // +1 for "Save Current"
@@ -885,7 +885,7 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 
             f.render_widget(Clear, popup_area);
 
-            let bottom_line = match app.integration_popup_mode {
+            let bottom_line = match app.c3_integration_popup_mode {
                 IntegrationPopupMode::SaveInput => {
                     let cursor = format!(" Name: {}█ ", app.c3_view_save_name);
                     Line::from(Span::styled(cursor, Style::default().fg(Color::Yellow))).centered()
@@ -941,8 +941,8 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
         IntegrationPopupMode::Integrations => {
             let filtered: Vec<(usize, &crate::api::Cont3xtIntegration)> = app.c3_integrations.iter().enumerate()
                 .filter(|(_, int)| {
-                    app.integration_popup_filter.is_empty()
-                    || int.name.to_lowercase().contains(&app.integration_popup_filter.to_lowercase())
+                    app.c3_integration_popup_filter.is_empty()
+                    || int.name.to_lowercase().contains(&app.c3_integration_popup_filter.to_lowercase())
                 })
                 .collect();
 
@@ -957,11 +957,11 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 
             f.render_widget(Clear, popup_area);
 
-            let bottom_line = if app.integration_popup_filtering {
-                let cursor = format!(" /{}█ ", app.integration_popup_filter);
+            let bottom_line = if app.c3_integration_popup_filtering {
+                let cursor = format!(" /{}█ ", app.c3_integration_popup_filter);
                 Line::from(Span::styled(cursor, Style::default().fg(Color::Yellow))).centered()
-            } else if !app.integration_popup_filter.is_empty() {
-                Line::from(format!(" /{} │ Spc:toggle a:all n:none !:inv v:views ", app.integration_popup_filter)).centered()
+            } else if !app.c3_integration_popup_filter.is_empty() {
+                Line::from(format!(" /{} │ Spc:toggle a:all n:none !:inv v:views ", app.c3_integration_popup_filter)).centered()
             } else {
                 Line::from(" Spc:toggle a:all n:none !:inv /:filter v:views ").centered()
             };
@@ -975,13 +975,13 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 
             let visible_height = inner.height as usize;
             let scroll_offset = if filtered.len() > visible_height {
-                let sel = app.integration_popup_selected;
+                let sel = app.c3_integration_popup_selected;
                 if sel >= visible_height { sel - visible_height + 1 } else { 0 }
             } else { 0 };
 
             for (i, (_, integ)) in filtered.iter().enumerate().skip(scroll_offset).take(visible_height) {
                 let y = inner.y + (i - scroll_offset) as u16;
-                let is_selected = i == app.integration_popup_selected;
+                let is_selected = i == app.c3_integration_popup_selected;
                 let is_disabled = app.c3_disabled_integrations.contains(&integ.name);
 
                 let check = if is_disabled { "✗" } else { "✓" };
@@ -1036,8 +1036,8 @@ fn draw_default_layout(f: &mut Frame, app: &mut App) {
         Constraint::Length(3), // tabs
         Constraint::Length(3), // toolbar: time range + expression
     ];
-    if app.graph_size.is_visible() && app.active_tab == Tab::Sessions {
-        constraints.push(Constraint::Length(app.graph_size.height())); // graph
+    if app.vr_graph_size.is_visible() && app.active_tab == Tab::Sessions {
+        constraints.push(Constraint::Length(app.vr_graph_size.height())); // graph
     }
     constraints.push(Constraint::Min(0));   // content
     constraints.push(Constraint::Length(status_h)); // status bar
@@ -1051,7 +1051,7 @@ fn draw_default_layout(f: &mut Frame, app: &mut App) {
     draw_tabs(f, app, chunks[idx]); idx += 1;
     draw_toolbar(f, app, chunks[idx]); idx += 1;
 
-    if app.graph_size.is_visible() && app.active_tab == Tab::Sessions {
+    if app.vr_graph_size.is_visible() && app.active_tab == Tab::Sessions {
         draw_graph(f, app, chunks[idx]); idx += 1;
     }
 
@@ -1160,19 +1160,19 @@ fn draw_toolbar(f: &mut Frame, app: &App, area: Rect) {
 
 
 fn draw_graph(f: &mut Frame, app: &App, area: Rect) {
-    let graph = match &app.graph_data {
+    let graph = match &app.vr_graph_data {
         Some(g) => g,
         None => {
             let block = Block::default().borders(Borders::ALL)
-                .title(format!(" {} (loading...) g/G ", app.graph_type.label()));
+                .title(format!(" {} (loading...) g/G ", app.vr_graph_type.label()));
             f.render_widget(block, area);
             return;
         }
     };
 
-    let is_split = app.graph_type != GraphType::Sessions;
+    let is_split = app.vr_graph_type != GraphType::Sessions;
 
-    let (src_histo, dst_histo, title) = match app.graph_type {
+    let (src_histo, dst_histo, title) = match app.vr_graph_type {
         GraphType::Sessions => (&graph.sessions_histo, &graph.sessions_histo, "Sessions"),
         GraphType::Packets => (&graph.src_packets_histo, &graph.dst_packets_histo, "Packets"),
         GraphType::Bytes => (&graph.src_bytes_histo, &graph.dst_bytes_histo, "Bytes"),

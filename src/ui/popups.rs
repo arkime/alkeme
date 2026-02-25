@@ -197,7 +197,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
         ($s:expr) => { Line::from(Span::styled($s, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))) };
     }
 
-    let (title, help_text) = if app.packets_view.is_some() {
+    let (title, help_text) = if app.vr_packets_view.is_some() {
         ("Packets", vec![
             hdr!("Navigation"),
             blank(),
@@ -220,7 +220,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![Span::styled("  ██               ", Style::default().fg(Color::Green)), Span::raw("Destination packets")]),
             Line::from(vec![Span::styled("  ██               ", Style::default().fg(Color::DarkGray)), Span::raw("Hex offset")]),
         ])
-    } else if app.session_view == SessionView::Detail && app.active_tab == Tab::Sessions {
+    } else if app.vr_session_view == SessionView::Detail && app.active_tab == Tab::Sessions {
         ("Session Detail", vec![
             hdr!("Navigation"),
             blank(),
@@ -239,7 +239,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("A"), Span::raw("All sessions actions")]),
             Line::from(vec![key("Esc / q"), Span::raw("Close detail")]),
         ])
-    } else if app.active_tab == Tab::Stats && app.stats_view == StatsView::Detail {
+    } else if app.active_tab == Tab::Stats && app.vr_stats_view == StatsView::Detail {
         ("Stats Detail", vec![
             hdr!("Navigation"),
             blank(),
@@ -297,7 +297,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("v"), Span::raw("Views")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
-    } else if app.show_column_editor {
+    } else if app.vr_show_column_editor {
         ("Column Editor", vec![
             hdr!("Navigation"),
             blank(),
@@ -314,7 +314,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
             Line::from(vec![key("q"), Span::raw("Close")]),
         ])
-    } else if app.show_layout_popup {
+    } else if app.vr_show_layout_popup {
         ("Layouts", vec![
             hdr!("Navigation"),
             blank(),
@@ -328,7 +328,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
             Line::from(vec![key("q"), Span::raw("Close")]),
         ])
-    } else if app.show_view_popup {
+    } else if app.vr_show_view_popup {
         ("Views", vec![
             hdr!("Navigation"),
             blank(),
@@ -434,7 +434,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(super) fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
-    let pkt_data = match &app.packets_view {
+    let pkt_data = match &app.vr_packets_view {
         Some(p) => p,
         None => return,
     };
@@ -485,7 +485,7 @@ pub(super) fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
         for (i, hex_line) in pkt.lines.iter().enumerate() {
             let offset = i * 16;
             let mut spans = Vec::new();
-            match app.packets_line {
+            match app.vr_packets_line {
                 crate::app::LineMode::Hex => {
                     spans.push(Span::styled(
                         format!("{:04x}: ", offset),
@@ -517,8 +517,8 @@ pub(super) fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
 
     let visible = popup_area.height.saturating_sub(2) as usize;
     let max_scroll = rows.len().saturating_sub(visible) as u16;
-    app.packets_scroll = app.packets_scroll.min(max_scroll);
-    let start = app.packets_scroll as usize;
+    app.vr_packets_scroll = app.vr_packets_scroll.min(max_scroll);
+    let start = app.vr_packets_scroll as usize;
 
     let pct = if rows.is_empty() {
         100
@@ -531,8 +531,8 @@ pub(super) fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
         .border_style(Style::default().fg(Color::Cyan))
         .title(format!(" Packets ({}) {}% [r]aw:{} [l]ine:{} ",
             pkt_data.total, pct,
-            if app.packets_raw { "on" } else { "off" },
-            app.packets_line.label(),
+            if app.vr_packets_raw { "on" } else { "off" },
+            app.vr_packets_line.label(),
         ));
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
@@ -564,8 +564,8 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(Clear, popup_area);
 
-    let mode_label = if app.column_editor_mode == ColumnEditorMode::Reorder { " [REORDER] " } else { "" };
-    let bottom = if app.column_editor_filter.is_empty() {
+    let mode_label = if app.vr_column_editor_mode == ColumnEditorMode::Reorder { " [REORDER] " } else { "" };
+    let bottom = if app.vr_column_editor_filter.is_empty() {
         " space:toggle /:filter m:move a:apply d:default Esc:close "
     } else {
         " space:toggle ↑↓:navigate Esc:clear filter "
@@ -584,8 +584,8 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let filter_area = Rect::new(inner.x, inner.y, inner.width, filter_height);
     let list_area = Rect::new(inner.x, inner.y + filter_height, inner.width, inner.height.saturating_sub(filter_height));
 
-    let filter_active = !app.column_editor_filter.is_empty();
-    let filter_text = app.column_editor_filter.trim_matches('\0');
+    let filter_active = !app.vr_column_editor_filter.is_empty();
+    let filter_text = app.vr_column_editor_filter.trim_matches('\0');
     let filter_display = if !filter_active {
         Line::from(vec![
             Span::styled("  / to filter", Style::default().fg(Color::DarkGray)),
@@ -602,9 +602,9 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
     // Build filtered view
     let filter_lower = filter_text.to_lowercase();
     let filtered: Vec<usize> = if filter_lower.is_empty() {
-        (0..app.column_editor_available.len()).collect()
+        (0..app.vr_column_editor_available.len()).collect()
     } else {
-        app.column_editor_available.iter().enumerate()
+        app.vr_column_editor_available.iter().enumerate()
             .filter(|(_, item)| {
                 item.exp.to_lowercase().contains(&filter_lower)
                     || item.friendly_name.to_lowercase().contains(&filter_lower)
@@ -617,7 +617,7 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let total = filtered.len();
 
     // Find position of selected in filtered list
-    let sel_pos = filtered.iter().position(|&i| i == app.column_editor_selected).unwrap_or(0);
+    let sel_pos = filtered.iter().position(|&i| i == app.vr_column_editor_selected).unwrap_or(0);
 
     let scroll_offset = if sel_pos >= visible_rows {
         sel_pos - visible_rows + 1
@@ -627,10 +627,10 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
     let mut lines: Vec<Line> = Vec::new();
     for &idx in filtered.iter().skip(scroll_offset).take(visible_rows) {
-        let item = &app.column_editor_available[idx];
-        let is_selected = idx == app.column_editor_selected;
+        let item = &app.vr_column_editor_available[idx];
+        let is_selected = idx == app.vr_column_editor_selected;
         let checkbox = if item.enabled { "[x] " } else { "[ ] " };
-        let marker = if is_selected && app.column_editor_mode == ColumnEditorMode::Reorder {
+        let marker = if is_selected && app.vr_column_editor_mode == ColumnEditorMode::Reorder {
             "≡ "
         } else if is_selected {
             "► "
@@ -667,14 +667,14 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
 pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
     let popup_width = 44u16.min(area.width.saturating_sub(4));
-    let popup_height = (app.saved_layouts.len() as u16 + 9).min(area.height.saturating_sub(4));
+    let popup_height = (app.vr_saved_layouts.len() as u16 + 9).min(area.height.saturating_sub(4));
     let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
     let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
 
     f.render_widget(Clear, popup_area);
 
-    match app.layout_popup_mode {
+    match app.vr_layout_popup_mode {
         LayoutPopupMode::ConfirmDelete => {
             let block = Block::default()
                 .borders(Borders::ALL)
@@ -684,7 +684,7 @@ pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
             f.render_widget(block, popup_area);
             let lines = vec![
                 Line::from(""),
-                Line::from(format!("  Delete layout '{}'?", app.layout_delete_name))
+                Line::from(format!("  Delete layout '{}'?", app.vr_layout_delete_name))
                     .style(Style::default().fg(Color::Yellow)),
                 Line::from(""),
                 Line::from("  y: yes  any other key: cancel")
@@ -693,7 +693,7 @@ pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
             f.render_widget(Paragraph::new(lines), inner);
         }
         LayoutPopupMode::List => {
-            let filter_active = !app.layout_filter.is_empty();
+            let filter_active = !app.vr_layout_filter.is_empty();
             let bottom = if filter_active {
                 " Enter:select ↑↓:navigate Esc:clear "
             } else {
@@ -712,7 +712,7 @@ pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
 
             if !filter_active {
                 // "Edit Columns" option
-                let style = if app.layout_popup_selected == 0 {
+                let style = if app.vr_layout_popup_selected == 0 {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
                     Style::default().fg(Color::Magenta)
@@ -720,7 +720,7 @@ pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
                 lines.push(Line::from("  ⚙ Edit Columns").style(style));
 
                 // "Save Current" option
-                let style = if app.layout_popup_selected == 1 {
+                let style = if app.vr_layout_popup_selected == 1 {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
                     Style::default().fg(Color::Cyan)
@@ -728,7 +728,7 @@ pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
                 lines.push(Line::from("  [+] Save Current Layout").style(style));
 
                 // "Default" option
-                let style = if app.layout_popup_selected == 2 {
+                let style = if app.vr_layout_popup_selected == 2 {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
                     Style::default().fg(Color::White)
@@ -739,7 +739,7 @@ pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
                 lines.push(Line::from("  ────────────────────────────────").style(Style::default().fg(Color::DarkGray)));
             } else {
                 // Filter bar
-                let filter_text = app.layout_filter.trim_matches('\0');
+                let filter_text = app.vr_layout_filter.trim_matches('\0');
                 lines.push(Line::from(vec![
                     Span::styled("  /", Style::default().fg(Color::Yellow)),
                     Span::raw(filter_text),
@@ -748,14 +748,14 @@ pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
             }
 
             // Saved layouts (filtered if filter active)
-            let filter_text = app.layout_filter.trim_matches('\0').to_lowercase();
+            let filter_text = app.vr_layout_filter.trim_matches('\0').to_lowercase();
             let mut any_shown = false;
-            for (i, layout) in app.saved_layouts.iter().enumerate() {
+            for (i, layout) in app.vr_saved_layouts.iter().enumerate() {
                 if !filter_text.is_empty() && !layout.name.to_lowercase().contains(&filter_text) {
                     continue;
                 }
                 any_shown = true;
-                let is_selected = app.layout_popup_selected == i + 3;
+                let is_selected = app.vr_layout_popup_selected == i + 3;
                 let style = if is_selected {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
@@ -785,8 +785,8 @@ pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
             lines.push(Line::from("  Layout name:").style(Style::default().fg(Color::Yellow)));
 
             // Input field with cursor
-            let name = &app.layout_save_name;
-            let cursor = app.layout_save_cursor;
+            let name = &app.vr_layout_save_name;
+            let cursor = app.vr_layout_save_cursor;
             let mut spans = vec![Span::raw("  ")];
             if cursor < name.len() {
                 spans.push(Span::raw(&name[..cursor]));
@@ -819,7 +819,7 @@ pub(super) fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(Clear, popup_area);
 
-    let title = match app.view_popup_mode {
+    let title = match app.vr_view_popup_mode {
         ViewPopupMode::SaveInput => " Save View ",
         ViewPopupMode::ConfirmDelete => " Confirm Delete ",
         _ => " Views ",
@@ -833,13 +833,13 @@ pub(super) fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
 
     let inner = Rect::new(popup_area.x + 1, popup_area.y + 1, popup_area.width - 2, popup_area.height - 2);
 
-    match app.view_popup_mode {
+    match app.vr_view_popup_mode {
         ViewPopupMode::SaveInput => {
-            let checkbox = if app.view_save_columns { "[x]" } else { "[ ]" };
+            let checkbox = if app.vr_view_save_columns { "[x]" } else { "[ ]" };
             let lines = vec![
                 Line::from("Enter view name:"),
                 Line::from(""),
-                Line::from(Span::styled(&app.view_save_name, Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED))),
+                Line::from(Span::styled(&app.vr_view_save_name, Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED))),
                 Line::from(""),
                 Line::from(vec![
                     Span::styled(checkbox, Style::default().fg(Color::Cyan)),
@@ -851,7 +851,7 @@ pub(super) fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
             ];
             let paragraph = Paragraph::new(lines);
             f.render_widget(paragraph, inner);
-            let cursor_x = inner.x + app.view_save_cursor as u16;
+            let cursor_x = inner.x + app.vr_view_save_cursor as u16;
             let cursor_y = inner.y + 2;
             if cursor_x < inner.right() {
                 f.set_cursor_position((cursor_x, cursor_y));
@@ -861,7 +861,7 @@ pub(super) fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
             let lines = vec![
                 Line::from(vec![
                     Span::raw("Delete view "),
-                    Span::styled(&app.view_delete_name, Style::default().fg(Color::Yellow)),
+                    Span::styled(&app.vr_view_delete_name, Style::default().fg(Color::Yellow)),
                     Span::raw("?"),
                 ]),
                 Line::from(""),
@@ -873,11 +873,11 @@ pub(super) fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
         ViewPopupMode::List => {
             let mut lines: Vec<Line> = Vec::new();
             let active_marker = |id: &str| -> &str {
-                if app.active_view.as_deref() == Some(id) { " ●" } else { "" }
+                if app.vr_active_view.as_deref() == Some(id) { " ●" } else { "" }
             };
 
             // Option 0: Save current expression as view
-            let save_style = if app.view_popup_selected == 0 {
+            let save_style = if app.vr_view_popup_selected == 0 {
                 Style::default().bg(Color::DarkGray).fg(Color::White)
             } else {
                 Style::default().fg(Color::Green)
@@ -885,29 +885,29 @@ pub(super) fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
             lines.push(Line::from(Span::styled("[+] Save Current Expression as View", save_style)));
 
             // Option 1: Clear view
-            let clear_style = if app.view_popup_selected == 1 {
+            let clear_style = if app.vr_view_popup_selected == 1 {
                 Style::default().bg(Color::DarkGray).fg(Color::White)
             } else {
                 Style::default().fg(Color::Red)
             };
-            let clear_label = if app.active_view.is_some() { "✖ Clear Active View" } else { "✖ No View Active" };
+            let clear_label = if app.vr_active_view.is_some() { "✖ Clear Active View" } else { "✖ No View Active" };
             lines.push(Line::from(Span::styled(clear_label, clear_style)));
 
             // Separator
             lines.push(Line::from(Span::styled("─".repeat(inner.width as usize), Style::default().fg(Color::DarkGray))));
 
             // Filter indicator
-            if app.view_filter_active {
+            if app.vr_view_filter_active {
                 lines.push(Line::from(vec![
                     Span::styled("/", Style::default().fg(Color::DarkGray)),
-                    Span::styled(&app.view_filter, Style::default().fg(Color::Yellow)),
+                    Span::styled(&app.vr_view_filter, Style::default().fg(Color::Yellow)),
                 ]));
             }
 
             // Views
             for (fi, &idx) in filtered.iter().enumerate() {
-                let view = &app.saved_views[idx];
-                let selected = app.view_popup_selected == fi + 2;
+                let view = &app.vr_saved_views[idx];
+                let selected = app.vr_view_popup_selected == fi + 2;
                 let base_style = if selected {
                     Style::default().bg(Color::DarkGray).fg(Color::White)
                 } else {
@@ -937,9 +937,9 @@ pub(super) fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
                 lines.push(Line::from(spans));
             }
 
-            if filtered.is_empty() && !app.saved_views.is_empty() {
+            if filtered.is_empty() && !app.vr_saved_views.is_empty() {
                 lines.push(Line::from(Span::styled("  (no matching views)", Style::default().fg(Color::DarkGray))));
-            } else if app.saved_views.is_empty() {
+            } else if app.vr_saved_views.is_empty() {
                 lines.push(Line::from(Span::styled("  (no saved views)", Style::default().fg(Color::DarkGray))));
             }
 

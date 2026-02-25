@@ -17,16 +17,16 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
         .collect();
     let tabs = Tabs::new(titles)
         .block(Block::default().borders(Borders::ALL).title(" Stats "))
-        .select(StatsTab::ALL.iter().position(|&t| t == app.stats_tab).unwrap_or(0))
+        .select(StatsTab::ALL.iter().position(|&t| t == app.vr_stats_tab).unwrap_or(0))
         .style(Style::default().fg(Color::White))
         .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
     f.render_widget(tabs, toolbar_chunks[0]);
 
     // Filter input
     let filter_display = if app.input_mode == InputMode::Expression {
-        &app.stats_filter_edit
+        &app.vr_stats_filter_edit
     } else {
-        &app.stats_filter
+        &app.vr_stats_filter
     };
     let filter_style = if app.input_mode == InputMode::Expression {
         Style::default().fg(Color::Yellow)
@@ -47,22 +47,22 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
 
 pub(super) fn draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
     draw_stats_list(f, app, area);
-    if app.stats_view == StatsView::Detail {
+    if app.vr_stats_view == StatsView::Detail {
         draw_stats_detail(f, app, area);
     }
 }
 
 fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
-    let columns = app.stats_tab.columns();
+    let columns = app.vr_stats_tab.columns();
 
     let header_cells = columns.iter().enumerate().map(|(i, (field, label, _))| {
-        let text = if i == app.stats_sort_column {
-            let arrow = if app.stats_sort_desc { "▼" } else { "▲" };
+        let text = if i == app.vr_stats_sort_column {
+            let arrow = if app.vr_stats_sort_desc { "▼" } else { "▲" };
             format!("{label}{arrow}")
         } else {
             label.to_string()
         };
-        let style = if i == app.stats_sort_column {
+        let style = if i == app.vr_stats_sort_column {
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
@@ -76,10 +76,10 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
     });
     let header = Row::new(header_cells).height(1);
 
-    let rows: Vec<Row> = app.stats_data.iter().map(|item| {
+    let rows: Vec<Row> = app.vr_stats_data.iter().map(|item| {
         let cells = columns.iter().map(|(field, _, _)| {
             let val = get_nested_value(item, field);
-            let text = format_stats_cell(field, val, item, app.stats_tab);
+            let text = format_stats_cell(field, val, item, app.vr_stats_tab);
             if is_numeric_field(field) {
                 Cell::from(Line::from(text).alignment(Alignment::Right))
             } else {
@@ -95,8 +95,8 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
 
     let title = format!(
         " {} [{} items] ",
-        app.stats_tab.name(),
-        app.stats_data.len()
+        app.vr_stats_tab.name(),
+        app.vr_stats_data.len()
     );
 
     let table = Table::new(rows, widths)
@@ -108,7 +108,7 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .row_highlight_style(Style::default().bg(Color::DarkGray));
 
-    f.render_stateful_widget(table, area, &mut app.stats_table_state);
+    f.render_stateful_widget(table, area, &mut app.vr_stats_table_state);
 }
 
 fn is_numeric_field(field: &str) -> bool {
@@ -196,7 +196,7 @@ fn format_stats_value(val: &serde_json::Value) -> String {
 }
 
 fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
-    let detail = match &app.stats_detail {
+    let detail = match &app.vr_stats_detail {
         Some(d) => d,
         None => return,
     };
@@ -236,11 +236,11 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let title = if !detail.filter.is_empty() {
-        format!(" {} Detail [filter: {}] ", app.stats_tab.name(), detail.filter)
+        format!(" {} Detail [filter: {}] ", app.vr_stats_tab.name(), detail.filter)
     } else if app.input_mode == crate::app::InputMode::DetailFilter {
-        format!(" {} Detail [filter: ] ", app.stats_tab.name())
+        format!(" {} Detail [filter: ] ", app.vr_stats_tab.name())
     } else {
-        format!(" {} Detail (/ filter, Esc close) ", app.stats_tab.name())
+        format!(" {} Detail (/ filter, Esc close) ", app.vr_stats_tab.name())
     };
 
     let paragraph = Paragraph::new(lines)

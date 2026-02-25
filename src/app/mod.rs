@@ -21,96 +21,96 @@ pub struct App {
     pub show_help: bool,
     pub action_menu: Option<ActionMenu>,
     pub action_prompt: Option<ActionPrompt>,
-    pub date_fields: HashMap<String, String>, // dbField -> type ("seconds" or "date")
-    pub field_exp_map: HashMap<String, String>, // dbField -> exp (expression field name)
-    pub field_friendly_map: HashMap<String, String>, // dbField -> friendlyName
-    pub sessions: Vec<Value>,
-    pub sessions_total: u64,
-    pub sessions_filtered: u64,
-    pub session_fields: Vec<String>,
-    pub columns: Vec<ColumnDef>,
-    pub saved_layouts: Vec<SavedLayout>,
-    pub show_column_editor: bool,
-    pub column_editor_selected: usize,
-    pub column_editor_mode: ColumnEditorMode,
-    pub column_editor_available: Vec<ColumnEditorItem>,
-    pub column_editor_filter: String,
-    pub show_layout_popup: bool,
-    pub layout_popup_mode: LayoutPopupMode,
-    pub layout_popup_selected: usize,
-    pub layout_save_name: String,
-    pub layout_save_cursor: usize,
-    pub layout_delete_name: String,
-    pub layout_filter: String,
+    pub vr_date_fields: HashMap<String, String>, // dbField -> type ("seconds" or "date")
+    pub vr_field_exp_map: HashMap<String, String>, // dbField -> exp (expression field name)
+    pub vr_field_friendly_map: HashMap<String, String>, // dbField -> friendlyName
+    pub vr_sessions: Vec<Value>,
+    pub vr_sessions_total: u64,
+    pub vr_sessions_filtered: u64,
+    pub vr_session_fields: Vec<String>,
+    pub vr_columns: Vec<ColumnDef>,
+    pub vr_saved_layouts: Vec<SavedLayout>,
+    pub vr_show_column_editor: bool,
+    pub vr_column_editor_selected: usize,
+    pub vr_column_editor_mode: ColumnEditorMode,
+    pub vr_column_editor_available: Vec<ColumnEditorItem>,
+    pub vr_column_editor_filter: String,
+    pub vr_show_layout_popup: bool,
+    pub vr_layout_popup_mode: LayoutPopupMode,
+    pub vr_layout_popup_selected: usize,
+    pub vr_layout_save_name: String,
+    pub vr_layout_save_cursor: usize,
+    pub vr_layout_delete_name: String,
+    pub vr_layout_filter: String,
     // View state
-    pub active_view: Option<String>,      // view id for API calls
-    pub active_view_name: Option<String>,  // view name for display
-    pub saved_views: Vec<ArkimeView>,
-    pub show_view_popup: bool,
-    pub view_popup_mode: ViewPopupMode,
-    pub view_popup_selected: usize,
-    pub view_save_name: String,
-    pub view_save_cursor: usize,
-    pub view_save_columns: bool,
-    pub view_delete_id: String,
-    pub view_delete_name: String,
-    pub view_filter: String,
-    pub view_filter_active: bool,
-    pub page_start: u64,
-    pub page_size: u64,
-    pub selected_session: usize,
-    pub table_state: TableState,
-    pub session_view: SessionView,
-    pub session_detail: Option<SessionDetail>,
-    pub detail_action_menu: Option<DetailActionMenu>,
-    pub packets_view: Option<crate::api::PacketsData>,
-    pub packets_scroll: u16,
-    pub packets_raw: bool,
-    pub packets_line: LineMode,
+    pub vr_active_view: Option<String>,      // view id for API calls
+    pub vr_active_view_name: Option<String>,  // view name for display
+    pub vr_saved_views: Vec<ArkimeView>,
+    pub vr_show_view_popup: bool,
+    pub vr_view_popup_mode: ViewPopupMode,
+    pub vr_view_popup_selected: usize,
+    pub vr_view_save_name: String,
+    pub vr_view_save_cursor: usize,
+    pub vr_view_save_columns: bool,
+    pub vr_view_delete_id: String,
+    pub vr_view_delete_name: String,
+    pub vr_view_filter: String,
+    pub vr_view_filter_active: bool,
+    pub vr_page_start: u64,
+    pub vr_page_size: u64,
+    pub vr_selected_session: usize,
+    pub vr_table_state: TableState,
+    pub vr_session_view: SessionView,
+    pub vr_session_detail: Option<SessionDetail>,
+    pub vr_detail_action_menu: Option<DetailActionMenu>,
+    pub vr_packets_view: Option<crate::api::PacketsData>,
+    pub vr_packets_scroll: u16,
+    pub vr_packets_raw: bool,
+    pub vr_packets_line: LineMode,
     pub show_loading: bool,
     pub loading_owl_x: u16,
     pub loading_owl_dx: i16,
     pub loading_owl_tick: std::time::Instant,
-    pub pending_packets_fetch: bool,
-    pub pending_summary_fetch: bool,
-    pub packets_node_pending: String,
-    pub packets_id_pending: String,
-    pub packets_total_pending: u64,
-    pub sort_column: usize,
-    pub sort_desc: bool,
-    pub graph_size: GraphSize,
-    pub graph_type: GraphType,
-    pub graph_data: Option<GraphData>,
+    pub vr_pending_packets_fetch: bool,
+    pub vr_pending_summary_fetch: bool,
+    pub vr_packets_node_pending: String,
+    pub vr_packets_id_pending: String,
+    pub vr_packets_total_pending: u64,
+    pub vr_sort_column: usize,
+    pub vr_sort_desc: bool,
+    pub vr_graph_size: GraphSize,
+    pub vr_graph_type: GraphType,
+    pub vr_graph_data: Option<GraphData>,
     pub status_msg: String,
     pub show_debug: bool,
     pub debug_scroll: usize,
     pub http_log: HttpLog,
     // Stats tab state
-    pub stats_tab: StatsTab,
-    pub stats_data: Vec<Value>,
-    pub stats_total: u64,
-    pub stats_filtered: u64,
-    pub stats_filter: String,
-    pub stats_filter_edit: String,
-    pub stats_selected: usize,
-    pub stats_table_state: TableState,
-    pub stats_view: StatsView,
-    pub stats_detail: Option<StatsDetail>,
-    pub stats_sort_column: usize,
-    pub stats_sort_desc: bool,
-    pub stats_last_refresh: std::time::Instant,
+    pub vr_stats_tab: StatsTab,
+    pub vr_stats_data: Vec<Value>,
+    pub vr_stats_total: u64,
+    pub vr_stats_filtered: u64,
+    pub vr_stats_filter: String,
+    pub vr_stats_filter_edit: String,
+    pub vr_stats_selected: usize,
+    pub vr_stats_table_state: TableState,
+    pub vr_stats_view: StatsView,
+    pub vr_stats_detail: Option<StatsDetail>,
+    pub vr_stats_sort_column: usize,
+    pub vr_stats_sort_desc: bool,
+    pub vr_stats_last_refresh: std::time::Instant,
     pub visible_rows: usize,
     // Arkime (Summary) tab state
-    pub all_fields: Vec<ArkimeField>,
-    pub summary_field: String,
-    pub summary_data: Vec<SummaryItem>,
-    pub summary_metric: SummaryMetric,
-    pub summary_selected: usize,
-    pub summary_table_state: TableState,
-    pub summary_sort: SummarySort,
-    pub summary_sort_desc: bool,
-    pub field_filter: String,
-    pub field_filter_selected: usize,
+    pub vr_all_fields: Vec<ArkimeField>,
+    pub vr_summary_field: String,
+    pub vr_summary_data: Vec<SummaryItem>,
+    pub vr_summary_metric: SummaryMetric,
+    pub vr_summary_selected: usize,
+    pub vr_summary_table_state: TableState,
+    pub vr_summary_sort: SummarySort,
+    pub vr_summary_sort_desc: bool,
+    pub vr_field_filter: String,
+    pub vr_field_filter_selected: usize,
     // Owl animation
     pub owl_x: f32,
     pub owl_y: f32,
@@ -130,16 +130,16 @@ pub struct App {
     pub c3_focus: Cont3xtFocus,       // which pane has focus
     pub c3_raw_view: bool,            // show raw JSON instead of card
     pub c3_disabled_integrations: std::collections::HashSet<String>, // user-toggled off
-    pub show_integration_popup: bool,
-    pub integration_popup_selected: usize,
-    pub integration_popup_filter: String,
-    pub integration_popup_filtering: bool,
-    pub integration_popup_mode: IntegrationPopupMode, // which sub-view of integration popup
+    pub c3_show_integration_popup: bool,
+    pub c3_integration_popup_selected: usize,
+    pub c3_integration_popup_filter: String,
+    pub c3_integration_popup_filtering: bool,
+    pub c3_integration_popup_mode: IntegrationPopupMode, // which sub-view of integration popup
     pub c3_views: Vec<Cont3xtView>,
     pub c3_view_selected: usize,
     pub c3_view_save_name: String,
     pub c3_searching: bool,           // streaming search in progress
-    pub pending_c3_search: bool,
+    pub c3_pending_search: bool,
     // Cont3xt stats
     pub c3_stats_tab: C3StatsTab,
     pub c3_stats_data: Vec<serde_json::Value>,       // integration stats
@@ -169,13 +169,13 @@ impl App {
             show_help: false,
             action_menu: None,
             action_prompt: None,
-            date_fields: HashMap::new(),
-            field_exp_map: HashMap::new(),
-            field_friendly_map: HashMap::new(),
-            sessions: Vec::new(),
-            sessions_total: 0,
-            sessions_filtered: 0,
-            session_fields: vec![
+            vr_date_fields: HashMap::new(),
+            vr_field_exp_map: HashMap::new(),
+            vr_field_friendly_map: HashMap::new(),
+            vr_sessions: Vec::new(),
+            vr_sessions_total: 0,
+            vr_sessions_filtered: 0,
+            vr_session_fields: vec![
                 "ipProtocol".into(),
                 "firstPacket".into(),
                 "lastPacket".into(),
@@ -189,88 +189,88 @@ impl App {
                 "source.bytes".into(),
                 "destination.bytes".into(),
             ],
-            columns: default_columns(),
-            saved_layouts: Vec::new(),
-            show_column_editor: false,
-            column_editor_selected: 0,
-            column_editor_mode: ColumnEditorMode::Browse,
-            column_editor_available: Vec::new(),
-            column_editor_filter: String::new(),
-            show_layout_popup: false,
-            layout_popup_mode: LayoutPopupMode::List,
-            layout_popup_selected: 0,
-            layout_save_name: String::new(),
-            layout_save_cursor: 0,
-            layout_delete_name: String::new(),
-            layout_filter: String::new(),
-            active_view: None,
-            active_view_name: None,
-            saved_views: Vec::new(),
-            show_view_popup: false,
-            view_popup_mode: ViewPopupMode::List,
-            view_popup_selected: 0,
-            view_save_name: String::new(),
-            view_save_cursor: 0,
-            view_save_columns: false,
-            view_delete_id: String::new(),
-            view_delete_name: String::new(),
-            view_filter: String::new(),
-            view_filter_active: false,
-            page_start: 0,
-            page_size: 100,
-            selected_session: 0,
-            table_state: TableState::default().with_selected(0),
-            session_view: SessionView::List,
-            session_detail: None,
-            detail_action_menu: None,
-            packets_view: None,
-            packets_scroll: 0,
-            packets_raw: false,
-            packets_line: LineMode::Hex,
+            vr_columns: default_columns(),
+            vr_saved_layouts: Vec::new(),
+            vr_show_column_editor: false,
+            vr_column_editor_selected: 0,
+            vr_column_editor_mode: ColumnEditorMode::Browse,
+            vr_column_editor_available: Vec::new(),
+            vr_column_editor_filter: String::new(),
+            vr_show_layout_popup: false,
+            vr_layout_popup_mode: LayoutPopupMode::List,
+            vr_layout_popup_selected: 0,
+            vr_layout_save_name: String::new(),
+            vr_layout_save_cursor: 0,
+            vr_layout_delete_name: String::new(),
+            vr_layout_filter: String::new(),
+            vr_active_view: None,
+            vr_active_view_name: None,
+            vr_saved_views: Vec::new(),
+            vr_show_view_popup: false,
+            vr_view_popup_mode: ViewPopupMode::List,
+            vr_view_popup_selected: 0,
+            vr_view_save_name: String::new(),
+            vr_view_save_cursor: 0,
+            vr_view_save_columns: false,
+            vr_view_delete_id: String::new(),
+            vr_view_delete_name: String::new(),
+            vr_view_filter: String::new(),
+            vr_view_filter_active: false,
+            vr_page_start: 0,
+            vr_page_size: 100,
+            vr_selected_session: 0,
+            vr_table_state: TableState::default().with_selected(0),
+            vr_session_view: SessionView::List,
+            vr_session_detail: None,
+            vr_detail_action_menu: None,
+            vr_packets_view: None,
+            vr_packets_scroll: 0,
+            vr_packets_raw: false,
+            vr_packets_line: LineMode::Hex,
             show_loading: false,
             loading_owl_x: 0,
             loading_owl_dx: 1,
             loading_owl_tick: std::time::Instant::now(),
-            pending_packets_fetch: false,
-            pending_summary_fetch: false,
-            packets_node_pending: String::new(),
-            packets_id_pending: String::new(),
-            packets_total_pending: 0,
-            sort_column: 2,
-            sort_desc: true,
-            graph_size: GraphSize::Off,
-            graph_type: GraphType::Sessions,
-            graph_data: None,
+            vr_pending_packets_fetch: false,
+            vr_pending_summary_fetch: false,
+            vr_packets_node_pending: String::new(),
+            vr_packets_id_pending: String::new(),
+            vr_packets_total_pending: 0,
+            vr_sort_column: 2,
+            vr_sort_desc: true,
+            vr_graph_size: GraphSize::Off,
+            vr_graph_type: GraphType::Sessions,
+            vr_graph_data: None,
             status_msg: String::new(),
             show_debug: false,
             debug_scroll: 0,
             http_log,
             // Stats tab state
-            stats_tab: StatsTab::Capture,
-            stats_data: Vec::new(),
-            stats_total: 0,
-            stats_filtered: 0,
-            stats_filter: String::new(),
-            stats_filter_edit: String::new(),
-            stats_selected: 0,
-            stats_table_state: TableState::default().with_selected(0),
-            stats_view: StatsView::List,
-            stats_detail: None,
-            stats_sort_column: 0,
-            stats_sort_desc: false,
-            stats_last_refresh: std::time::Instant::now(),
+            vr_stats_tab: StatsTab::Capture,
+            vr_stats_data: Vec::new(),
+            vr_stats_total: 0,
+            vr_stats_filtered: 0,
+            vr_stats_filter: String::new(),
+            vr_stats_filter_edit: String::new(),
+            vr_stats_selected: 0,
+            vr_stats_table_state: TableState::default().with_selected(0),
+            vr_stats_view: StatsView::List,
+            vr_stats_detail: None,
+            vr_stats_sort_column: 0,
+            vr_stats_sort_desc: false,
+            vr_stats_last_refresh: std::time::Instant::now(),
             visible_rows: 20,
             // Arkime (Summary) tab state
-            all_fields: Vec::new(),
-            summary_field: String::new(),
-            summary_data: Vec::new(),
-            summary_metric: SummaryMetric::Sessions,
-            summary_selected: 0,
-            summary_table_state: TableState::default().with_selected(0),
-            summary_sort: SummarySort::Sessions,
-            summary_sort_desc: true,
-            field_filter: String::new(),
-            field_filter_selected: 0,
+            vr_all_fields: Vec::new(),
+            vr_summary_field: String::new(),
+            vr_summary_data: Vec::new(),
+            vr_summary_metric: SummaryMetric::Sessions,
+            vr_summary_selected: 0,
+            vr_summary_table_state: TableState::default().with_selected(0),
+            vr_summary_sort: SummarySort::Sessions,
+            vr_summary_sort_desc: true,
+            vr_field_filter: String::new(),
+            vr_field_filter_selected: 0,
             // Owl animation
             owl_x: 5.0,
             owl_y: 3.0,
@@ -290,16 +290,16 @@ impl App {
             c3_focus: Cont3xtFocus::Results,
             c3_raw_view: false,
             c3_disabled_integrations: std::collections::HashSet::new(),
-            show_integration_popup: false,
-            integration_popup_selected: 0,
-            integration_popup_filter: String::new(),
-            integration_popup_filtering: false,
-            integration_popup_mode: IntegrationPopupMode::Integrations,
+            c3_show_integration_popup: false,
+            c3_integration_popup_selected: 0,
+            c3_integration_popup_filter: String::new(),
+            c3_integration_popup_filtering: false,
+            c3_integration_popup_mode: IntegrationPopupMode::Integrations,
             c3_views: Vec::new(),
             c3_view_selected: 0,
             c3_view_save_name: String::new(),
             c3_searching: false,
-            pending_c3_search: false,
+            c3_pending_search: false,
             c3_stats_tab: C3StatsTab::Integrations,
             c3_stats_data: Vec::new(),
             c3_itype_stats_data: Vec::new(),
@@ -312,7 +312,7 @@ impl App {
     }
 
     pub fn is_detail_view(&self) -> bool {
-        self.session_view == SessionView::Detail || self.stats_view == StatsView::Detail
+        self.vr_session_view == SessionView::Detail || self.vr_stats_view == StatsView::Detail
     }
 
     pub fn tabs(&self) -> &'static [Tab] {
@@ -333,9 +333,9 @@ impl App {
 
     /// Rebuild session_fields from columns
     pub fn vr_sync_session_fields(&mut self) {
-        self.session_fields = self.columns.iter().map(|c| c.field.clone()).collect();
-        if self.sort_column >= self.columns.len() {
-            self.sort_column = 0;
+        self.vr_session_fields = self.vr_columns.iter().map(|c| c.field.clone()).collect();
+        if self.vr_sort_column >= self.vr_columns.len() {
+            self.vr_sort_column = 0;
         }
     }
 
@@ -345,11 +345,11 @@ impl App {
         let mut cols = vec![ColumnDef::new("ipProtocol", "ip.protocol", "IP", 4)];
         for field in &layout.columns {
             // Resolve to dbField and exp names (layout may store exp or dbField)
-            let found = self.all_fields.iter()
+            let found = self.vr_all_fields.iter()
                 .find(|f| f.exp == *field || f.db_field == *field);
             let db_field = found.map(|f| f.db_field.clone()).unwrap_or_else(|| field.clone());
             let exp = found.map(|f| f.exp.clone()).unwrap_or_else(|| field.clone());
-            let label = self.field_friendly_map.get(db_field.as_str())
+            let label = self.vr_field_friendly_map.get(db_field.as_str())
                 .cloned()
                 .unwrap_or_else(|| field.clone());
             let width = found.map(|f| width_for_field(&f.field_type)).unwrap_or(16);
@@ -365,17 +365,17 @@ impl App {
             cols.push(ColumnDef::new(&db_field, &exp, &label, width));
         }
         if !cols.is_empty() {
-            self.columns = cols;
+            self.vr_columns = cols;
             self.vr_sync_session_fields();
             // Apply sort from layout (resolve to dbField)
             if !layout.sort_field.is_empty() {
-                let sort_db = self.all_fields.iter()
+                let sort_db = self.vr_all_fields.iter()
                     .find(|f| f.exp == layout.sort_field || f.db_field == layout.sort_field)
                     .map(|f| f.db_field.clone())
                     .unwrap_or_else(|| layout.sort_field.clone());
-                if let Some(idx) = self.columns.iter().position(|c| c.field == sort_db) {
-                    self.sort_column = idx;
-                    self.sort_desc = layout.sort_dir == "desc";
+                if let Some(idx) = self.vr_columns.iter().position(|c| c.field == sort_db) {
+                    self.vr_sort_column = idx;
+                    self.vr_sort_desc = layout.sort_dir == "desc";
                 }
             }
         }
@@ -383,11 +383,11 @@ impl App {
 
     /// Build column_editor_available from all_fields + current columns
     pub fn vr_build_column_editor(&mut self) {
-        let enabled: std::collections::HashSet<String> = self.columns.iter().map(|c| c.field.clone()).collect();
+        let enabled: std::collections::HashSet<String> = self.vr_columns.iter().map(|c| c.field.clone()).collect();
         let mut items: Vec<ColumnEditorItem> = Vec::new();
         // Add enabled columns first, in order
-        for col in &self.columns {
-            let friendly = self.field_friendly_map.get(col.field.as_str())
+        for col in &self.vr_columns {
+            let friendly = self.vr_field_friendly_map.get(col.field.as_str())
                 .cloned()
                 .unwrap_or_else(|| col.label.clone());
             items.push(ColumnEditorItem {
@@ -398,7 +398,7 @@ impl App {
             });
         }
         // Add remaining fields (sorted by exp), excluding hidden fields
-        let mut remaining: Vec<&ArkimeField> = self.all_fields.iter()
+        let mut remaining: Vec<&ArkimeField> = self.vr_all_fields.iter()
             .filter(|f| !f.db_field.is_empty() && !enabled.contains(&f.db_field) && f.is_visible())
             .collect();
         remaining.sort_by(|a, b| a.exp.cmp(&b.exp));
@@ -410,22 +410,22 @@ impl App {
                 enabled: false,
             });
         }
-        self.column_editor_available = items;
-        self.column_editor_selected = 0;
-        self.column_editor_mode = ColumnEditorMode::Browse;
-        self.column_editor_filter.clear();
+        self.vr_column_editor_available = items;
+        self.vr_column_editor_selected = 0;
+        self.vr_column_editor_mode = ColumnEditorMode::Browse;
+        self.vr_column_editor_filter.clear();
     }
 
     /// Apply column editor selections back to columns
     pub fn vr_apply_column_editor(&mut self) {
         let mut new_cols = Vec::new();
-        for item in &self.column_editor_available {
+        for item in &self.vr_column_editor_available {
             if !item.enabled { continue; }
             let width = default_columns().iter()
                 .find(|c| c.field == item.db_field)
                 .map(|c| c.width)
                 .unwrap_or_else(|| {
-                    self.all_fields.iter()
+                    self.vr_all_fields.iter()
                         .find(|f| f.db_field == item.db_field)
                         .map(|f| width_for_field(&f.field_type))
                         .unwrap_or(16)
@@ -437,7 +437,7 @@ impl App {
             new_cols.push(ColumnDef::new(&item.db_field, &item.exp, &label, width));
         }
         if !new_cols.is_empty() {
-            self.columns = new_cols;
+            self.vr_columns = new_cols;
             self.vr_sync_session_fields();
         }
     }
@@ -473,7 +473,7 @@ impl App {
                         .unwrap_or_default();
                     layouts.push(SavedLayout { name, columns, sort_field, sort_dir });
                 }
-                self.saved_layouts = layouts;
+                self.vr_saved_layouts = layouts;
             }
             Err(e) => {
                 self.status_msg = format!("Error fetching layouts: {e}");
@@ -499,10 +499,10 @@ impl App {
     pub async fn vr_fetch_fields(&mut self) {
         match self.client.vr_get_fields().await {
             Ok((fields, date_fields, field_exp_map, field_friendly_map)) => {
-                self.all_fields = fields;
-                self.date_fields = date_fields;
-                self.field_exp_map = field_exp_map;
-                self.field_friendly_map = field_friendly_map;
+                self.vr_all_fields = fields;
+                self.vr_date_fields = date_fields;
+                self.vr_field_exp_map = field_exp_map;
+                self.vr_field_friendly_map = field_friendly_map;
             }
             Err(e) => {
                 self.status_msg = format!("Error fetching fields: {e}");
@@ -520,25 +520,25 @@ impl App {
 
     pub async fn vr_fetch_sessions(&mut self) {
         self.status_msg = "Fetching sessions...".into();
-        let sort_field = self.session_fields.get(self.sort_column)
+        let sort_field = self.vr_session_fields.get(self.vr_sort_column)
             .cloned()
             .unwrap_or_else(|| "firstPacket".into());
-        match self.client.vr_get_sessions(&self.session_fields, &self.expression, self.time_range.date_value(), &sort_field, self.sort_desc, self.graph_size.is_visible(), self.page_start, self.page_size, &self.active_view).await {
+        match self.client.vr_get_sessions(&self.vr_session_fields, &self.expression, self.time_range.date_value(), &sort_field, self.vr_sort_desc, self.vr_graph_size.is_visible(), self.vr_page_start, self.vr_page_size, &self.vr_active_view).await {
             Ok(response) => {
                 if let Some(err) = response.bsq_err.as_ref().or(response.error.as_ref()) {
                     self.status_msg = format!("Expression error: {err}");
                     return;
                 }
-                self.sessions = response.data;
-                self.sessions_total = response.records_total;
-                self.sessions_filtered = response.records_filtered;
-                self.graph_data = response.graph;
-                self.selected_session = 0;
-                self.table_state.select(Some(0));
-                let end = (self.page_start + self.sessions.len() as u64).min(self.sessions_filtered);
+                self.vr_sessions = response.data;
+                self.vr_sessions_total = response.records_total;
+                self.vr_sessions_filtered = response.records_filtered;
+                self.vr_graph_data = response.graph;
+                self.vr_selected_session = 0;
+                self.vr_table_state.select(Some(0));
+                let end = (self.vr_page_start + self.vr_sessions.len() as u64).min(self.vr_sessions_filtered);
                 self.status_msg = format!(
                     "Showing {}-{} of {} sessions",
-                    self.page_start + 1, end, self.sessions_filtered
+                    self.vr_page_start + 1, end, self.vr_sessions_filtered
                 );
             }
             Err(e) => {
@@ -548,7 +548,7 @@ impl App {
     }
 
     pub async fn vr_open_session_detail(&mut self) {
-        if let Some(session) = self.sessions.get(self.selected_session) {
+        if let Some(session) = self.vr_sessions.get(self.vr_selected_session) {
             let id = session.get("id").and_then(|v| v.as_str()).unwrap_or("");
             if id.is_empty() {
                 self.status_msg = "No session id".into();
@@ -560,8 +560,8 @@ impl App {
                     let total_rows = data.as_object()
                         .map(|o| o.keys().filter(|k| !is_hidden_detail_field(k)).count())
                         .unwrap_or(0);
-                    self.session_detail = Some(SessionDetail { data, scroll: 0, selected: 0, total_rows, filter: String::new() });
-                    self.session_view = SessionView::Detail;
+                    self.vr_session_detail = Some(SessionDetail { data, scroll: 0, selected: 0, total_rows, filter: String::new() });
+                    self.vr_session_view = SessionView::Detail;
                     self.status_msg = "Session detail loaded".into();
                 }
                 Err(e) => {
@@ -572,36 +572,36 @@ impl App {
     }
 
     pub async fn vr_fetch_stats(&mut self) {
-        self.status_msg = format!("Fetching {}...", self.stats_tab.name());
-        let columns = self.stats_tab.columns();
-        let sort_field = columns.get(self.stats_sort_column)
+        self.status_msg = format!("Fetching {}...", self.vr_stats_tab.name());
+        let columns = self.vr_stats_tab.columns();
+        let sort_field = columns.get(self.vr_stats_sort_column)
             .map(|(f, _, _)| *f)
             .unwrap_or(columns[0].0);
 
-        let result = match self.stats_tab {
-            StatsTab::Capture => self.client.vr_get_stats(&self.stats_filter, sort_field, self.stats_sort_desc).await,
-            StatsTab::DBStats => self.client.vr_get_esstats(&self.stats_filter, sort_field, self.stats_sort_desc).await,
-            StatsTab::DBIndices => self.client.vr_get_esindices(&self.stats_filter, sort_field, self.stats_sort_desc).await,
+        let result = match self.vr_stats_tab {
+            StatsTab::Capture => self.client.vr_get_stats(&self.vr_stats_filter, sort_field, self.vr_stats_sort_desc).await,
+            StatsTab::DBStats => self.client.vr_get_esstats(&self.vr_stats_filter, sort_field, self.vr_stats_sort_desc).await,
+            StatsTab::DBIndices => self.client.vr_get_esindices(&self.vr_stats_filter, sort_field, self.vr_stats_sort_desc).await,
         };
 
         match result {
             Ok(value) => {
-                self.stats_data = value.get("data")
+                self.vr_stats_data = value.get("data")
                     .and_then(|d| d.as_array())
                     .cloned()
                     .unwrap_or_default();
-                self.stats_total = value.get("recordsTotal")
+                self.vr_stats_total = value.get("recordsTotal")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                self.stats_filtered = value.get("recordsFiltered")
+                self.vr_stats_filtered = value.get("recordsFiltered")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                self.stats_selected = 0;
-                self.stats_table_state.select(Some(0));
-                self.stats_last_refresh = std::time::Instant::now();
+                self.vr_stats_selected = 0;
+                self.vr_stats_table_state.select(Some(0));
+                self.vr_stats_last_refresh = std::time::Instant::now();
                 self.status_msg = format!(
                     "{}: {} items",
-                    self.stats_tab.name(), self.stats_data.len()
+                    self.vr_stats_tab.name(), self.vr_stats_data.len()
                 );
             }
             Err(e) => {
@@ -611,48 +611,48 @@ impl App {
     }
 
     pub fn vr_open_stats_detail(&mut self) {
-        if let Some(item) = self.stats_data.get(self.stats_selected) {
-            self.stats_detail = Some(StatsDetail { data: item.clone(), scroll: 0, filter: String::new() });
-            self.stats_view = StatsView::Detail;
+        if let Some(item) = self.vr_stats_data.get(self.vr_stats_selected) {
+            self.vr_stats_detail = Some(StatsDetail { data: item.clone(), scroll: 0, filter: String::new() });
+            self.vr_stats_view = StatsView::Detail;
         }
     }
 
     pub fn vr_request_summary_fetch(&mut self) {
-        if self.summary_field.is_empty() {
+        if self.vr_summary_field.is_empty() {
             return;
         }
         self.show_loading = true;
-        self.pending_summary_fetch = true;
+        self.vr_pending_summary_fetch = true;
     }
 
     pub fn vr_sort_summary_data(&mut self) {
-        let desc = self.summary_sort_desc;
-        match self.summary_sort {
-            SummarySort::Value => self.summary_data.sort_by(|a, b| {
+        let desc = self.vr_summary_sort_desc;
+        match self.vr_summary_sort {
+            SummarySort::Value => self.vr_summary_data.sort_by(|a, b| {
                 let a_str = a.item.as_str().unwrap_or("");
                 let b_str = b.item.as_str().unwrap_or("");
                 if desc { b_str.cmp(a_str) } else { a_str.cmp(b_str) }
             }),
-            SummarySort::Sessions => self.summary_data.sort_by(|a, b| {
+            SummarySort::Sessions => self.vr_summary_data.sort_by(|a, b| {
                 if desc { b.sessions.cmp(&a.sessions) } else { a.sessions.cmp(&b.sessions) }
             }),
-            SummarySort::Packets => self.summary_data.sort_by(|a, b| {
+            SummarySort::Packets => self.vr_summary_data.sort_by(|a, b| {
                 if desc { b.packets.cmp(&a.packets) } else { a.packets.cmp(&b.packets) }
             }),
-            SummarySort::Bytes => self.summary_data.sort_by(|a, b| {
+            SummarySort::Bytes => self.vr_summary_data.sort_by(|a, b| {
                 if desc { b.bytes.cmp(&a.bytes) } else { a.bytes.cmp(&b.bytes) }
             }),
         }
-        self.summary_selected = 0;
-        self.summary_table_state.select(Some(0));
+        self.vr_summary_selected = 0;
+        self.vr_summary_table_state.select(Some(0));
     }
 
     pub fn vr_filtered_fields(&self) -> Vec<&ArkimeField> {
-        if self.field_filter.is_empty() {
-            self.all_fields.iter().filter(|f| f.is_visible()).collect()
+        if self.vr_field_filter.is_empty() {
+            self.vr_all_fields.iter().filter(|f| f.is_visible()).collect()
         } else {
-            let filter = self.field_filter.to_lowercase();
-            self.all_fields.iter()
+            let filter = self.vr_field_filter.to_lowercase();
+            self.vr_all_fields.iter()
                 .filter(|f| f.is_visible())
                 .filter(|f| f.exp.to_lowercase().contains(&filter) || f.friendly_name.to_lowercase().contains(&filter))
                 .collect()
@@ -685,16 +685,16 @@ impl App {
         }
     }
 
-    pub fn request_c3_search(&mut self) {
+    pub fn c3_request_search(&mut self) {
         if self.expression.is_empty() {
             return;
         }
         self.show_loading = true;
-        self.pending_c3_search = true;
+        self.c3_pending_search = true;
     }
 
-    pub async fn fetch_c3_views(&mut self) {
-        match self.client.get_c3_views().await {
+    pub async fn c3_fetch_views(&mut self) {
+        match self.client.c3_get_views().await {
             Ok(views) => {
                 self.c3_views = views;
             }
@@ -713,7 +713,7 @@ impl App {
     }
 
     /// Apply a view: set disabled integrations to everything NOT in the view's list
-    pub fn apply_c3_view(&mut self, integrations: &[String]) {
+    pub fn c3_apply_view(&mut self, integrations: &[String]) {
         self.c3_disabled_integrations.clear();
         for int in &self.c3_integrations {
             if !integrations.contains(&int.name) {
@@ -722,8 +722,8 @@ impl App {
         }
     }
 
-    pub async fn fetch_c3_stats(&mut self) {
-        match self.client.get_c3_stats().await {
+    pub async fn c3_fetch_stats(&mut self) {
+        match self.client.c3_get_stats().await {
             Ok(val) => {
                 if let Some(stats) = val.get("stats").and_then(|v| v.as_array()) {
                     self.c3_stats_data = stats.clone();
