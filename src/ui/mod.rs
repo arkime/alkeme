@@ -318,6 +318,17 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         indicator_results.entry(key).or_default().push(idx);
     }
 
+    // Also ensure parent indicators exist in indicator_order even without results
+    // This handles chains like URL -> DOMAIN -> IP where URL may have no direct results
+    for ((_child_ind, _child_itype), parents) in &app.c3_indicator_parents {
+        for (parent_query, parent_itype) in parents {
+            let parent_key = (parent_itype.clone(), parent_query.clone());
+            if !indicator_order.contains(&parent_key) {
+                indicator_order.push(parent_key);
+            }
+        }
+    }
+
     // Build a tree: find root indicators (those with no parent or whose parent is not in our set)
     let mut children_of: std::collections::HashMap<(String, String), Vec<(String, String)>> = std::collections::HashMap::new();
     let mut has_parent: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
