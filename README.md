@@ -191,7 +191,8 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `Home` / `End` | Jump to top / bottom (Issues) |
 | `Enter` | Open cluster in Viewer mode (Dashboard) |
 | `i` | Cluster detail overlay (Dashboard) |
-| `Ctrl+p` | Return to Parliament (from Viewer mode after entering a cluster) |
+| `c` | Open Cont3xt (if configured in Parliament settings) |
+| `Ctrl+p` | Return to Parliament (from Viewer or Cont3xt mode) |
 | `/` or `E` | Filter issues (Issues tab) |
 | `s` | Next sort column (Issues) |
 | `S` | Toggle sort direction (Issues) |

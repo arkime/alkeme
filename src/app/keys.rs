@@ -64,9 +64,9 @@ impl App {
             self.debug_scroll = 0;
             return;
         }
-        // Ctrl+P: return to Parliament from Viewer mode
+        // Ctrl+P: return to Parliament from Viewer or Cont3xt mode
         if key.code == KeyCode::Char('p') && key.modifiers.contains(KeyModifiers::CONTROL)
-            && self.app_mode == crate::app::AppMode::Viewer
+            && (self.app_mode == crate::app::AppMode::Viewer || self.app_mode == crate::app::AppMode::Cont3xt)
             && self.pl_saved_client.is_some()
         {
             self.pl_return_to_parliament().await;

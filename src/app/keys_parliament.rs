@@ -72,6 +72,14 @@ impl App {
                 self.pl_show_detail = true;
                 self.pl_detail_scroll = 0;
             }
+            KeyCode::Char('c') => {
+                if !self.pl_cont3xt_url.is_empty() {
+                    let url = self.pl_cont3xt_url.clone();
+                    self.pl_switch_to_cont3xt(&url).await;
+                } else {
+                    self.status_msg = "No Cont3xt URL configured in Parliament settings".into();
+                }
+            }
             _ => {}
         }
     }
@@ -199,5 +207,37 @@ impl App {
             // Refresh data
             self.pl_fetch_data().await;
         }
+    }
+
+    async fn pl_switch_to_cont3xt(&mut self, url: &str) {
+        // Save parliament client for Ctrl+P return
+        self.pl_saved_client = Some(self.client.clone());
+
+        let auth_mode = self.client.auth_mode();
+        let mut new_client = crate::api::ArkimeClient::new(
+            url,
+            auth_mode,
+            self.client.username(),
+            self.client.password(),
+        );
+        if let Err(e) = new_client.login().await {
+            self.status_msg = format!("Failed to connect to Cont3xt at {}: {}", url, e);
+            self.pl_saved_client = None;
+            return;
+        }
+        new_client.fetch_cookie().await.ok();
+
+        self.status_msg = format!("Connected to Cont3xt: {}", url);
+        self.http_log = new_client.http_log();
+        self.client = new_client;
+
+        // Switch mode
+        self.app_mode = AppMode::Cont3xt;
+        self.active_tab = Tab::Search;
+
+        // Initialize cont3xt data
+        self.c3_fetch_integrations().await;
+        self.c3_fetch_views().await;
+        self.c3_fetch_link_groups().await;
     }
 }

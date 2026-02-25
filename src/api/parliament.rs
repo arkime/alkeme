@@ -27,6 +27,20 @@ pub struct PlGroup {
 pub struct PlParliament {
     #[serde(default)]
     pub groups: Vec<PlGroup>,
+    #[serde(default)]
+    pub settings: PlSettings,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct PlSettings {
+    #[serde(default)]
+    pub general: PlGeneralSettings,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct PlGeneralSettings {
+    #[serde(rename = "cont3xtUrl", default)]
+    pub cont3xt_url: String,
 }
 
 #[derive(Clone, Debug)]

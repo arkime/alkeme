@@ -169,7 +169,8 @@ src/
 | Home / End | Jump to top/bottom (Issues) |
 | Enter | Open cluster in Viewer mode (Dashboard) |
 | i | Cluster detail overlay (Dashboard) |
-| Ctrl+p | Return to Parliament (from Viewer after entering a cluster) |
+| c | Open Cont3xt (if configured in Parliament settings) |
+| Ctrl+p | Return to Parliament (from Viewer or Cont3xt) |
 | / or E | Filter issues (Issues tab) |
 | s | Next sort column (Issues) |
 | S | Toggle sort direction (Issues) |
@@ -343,7 +344,8 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Navigation: ↑/↓ selects cluster via `pl_cluster_list` flat index (group_idx, cluster_idx pairs)
 - `i` opens detail overlay with full stats and issues for selected cluster
 - `Enter` on a cluster with a URL switches to Viewer mode: creates new `ArkimeClient` with cluster URL, calls `login()`/`fetch_cookie()`, switches `app_mode` to Viewer, loads fields+sessions. Parliament client saved in `pl_saved_client`.
-- `Ctrl+P` in Viewer mode (when `pl_saved_client` is Some) restores the parliament client and switches back to Parliament Dashboard
+- `c` on Dashboard switches to Cont3xt mode using `cont3xtUrl` from parliament settings (if configured). Saves parliament client for return.
+- `Ctrl+P` in Viewer or Cont3xt mode (when `pl_saved_client` is Some) restores the parliament client and switches back to Parliament Dashboard
 - Issues tab: filterable, sortable table of all cluster issues with severity color coding
 - Filter uses expression handler (`/` or `E`), stored in `pl_issues_filter`
 - Sort cycles through: Cluster, Title, Severity, FirstNoticed, LastNoticed via `PlIssueSort`
@@ -351,7 +353,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ### Parliament API endpoints
 
-- `GET /parliament/api/parliament` — returns `{groups: [{title, description, clusters: [{id, title, description, url, type}]}]}`
+- `GET /parliament/api/parliament` — returns `{groups: [{title, description, clusters: [{id, title, description, url, type}]}], settings: {general: {cont3xtUrl, ...}}}`
 - `GET /parliament/api/parliament/stats` — returns `{results: {clusterId: {status, deltaBPS, deltaTDPS, monitoring, arkimeNodes, dataNodes, totalNodes, esVersion, healthError, statsError}}}`
 - `GET /parliament/api/issues` — returns `{issues: [...], recordsFiltered}`. Query params: `map=true` returns `{results: {clusterId: [issues]}}`
 - Issue types: esRed, esDown, esDropped, outOfDate, noPackets, lowDiskSpace, lowDiskSpaceES

@@ -395,8 +395,13 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("r"), Span::raw("Re-run search")]),
             Line::from(vec![key("Ctrl+r"), Span::raw("Re-run search (no cache)")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+        ].into_iter().chain(
+            if app.pl_saved_client.is_some() {
+                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
+            } else { vec![] }
+        ).chain(vec![
             Line::from(vec![key("q"), Span::raw("Quit")]),
-        ])
+        ]).collect())
     } else if app.app_mode == AppMode::Parliament && app.active_tab == Tab::Dashboard {
         ("Parliament Dashboard", vec![
             hdr!("Navigation"),
@@ -408,6 +413,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             blank(),
             Line::from(vec![key("Enter"), Span::raw("Open cluster in Viewer mode")]),
             Line::from(vec![key("i"), Span::raw("Cluster detail overlay")]),
+            Line::from(vec![key("c"), Span::raw("Open Cont3xt (if configured)")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),

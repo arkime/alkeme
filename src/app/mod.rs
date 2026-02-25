@@ -182,8 +182,9 @@ pub struct App {
     pub pl_detail_scroll: u16,
     // Flat list of (group_idx, cluster_idx) for dashboard navigation
     pub pl_cluster_list: Vec<(usize, usize)>,
-    // Saved parliament client for returning from viewer mode (Ctrl+P)
+    // Saved parliament client for returning from viewer/cont3xt mode (Ctrl+P)
     pub pl_saved_client: Option<ArkimeClient>,
+    pub pl_cont3xt_url: String,
 }
 
 impl App {
@@ -370,6 +371,7 @@ impl App {
             pl_detail_scroll: 0,
             pl_cluster_list: Vec::new(),
             pl_saved_client: None,
+            pl_cont3xt_url: String::new(),
         }
     }
 
@@ -855,6 +857,7 @@ impl App {
     pub async fn pl_fetch_data(&mut self) {
         match self.client.pl_get_parliament().await {
             Ok(parliament) => {
+                self.pl_cont3xt_url = parliament.settings.general.cont3xt_url.clone();
                 self.pl_groups = parliament.groups;
                 self.pl_rebuild_cluster_list();
                 self.status_msg = format!("{} groups loaded", self.pl_groups.len());
