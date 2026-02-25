@@ -64,9 +64,9 @@ impl App {
             self.debug_scroll = 0;
             return;
         }
-        // Ctrl+P: return to Parliament from Viewer or Cont3xt mode
+        // Ctrl+P: return to Parliament from Viewer, Cont3xt, or WISE mode
         if key.code == KeyCode::Char('p') && key.modifiers.contains(KeyModifiers::CONTROL)
-            && (self.app_mode == crate::app::AppMode::Viewer || self.app_mode == crate::app::AppMode::Cont3xt)
+            && (self.app_mode == crate::app::AppMode::Viewer || self.app_mode == crate::app::AppMode::Cont3xt || self.app_mode == crate::app::AppMode::Wise)
             && self.pl_saved_client.is_some()
         {
             self.pl_return_to_parliament().await;
@@ -96,14 +96,8 @@ impl App {
             crate::app::AppMode::Parliament => {
                 self.handle_parliament_key(key).await;
             }
-            _ => {
-                // Placeholder modes: just tab switching
-                match key.code {
-                    KeyCode::Tab => self.next_tab(),
-                    KeyCode::BackTab => self.prev_tab(),
-                    KeyCode::Char('h') | KeyCode::Char('?') => self.show_help = true,
-                    _ => {}
-                }
+            crate::app::AppMode::Wise => {
+                self.handle_wise_key(key).await;
             }
         }
     }
@@ -111,8 +105,14 @@ impl App {
     async fn handle_expression_key(&mut self, key: KeyEvent) {
         let is_stats = self.active_tab == Tab::Stats;
         let is_pl_issues = self.app_mode == crate::app::AppMode::Parliament && self.active_tab == Tab::Issues;
+        let is_ws_stats = self.app_mode == crate::app::AppMode::Wise && self.active_tab == Tab::WsStats;
+        let is_ws_query = self.app_mode == crate::app::AppMode::Wise && self.active_tab == Tab::WsQuery;
         let edit = if is_pl_issues {
             &mut self.pl_issues_filter_edit
+        } else if is_ws_stats {
+            &mut self.ws_stats_filter_edit
+        } else if is_ws_query {
+            &mut self.ws_query_value_edit
         } else if is_stats {
             &mut self.vr_stats_filter_edit
         } else {
@@ -124,6 +124,15 @@ impl App {
                     self.pl_issues_filter = self.pl_issues_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
                     self.pl_issues_selected = 0;
+                } else if is_ws_stats {
+                    self.ws_stats_filter = self.ws_stats_filter_edit.clone();
+                    self.input_mode = InputMode::Normal;
+                    self.ws_stats_selected = 0;
+                    self.ws_fetch_stats().await;
+                } else if is_ws_query {
+                    self.ws_query_value = self.ws_query_value_edit.clone();
+                    self.input_mode = InputMode::Normal;
+                    self.ws_run_query().await;
                 } else if is_stats {
                     self.vr_stats_filter = self.vr_stats_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
@@ -149,6 +158,10 @@ impl App {
             KeyCode::Esc => {
                 if is_pl_issues {
                     self.pl_issues_filter_edit = self.pl_issues_filter.clone();
+                } else if is_ws_stats {
+                    self.ws_stats_filter_edit = self.ws_stats_filter.clone();
+                } else if is_ws_query {
+                    self.ws_query_value_edit = self.ws_query_value.clone();
                 } else if is_stats {
                     self.vr_stats_filter_edit = self.vr_stats_filter.clone();
                 } else {

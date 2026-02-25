@@ -80,6 +80,14 @@ impl App {
                     self.status_msg = "No Cont3xt URL configured in Parliament settings".into();
                 }
             }
+            KeyCode::Char('w') => {
+                if !self.pl_wise_url.is_empty() {
+                    let url = self.pl_wise_url.clone();
+                    self.pl_switch_to_wise(&url).await;
+                } else {
+                    self.status_msg = "No WISE URL configured in Parliament settings".into();
+                }
+            }
             _ => {}
         }
     }
@@ -246,5 +254,42 @@ impl App {
         self.c3_fetch_integrations().await;
         self.c3_fetch_views().await;
         self.c3_fetch_link_groups().await;
+    }
+
+    async fn pl_switch_to_wise(&mut self, url: &str) {
+        // Save parliament client for Ctrl+P return
+        self.pl_saved_client = Some(self.client.clone());
+
+        let auth_mode = self.client.auth_mode();
+        let mut new_client = crate::api::ArkimeClient::new(
+            url,
+            auth_mode,
+            self.client.username(),
+            self.client.password(),
+        );
+        // WISE may not require auth — try login but don't fail
+        if let Err(e) = new_client.login().await {
+            // Try without auth
+            new_client = crate::api::ArkimeClient::new(
+                url,
+                crate::api::AuthMode::None,
+                None,
+                None,
+            );
+            self.status_msg = format!("WISE auth failed ({}), trying without auth", e);
+        }
+        new_client.fetch_cookie().await.ok();
+
+        self.status_msg = format!("Connected to WISE: {}", url);
+        self.http_log = new_client.http_log();
+        self.client = new_client;
+
+        // Switch mode
+        self.app_mode = AppMode::Wise;
+        self.active_tab = Tab::WsStats;
+
+        // Initialize WISE data
+        self.ws_fetch_stats().await;
+        self.ws_fetch_sources_types().await;
     }
 }

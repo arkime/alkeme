@@ -1,9 +1,11 @@
 mod viewer;
 mod cont3xt;
 mod parliament;
+mod wise;
 
 pub use cont3xt::*;
 pub use parliament::*;
+pub use wise::*;
 
 use anyhow::Result;
 use reqwest::Client;

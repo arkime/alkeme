@@ -112,7 +112,7 @@ impl AppMode {
         match self {
             AppMode::Viewer => &[Tab::Arkime, Tab::Sessions, Tab::Stats, Tab::Settings],
             AppMode::Cont3xt => &[Tab::Search, Tab::C3Stats, Tab::History, Tab::Settings],
-            AppMode::Wise => &[Tab::Settings],
+            AppMode::Wise => &[Tab::WsStats, Tab::WsQuery, Tab::Settings],
             AppMode::Parliament => &[Tab::Dashboard, Tab::Issues, Tab::Settings],
         }
     }
@@ -131,7 +131,7 @@ impl AppMode {
             AppMode::Viewer => Tab::Sessions,
             AppMode::Cont3xt => Tab::Search,
             AppMode::Parliament => Tab::Dashboard,
-            _ => self.tabs()[0],
+            AppMode::Wise => Tab::WsStats,
         }
     }
 }
@@ -146,6 +146,8 @@ pub enum Tab {
     History,
     Dashboard,
     Issues,
+    WsStats,
+    WsQuery,
     Settings,
 }
 
@@ -160,6 +162,8 @@ impl Tab {
             Tab::History => "History",
             Tab::Dashboard => "Dashboard",
             Tab::Issues => "Issues",
+            Tab::WsStats => "Stats",
+            Tab::WsQuery => "Query",
             Tab::Settings => "Settings",
         }
     }
@@ -582,6 +586,22 @@ impl PlIssueSort {
     pub fn next(&self) -> PlIssueSort {
         let idx = PlIssueSort::ALL.iter().position(|&t| t == *self).unwrap_or(0);
         PlIssueSort::ALL[(idx + 1) % PlIssueSort::ALL.len()]
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum WsStatsTab {
+    Sources,
+    Types,
+}
+
+impl WsStatsTab {
+    #[allow(dead_code)]
+    pub fn label(&self) -> &'static str {
+        match self {
+            WsStatsTab::Sources => "Sources",
+            WsStatsTab::Types => "Types",
+        }
     }
 }
 

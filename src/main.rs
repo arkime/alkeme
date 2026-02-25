@@ -141,7 +141,10 @@ async fn main() -> Result<()> {
             app.pl_fetch_data().await;
             app.pl_fetch_issues().await;
         }
-        _ => {}
+        app::AppMode::Wise => {
+            app.ws_fetch_stats().await;
+            app.ws_fetch_sources_types().await;
+        }
     }
 
     let result = run_app(&mut terminal, &mut app).await;
@@ -373,6 +376,15 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             if app.active_tab == app::Tab::Issues {
                 app.pl_fetch_issues().await;
             }
+        }
+
+        // WISE auto-refresh every 30 seconds
+        if app.app_mode == app::AppMode::Wise
+            && app.active_tab == app::Tab::WsStats
+            && app.input_mode == app::InputMode::Normal
+            && app.ws_last_refresh.elapsed() >= Duration::from_secs(30)
+        {
+            app.ws_fetch_stats().await;
         }
 
         if event::poll(Duration::from_millis(100))?

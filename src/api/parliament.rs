@@ -41,6 +41,8 @@ pub struct PlSettings {
 pub struct PlGeneralSettings {
     #[serde(rename = "cont3xtUrl", default)]
     pub cont3xt_url: String,
+    #[serde(rename = "wiseUrl", default)]
+    pub wise_url: String,
 }
 
 #[derive(Clone, Debug)]

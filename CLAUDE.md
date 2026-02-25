@@ -26,16 +26,19 @@ src/
   app/keys_viewer.rs   - Viewer key handlers
   app/keys_cont3xt.rs  - Cont3xt key handler
   app/keys_parliament.rs - Parliament key handler
+  app/keys_wise.rs     - WISE key handler
   api/mod.rs           - ArkimeClient + FetchClient: HTTP calls (reqwest + digest_auth)
   api/viewer.rs        - Viewer API methods (vr_*)
   api/cont3xt.rs       - Cont3xt API methods (c3_*)
   api/parliament.rs    - Parliament API methods (pl_*)
+  api/wise.rs          - WISE API methods (ws_*)
   ui/mod.rs            - Draw dispatch, common layout (tabs, toolbar, status bar, graph)
   ui/sessions.rs       - Session list/detail rendering
   ui/stats.rs          - Stats tab rendering
   ui/arkime.rs         - Summary tab + owl animation rendering
   ui/cont3xt.rs        - Cont3xt search/results/card rendering
   ui/parliament.rs     - Parliament dashboard + issues rendering
+  ui/wise.rs           - WISE stats + query rendering
   ui/popups.rs         - Help overlays, debug log, action menus
 ```
 
@@ -50,18 +53,18 @@ src/
   - **Viewer**: Arkime, Sessions, Stats, Settings (defaults to Sessions)
   - **Cont3xt**: Search, Stats, History, Settings (defaults to Search)
   - **Parliament**: Dashboard, Issues, Settings (defaults to Dashboard)
-  - **Wise**: Settings (placeholder)
+  - **Wise**: Stats, Query, Settings (defaults to Stats)
 - `AppMode::default_tab()` returns the starting tab for each mode
-- UI rendering routes through `draw_viewer()`, `draw_cont3xt()`, `draw_parliament()`, or `draw_placeholder()` based on mode
+- UI rendering routes through `draw_viewer()`, `draw_cont3xt()`, `draw_parliament()`, or `draw_wise()` based on mode
 - Key handling routes through mode-specific handlers in `handle_key()`
 - Viewer-specific background tasks (packets/summary fetch, stats auto-refresh) only run in Viewer mode
 - `--user username` (no colon) prompts only for password; `--auth` with no `--user` prompts for both
 
 ## Key types
 
-- `App` — All mutable state. Passed as `&mut` to handlers and renderers. Viewer fields prefixed `vr_`, cont3xt fields prefixed `c3_`. Public methods follow same convention.
+- `App` — All mutable state. Passed as `&mut` to handlers and renderers. Viewer fields prefixed `vr_`, cont3xt fields prefixed `c3_`, parliament fields prefixed `pl_`, WISE fields prefixed `ws_`. Public methods follow same convention.
 - `AppMode` — Enum: `Viewer` | `Cont3xt` | `Wise` | `Parliament`. Determined at startup from `/api/appversion` `result.app` or `--app` flag. Has `tabs()`, `default_tab()`, `label()`.
-- `Tab` — Enum: `Arkime` | `Sessions` | `Stats` | `Search` | `C3Stats` | `History` | `Dashboard` | `Issues` | `Settings`. Which tabs are available depends on `AppMode::tabs()`.
+- `Tab` — Enum: `Arkime` | `Sessions` | `Stats` | `Search` | `C3Stats` | `History` | `Dashboard` | `Issues` | `WsStats` | `WsQuery` | `Settings`. Which tabs are available depends on `AppMode::tabs()`.
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
 - `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
 - `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
@@ -170,7 +173,8 @@ src/
 | Enter | Open cluster in Viewer mode (Dashboard) |
 | i | Cluster detail overlay (Dashboard) |
 | c | Open Cont3xt (if configured in Parliament settings) |
-| Ctrl+p | Return to Parliament (from Viewer or Cont3xt) |
+| w | Open WISE (if configured in Parliament settings) |
+| Ctrl+p | Return to Parliament (from Viewer, Cont3xt, or WISE) |
 | / or E | Filter issues (Issues tab) |
 | s | Next sort column (Issues) |
 | S | Toggle sort direction (Issues) |
@@ -359,6 +363,50 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Issue types: esRed, esDown, esDropped, outOfDate, noPackets, lowDiskSpace, lowDiskSpaceES
 - Issue severity: "red" or "yellow"
 - Cluster types: "" (normal), "multiviewer" (no stats), "disabled" (no monitoring), "noAlerts" (no alerts)
+
+## WISE mode
+
+- Tabs: Stats (sources/types sub-tabs), Query, Settings
+- State fields use `ws_` prefix; API methods use `ws_` prefix
+- WISE may not require auth — if form auth fails when switching from Parliament, falls back to no auth
+- Auto-refresh: stats auto-refresh every 30 seconds on the Stats tab
+- `Ctrl+P` returns to Parliament from WISE mode (same as Viewer/Cont3xt)
+
+### WISE keybindings
+
+| Key | Action |
+|---|---|
+| Tab / Shift+Tab | Switch tabs (Stats/Query/Settings) |
+| 1 / 2 | Sources / Types sub-tab (Stats) |
+| j / k / ↑ / ↓ | Navigate rows |
+| Shift+↑ / Shift+↓ | Page up / down |
+| Home / End | Jump to top / bottom |
+| / / E | Filter stats or edit query value |
+| s | Cycle source (Query) |
+| t | Cycle type (Query) |
+| Enter | Run query (Query) |
+| r | Refresh (Stats) |
+| Ctrl+p | Return to Parliament |
+| D | HTTP debug log |
+| h / ? | Show help |
+| q | Quit |
+
+### WISE types
+
+- `WsSourceStats` — Source statistics: source, request, cacheHit, cacheMiss, cacheRefresh, directHit, requestDropped, recentAverageMS, items
+- `WsTypeStats` — Type statistics: type, request, found, cacheHit, cacheSrcHit, cacheSrcMiss, cacheSrcRefresh
+- `WsStats` — API response: sources (Vec), types (Vec), startTime
+- `WsQueryResult` — Query result item: field, value (JSON), len
+- `WsStatsTab` — Enum: `Sources` | `Types`. Sub-tabs within WISE Stats tab.
+
+### WISE API endpoints
+
+- `GET /stats` — returns `{sources: [...], types: [...], startTime}`. Optional `?search=` filter.
+- `GET /sources` — returns array of source names
+- `GET /types` or `/types/:source` — returns array of type names
+- `GET /:typeName/:value` — query all sources for a key
+- `GET /:source/:typeName/:value` — query specific source for a key
+- Query results: `[{field, value, len}, ...]` or plain text "Not found"
 
 ## Owl animation
 - Settings tab shows a 90s "Under Construction" page with animated owl

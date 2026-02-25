@@ -3,10 +3,11 @@ mod keys;
 mod keys_viewer;
 mod keys_cont3xt;
 mod keys_parliament;
+mod keys_wise;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtResult, Cont3xtView, GraphData, HttpLog, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, parse_card};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtResult, Cont3xtView, GraphData, HttpLog, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats, parse_card};
 use ratatui::widgets::TableState;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -185,6 +186,23 @@ pub struct App {
     // Saved parliament client for returning from viewer/cont3xt mode (Ctrl+P)
     pub pl_saved_client: Option<ArkimeClient>,
     pub pl_cont3xt_url: String,
+    pub pl_wise_url: String,
+
+    // WISE mode fields (ws_ prefix)
+    pub ws_stats: Option<WsStats>,
+    pub ws_stats_tab: WsStatsTab,
+    pub ws_stats_filter: String,
+    pub ws_stats_filter_edit: String,
+    pub ws_stats_selected: usize,
+    pub ws_last_refresh: std::time::Instant,
+    pub ws_sources: Vec<String>,
+    pub ws_types: Vec<String>,
+    pub ws_query_source: String,  // selected source for query ("any" = all)
+    pub ws_query_type: String,    // selected type for query (default "ip")
+    pub ws_query_value: String,
+    pub ws_query_value_edit: String,
+    pub ws_query_results: Vec<WsQueryResult>,
+    pub ws_query_selected: usize,
 }
 
 impl App {
@@ -372,6 +390,23 @@ impl App {
             pl_cluster_list: Vec::new(),
             pl_saved_client: None,
             pl_cont3xt_url: String::new(),
+            pl_wise_url: String::new(),
+
+            // WISE state
+            ws_stats: None,
+            ws_stats_tab: WsStatsTab::Sources,
+            ws_stats_filter: String::new(),
+            ws_stats_filter_edit: String::new(),
+            ws_stats_selected: 0,
+            ws_last_refresh: std::time::Instant::now(),
+            ws_sources: Vec::new(),
+            ws_types: Vec::new(),
+            ws_query_source: "any".into(),
+            ws_query_type: "ip".into(),
+            ws_query_value: String::new(),
+            ws_query_value_edit: String::new(),
+            ws_query_results: Vec::new(),
+            ws_query_selected: 0,
         }
     }
 
@@ -858,6 +893,7 @@ impl App {
         match self.client.pl_get_parliament().await {
             Ok(parliament) => {
                 self.pl_cont3xt_url = parliament.settings.general.cont3xt_url.clone();
+                self.pl_wise_url = parliament.settings.general.wise_url.clone();
                 self.pl_groups = parliament.groups;
                 self.pl_rebuild_cluster_list();
                 self.status_msg = format!("{} groups loaded", self.pl_groups.len());
@@ -943,5 +979,59 @@ impl App {
                 || issue.node.to_lowercase().contains(&filter)
                 || issue.severity.to_lowercase().contains(&filter)
         }).collect()
+    }
+
+    // --- WISE methods ---
+
+    pub async fn ws_fetch_stats(&mut self) {
+        match self.client.ws_get_stats(&self.ws_stats_filter).await {
+            Ok(stats) => {
+                self.status_msg = format!("{} sources, {} types", stats.sources.len(), stats.types.len());
+                self.ws_stats = Some(stats);
+            }
+            Err(e) => self.status_msg = format!("Error fetching WISE stats: {e}"),
+        }
+        self.ws_last_refresh = std::time::Instant::now();
+    }
+
+    pub async fn ws_fetch_sources_types(&mut self) {
+        match self.client.ws_get_sources().await {
+            Ok(s) => self.ws_sources = s,
+            Err(e) => self.status_msg = format!("Error fetching sources: {e}"),
+        }
+        match self.client.ws_get_types("").await {
+            Ok(t) => self.ws_types = t,
+            Err(e) => self.status_msg = format!("Error fetching types: {e}"),
+        }
+    }
+
+    pub async fn ws_run_query(&mut self) {
+        if self.ws_query_value.is_empty() {
+            self.status_msg = "Enter a value to query".into();
+            return;
+        }
+        match self.client.ws_query(&self.ws_query_source, &self.ws_query_type, &self.ws_query_value).await {
+            Ok(results) => {
+                let count = results.len();
+                self.ws_query_results = results;
+                self.ws_query_selected = 0;
+                self.status_msg = if count == 0 {
+                    "No results found".into()
+                } else {
+                    format!("{} results", count)
+                };
+            }
+            Err(e) => self.status_msg = format!("Query error: {e}"),
+        }
+    }
+
+    pub fn ws_filtered_sources(&self) -> Vec<&WsSourceStats> {
+        let Some(stats) = &self.ws_stats else { return vec![] };
+        stats.sources.iter().collect()
+    }
+
+    pub fn ws_filtered_types(&self) -> Vec<&WsTypeStats> {
+        let Some(stats) = &self.ws_stats else { return vec![] };
+        stats.types.iter().collect()
     }
 }

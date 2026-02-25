@@ -414,6 +414,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Enter"), Span::raw("Open cluster in Viewer mode")]),
             Line::from(vec![key("i"), Span::raw("Cluster detail overlay")]),
             Line::from(vec![key("c"), Span::raw("Open Cont3xt (if configured)")]),
+            Line::from(vec![key("w"), Span::raw("Open WISE (if configured)")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
@@ -433,6 +434,40 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("s"), Span::raw("Next sort column")]),
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
             Line::from(vec![key("r"), Span::raw("Refresh issues")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ])
+    } else if app.app_mode == AppMode::Wise && app.active_tab == Tab::WsStats {
+        ("WISE Stats", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("1 / 2"), Span::raw("Sources / Types sub-tab")]),
+            Line::from(vec![key("/ / E"), Span::raw("Filter stats")]),
+            Line::from(vec![key("r"), Span::raw("Refresh")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ])
+    } else if app.app_mode == AppMode::Wise && app.active_tab == Tab::WsQuery {
+        ("WISE Query", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate results")]),
+            Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("s"), Span::raw("Cycle source")]),
+            Line::from(vec![key("t"), Span::raw("Cycle type")]),
+            Line::from(vec![key("/ / E"), Span::raw("Edit query value")]),
+            Line::from(vec![key("Enter"), Span::raw("Run query")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])

@@ -2,7 +2,7 @@
 
 A terminal user interface (TUI) for the [Arkime](https://arkime.com) ecosystem, built with Rust and [ratatui](https://github.com/ratatui/ratatui).
 
-Alkeme auto-detects the Arkime application mode (Viewer, Cont3xt, WISE, Parliament) and provides a tailored interface for each. Currently supports Viewer (full packet capture session browsing), Cont3xt (integration search with card-based results), and Parliament (cluster monitoring dashboard with health stats and issue tracking).
+Alkeme auto-detects the Arkime application mode (Viewer, Cont3xt, WISE, Parliament) and provides a tailored interface for each. Currently supports Viewer (full packet capture session browsing), Cont3xt (integration search with card-based results), Parliament (cluster monitoring dashboard with health stats and issue tracking), and WISE (source/type statistics and lookups).
 
 This project was entirely created by Claude — code, architecture, documentation, and even this README. The only exception is the screenshots, because sadly no one has given me eyes yet.
 
@@ -52,7 +52,14 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Issue tracking** — dedicated Issues tab with filterable, sortable table of all cluster issues with severity, timestamps, node info
 - **Cluster detail** — press `i` for a detailed overlay showing full stats and all issues for a cluster
 - **Viewer switch** — press `Enter` on a cluster to connect to it and switch to Viewer mode for live session browsing
+- **Cont3xt/WISE switch** — press `c` or `w` to switch to Cont3xt or WISE using URLs from Parliament settings
 - **Auto-refresh** — dashboard and issues auto-refresh every 30 seconds
+
+### WISE Mode
+- **Source stats** — view statistics for all WISE sources (requests, cache hits/misses, avg response time, item count)
+- **Type stats** — view statistics for all WISE types (requests, found, cache stats)
+- **Query** — look up values by type (ip, domain, email, etc.) across all or specific sources
+- **Auto-refresh** — stats auto-refresh every 30 seconds
 
 ### Common
 - **Multi-app detection** — auto-detects Viewer, Cont3xt, WISE, or Parliament via `/api/appversion`
@@ -192,11 +199,31 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `Enter` | Open cluster in Viewer mode (Dashboard) |
 | `i` | Cluster detail overlay (Dashboard) |
 | `c` | Open Cont3xt (if configured in Parliament settings) |
-| `Ctrl+p` | Return to Parliament (from Viewer or Cont3xt mode) |
+| `w` | Open WISE (if configured in Parliament settings) |
+| `Ctrl+p` | Return to Parliament (from Viewer, Cont3xt, or WISE mode) |
 | `/` or `E` | Filter issues (Issues tab) |
 | `s` | Next sort column (Issues) |
 | `S` | Toggle sort direction (Issues) |
 | `r` | Refresh |
+| `D` | HTTP debug log |
+| `h` / `?` | Show help |
+| `q` | Quit |
+
+### WISE Mode
+
+| Key | Action |
+|---|---|
+| `Tab` / `Shift+Tab` | Switch tabs (Stats / Query / Settings) |
+| `1` / `2` | Sources / Types sub-tab (Stats) |
+| `j` / `k` / `↑` / `↓` | Navigate rows |
+| `Shift+↑` / `Shift+↓` | Page up / down |
+| `Home` / `End` | Jump to top / bottom |
+| `/` or `E` | Filter stats or edit query value |
+| `s` | Cycle source (Query) |
+| `t` | Cycle type (Query) |
+| `Enter` | Run query (Query) |
+| `r` | Refresh (Stats) |
+| `Ctrl+p` | Return to Parliament |
 | `D` | HTTP debug log |
 | `h` / `?` | Show help |
 | `q` | Quit |

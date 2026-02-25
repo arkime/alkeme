@@ -4,10 +4,11 @@ mod arkime;
 mod popups;
 mod cont3xt;
 mod parliament;
+mod wise;
 
 // Re-export app types for sub-modules via `use super::*`
 #[allow(unused_imports)]
-use crate::app::{App, AppMode, ActionTarget, C3StatsTab, ColumnEditorMode, Cont3xtFocus, DetailActionMenu, GraphType, InputMode, LayoutPopupMode, LineMode, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, ViewPopupMode, is_hidden_detail_field};
+use crate::app::{App, AppMode, ActionTarget, C3StatsTab, ColumnEditorMode, Cont3xtFocus, DetailActionMenu, GraphType, InputMode, LayoutPopupMode, LineMode, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, ViewPopupMode, WsStatsTab, is_hidden_detail_field};
 
 use chrono::{DateTime, Local};
 use ratatui::{
@@ -129,7 +130,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         AppMode::Viewer => draw_viewer(f, app),
         AppMode::Cont3xt => cont3xt::draw_cont3xt(f, app),
         AppMode::Parliament => parliament::draw_parliament(f, app),
-        _ => draw_placeholder(f, app),
+        AppMode::Wise => wise::draw_wise(f, app),
     }
 
     // Common overlays (shared across modes)
@@ -176,23 +177,6 @@ fn draw_viewer(f: &mut Frame, app: &mut App) {
     }
 }
 
-
-fn draw_placeholder(f: &mut Frame, app: &mut App, ) {
-    let status_h = status_bar_height(app);
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(status_h),
-        ])
-        .split(f.area());
-
-    draw_tabs(f, app, chunks[0]);
-    arkime::draw_under_construction(f, app, chunks[1]);
-    arkime::draw_owl(f, app, chunks[1]);
-    draw_status_bar(f, app, chunks[2]);
-}
 
 pub(super) fn status_bar_height(app: &App) -> u16 {
     let lines = app.status_msg.chars().filter(|&c| c == '\n').count() + 1;
