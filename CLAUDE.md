@@ -19,16 +19,24 @@ cargo run -- URL --app cont3xt --auth form --user admin:admin  # force cont3xt m
 
 ```
 src/
-  main.rs       - Entry point, clap CLI parsing, terminal setup, event loop (crossterm polling)
-  app/mod.rs    - App struct, state, fetch methods
-  app/types.rs  - Enums (AppMode, Tab, TimeRange, InputMode, etc.)
-  app/keys.rs   - All key event handlers (mode-aware routing)
-  api.rs        - ArkimeClient + FetchClient: HTTP calls (reqwest + digest_auth + serde_json::Value)
-  ui/mod.rs     - All rendering (ratatui Frame draws, one fn per view)
-  ui/sessions.rs - Session list/detail rendering
-  ui/stats.rs   - Stats tab rendering
-  ui/arkime.rs  - Summary tab + owl animation rendering
-  ui/popups.rs  - Help overlays, debug log, action menus
+  main.rs              - Entry point, clap CLI parsing, terminal setup, event loop (crossterm polling)
+  app/mod.rs           - App struct, state, fetch methods
+  app/types.rs         - Enums (AppMode, Tab, TimeRange, InputMode, etc.)
+  app/keys.rs          - Key dispatch + expression handler
+  app/keys_viewer.rs   - Viewer key handlers
+  app/keys_cont3xt.rs  - Cont3xt key handler
+  app/keys_parliament.rs - Parliament key handler
+  api/mod.rs           - ArkimeClient + FetchClient: HTTP calls (reqwest + digest_auth)
+  api/viewer.rs        - Viewer API methods (vr_*)
+  api/cont3xt.rs       - Cont3xt API methods (c3_*)
+  api/parliament.rs    - Parliament API methods (pl_*)
+  ui/mod.rs            - Draw dispatch, common layout (tabs, toolbar, status bar, graph)
+  ui/sessions.rs       - Session list/detail rendering
+  ui/stats.rs          - Stats tab rendering
+  ui/arkime.rs         - Summary tab + owl animation rendering
+  ui/cont3xt.rs        - Cont3xt search/results/card rendering
+  ui/parliament.rs     - Parliament dashboard + issues rendering
+  ui/popups.rs         - Help overlays, debug log, action menus
 ```
 
 ## App Mode / Multi-App
@@ -40,10 +48,11 @@ src/
 - `/api/user` provides user info (from `result.user` in appversion response)
 - Each mode has its own tab set via `AppMode::tabs()`:
   - **Viewer**: Arkime, Sessions, Stats, Settings (defaults to Sessions)
-  - **Cont3xt**: Search, History, Settings (defaults to Search)
-  - **Wise/Parliament**: Settings (placeholder)
+  - **Cont3xt**: Search, Stats, History, Settings (defaults to Search)
+  - **Parliament**: Dashboard, Issues, Settings (defaults to Dashboard)
+  - **Wise**: Settings (placeholder)
 - `AppMode::default_tab()` returns the starting tab for each mode
-- UI rendering routes through `draw_viewer()`, `draw_cont3xt()`, or `draw_placeholder()` based on mode
+- UI rendering routes through `draw_viewer()`, `draw_cont3xt()`, `draw_parliament()`, or `draw_placeholder()` based on mode
 - Key handling routes through mode-specific handlers in `handle_key()`
 - Viewer-specific background tasks (packets/summary fetch, stats auto-refresh) only run in Viewer mode
 - `--user username` (no colon) prompts only for password; `--auth` with no `--user` prompts for both
@@ -52,7 +61,7 @@ src/
 
 - `App` — All mutable state. Passed as `&mut` to handlers and renderers. Viewer fields prefixed `vr_`, cont3xt fields prefixed `c3_`. Public methods follow same convention.
 - `AppMode` — Enum: `Viewer` | `Cont3xt` | `Wise` | `Parliament`. Determined at startup from `/api/appversion` `result.app` or `--app` flag. Has `tabs()`, `default_tab()`, `label()`.
-- `Tab` — Enum: `Arkime` | `Sessions` | `Stats` | `Search` | `History` | `Settings`. Which tabs are available depends on `AppMode::tabs()`.
+- `Tab` — Enum: `Arkime` | `Sessions` | `Stats` | `Search` | `C3Stats` | `History` | `Dashboard` | `Issues` | `Settings`. Which tabs are available depends on `AppMode::tabs()`.
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
 - `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
 - `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
@@ -90,6 +99,11 @@ src/
 - `Cont3xtResult` — Search result from one integration: name, indicator, itype, data (Value), has_data.
 - `Cont3xtLink` — Link definition: name, url, itypes (Vec<String>), info (String). From link groups API.
 - `Cont3xtLinkGroup` — Link group: name, links (Vec<Cont3xtLink>). Fetched from `/api/linkGroup`.
+- `PlGroup` — Parliament group: title, description, clusters (Vec<PlCluster>).
+- `PlCluster` — Parliament cluster: id, title, description, url, cluster_type (disabled/multiviewer/noAlerts/"").
+- `PlClusterStats` — Cluster stats: status, health_error, stats_error, es_version, delta_bps, delta_tdps, monitoring, arkime_nodes, data_nodes, total_nodes.
+- `PlIssue` — Issue: cluster_id, cluster, issue_type, title, text, message, severity (red/yellow), node, first_noticed, last_noticed, acknowledged, ignore_until.
+- `PlIssueSort` — Enum: `Cluster` | `Title` | `Severity` | `FirstNoticed` | `LastNoticed`. Issue sort field selector.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
@@ -141,6 +155,24 @@ src/
 | i | Integration filter popup (Space:toggle, a:all, n:none, !:invert, /:filter) |
 | r | Re-run search |
 | l | Link groups for selected indicator (Enter opens in browser, / filter) |
+| D | HTTP debug log overlay |
+| h / ? | Show help |
+| q | Quit |
+
+## Parliament keybindings
+
+| Key | Action |
+|---|---|
+| Tab / Shift+Tab | Switch tabs (Dashboard/Issues/Settings) |
+| j / k / ↑ / ↓ | Navigate clusters (Dashboard) or issues (Issues) |
+| Shift+↑ / Shift+↓ | Page up/down (Issues) |
+| Home / End | Jump to top/bottom (Issues) |
+| Enter | Open cluster in Viewer mode (Dashboard) |
+| i | Cluster detail overlay (Dashboard) |
+| / or E | Filter issues (Issues tab) |
+| s | Next sort column (Issues) |
+| S | Toggle sort direction (Issues) |
+| r | Refresh |
 | D | HTTP debug log overlay |
 | h / ? | Show help |
 | q | Quit |
@@ -300,6 +332,29 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Links filtered by itype match; `${indicator}` substituted in URLs
 - Popup shows grouped links with description panel; Enter opens URL in browser
 - Uses `open` (macOS) or `xdg-open` (Linux) via `std::process::Command`
+
+## Parliament mode
+
+- Tabs: Dashboard, Issues, Settings
+- State fields use `pl_` prefix; API methods use `pl_` prefix
+- Dashboard shows groups as titled sections with clusters listed below
+- Each cluster shows: type icon (⊘ disabled, ⌂ multiviewer, 🔕noAlerts), health indicator (●green/●yellow/●red), title, stats (bps, drops/sec, sessions, nodes, ES info), issue count
+- Navigation: ↑/↓ selects cluster via `pl_cluster_list` flat index (group_idx, cluster_idx pairs)
+- `i` opens detail overlay with full stats and issues for selected cluster
+- `Enter` on a cluster with a URL switches to Viewer mode: creates new `ArkimeClient` with cluster URL, calls `login()`/`fetch_cookie()`, switches `app_mode` to Viewer, loads fields+sessions
+- Issues tab: filterable, sortable table of all cluster issues with severity color coding
+- Filter uses expression handler (`/` or `E`), stored in `pl_issues_filter`
+- Sort cycles through: Cluster, Title, Severity, FirstNoticed, LastNoticed via `PlIssueSort`
+- Auto-refresh: every 30 seconds (dashboard stats + issues), same pattern as viewer Stats tab
+
+### Parliament API endpoints
+
+- `GET /parliament/api/parliament` — returns `{groups: [{title, description, clusters: [{id, title, description, url, type}]}]}`
+- `GET /parliament/api/parliament/stats` — returns `{results: {clusterId: {status, deltaBPS, deltaTDPS, monitoring, arkimeNodes, dataNodes, totalNodes, esVersion, healthError, statsError}}}`
+- `GET /parliament/api/issues` — returns `{issues: [...], recordsFiltered}`. Query params: `map=true` returns `{results: {clusterId: [issues]}}`
+- Issue types: esRed, esDown, esDropped, outOfDate, noPackets, lowDiskSpace, lowDiskSpaceES
+- Issue severity: "red" or "yellow"
+- Cluster types: "" (normal), "multiviewer" (no stats), "disabled" (no monitoring), "noAlerts" (no alerts)
 
 ## Owl animation
 - Settings tab shows a 90s "Under Construction" page with animated owl
@@ -472,6 +527,7 @@ Facets: `facets=1` adds `graph` object with histogram arrays to response (slower
 
 - All viewer-specific App fields and public methods use `vr_` prefix (e.g., `vr_sessions`, `vr_fetch_sessions()`)
 - All cont3xt-specific App fields and public methods use `c3_` prefix (e.g., `c3_results`, `c3_fetch_views()`)
+- All parliament-specific App fields and public methods use `pl_` prefix (e.g., `pl_groups`, `pl_fetch_data()`)
 - Private methods and non-App struct fields do not use prefixes
 - Common/shared fields (user, expression, mode, owl animation) have no prefix
 

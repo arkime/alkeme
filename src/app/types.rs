@@ -113,7 +113,7 @@ impl AppMode {
             AppMode::Viewer => &[Tab::Arkime, Tab::Sessions, Tab::Stats, Tab::Settings],
             AppMode::Cont3xt => &[Tab::Search, Tab::C3Stats, Tab::History, Tab::Settings],
             AppMode::Wise => &[Tab::Settings],
-            AppMode::Parliament => &[Tab::Settings],
+            AppMode::Parliament => &[Tab::Dashboard, Tab::Issues, Tab::Settings],
         }
     }
 
@@ -130,6 +130,7 @@ impl AppMode {
         match self {
             AppMode::Viewer => Tab::Sessions,
             AppMode::Cont3xt => Tab::Search,
+            AppMode::Parliament => Tab::Dashboard,
             _ => self.tabs()[0],
         }
     }
@@ -143,6 +144,8 @@ pub enum Tab {
     Search,
     C3Stats,
     History,
+    Dashboard,
+    Issues,
     Settings,
 }
 
@@ -155,6 +158,8 @@ impl Tab {
             Tab::Search => "Search",
             Tab::C3Stats => "Stats",
             Tab::History => "History",
+            Tab::Dashboard => "Dashboard",
+            Tab::Issues => "Issues",
             Tab::Settings => "Settings",
         }
     }
@@ -547,5 +552,36 @@ pub struct SessionDetail {
     pub selected: usize,
     pub total_rows: usize,
     pub filter: String,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum PlIssueSort {
+    Cluster,
+    Title,
+    Severity,
+    FirstNoticed,
+    LastNoticed,
+}
+
+impl PlIssueSort {
+    pub const ALL: [PlIssueSort; 5] = [
+        PlIssueSort::Cluster, PlIssueSort::Title, PlIssueSort::Severity,
+        PlIssueSort::FirstNoticed, PlIssueSort::LastNoticed,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            PlIssueSort::Cluster => "Cluster",
+            PlIssueSort::Title => "Title",
+            PlIssueSort::Severity => "Severity",
+            PlIssueSort::FirstNoticed => "First Noticed",
+            PlIssueSort::LastNoticed => "Last Noticed",
+        }
+    }
+
+    pub fn next(&self) -> PlIssueSort {
+        let idx = PlIssueSort::ALL.iter().position(|&t| t == *self).unwrap_or(0);
+        PlIssueSort::ALL[(idx + 1) % PlIssueSort::ALL.len()]
+    }
 }
 

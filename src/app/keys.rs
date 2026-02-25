@@ -85,6 +85,9 @@ impl App {
             crate::app::AppMode::Cont3xt => {
                 self.handle_cont3xt_key(key).await;
             }
+            crate::app::AppMode::Parliament => {
+                self.handle_parliament_key(key).await;
+            }
             _ => {
                 // Placeholder modes: just tab switching
                 match key.code {
@@ -99,10 +102,21 @@ impl App {
 
     async fn handle_expression_key(&mut self, key: KeyEvent) {
         let is_stats = self.active_tab == Tab::Stats;
-        let edit = if is_stats { &mut self.vr_stats_filter_edit } else { &mut self.expression_edit };
+        let is_pl_issues = self.app_mode == crate::app::AppMode::Parliament && self.active_tab == Tab::Issues;
+        let edit = if is_pl_issues {
+            &mut self.pl_issues_filter_edit
+        } else if is_stats {
+            &mut self.vr_stats_filter_edit
+        } else {
+            &mut self.expression_edit
+        };
         match key.code {
             KeyCode::Enter => {
-                if is_stats {
+                if is_pl_issues {
+                    self.pl_issues_filter = self.pl_issues_filter_edit.clone();
+                    self.input_mode = InputMode::Normal;
+                    self.pl_issues_selected = 0;
+                } else if is_stats {
                     self.vr_stats_filter = self.vr_stats_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
                     self.vr_fetch_stats().await;
@@ -125,7 +139,9 @@ impl App {
                 }
             }
             KeyCode::Esc => {
-                if is_stats {
+                if is_pl_issues {
+                    self.pl_issues_filter_edit = self.pl_issues_filter.clone();
+                } else if is_stats {
                     self.vr_stats_filter_edit = self.vr_stats_filter.clone();
                 } else {
                     self.expression_edit = self.expression.clone();

@@ -2,10 +2,11 @@ mod types;
 mod keys;
 mod keys_viewer;
 mod keys_cont3xt;
+mod keys_parliament;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtResult, Cont3xtView, GraphData, HttpLog, SummaryItem, parse_card};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtResult, Cont3xtView, GraphData, HttpLog, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, parse_card};
 use ratatui::widgets::TableState;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -164,6 +165,23 @@ pub struct App {
     pub c3_stats_filtering: bool,
     pub c3_stats_sort_col: usize,
     pub c3_stats_sort_desc: bool,
+    // Parliament state
+    pub pl_groups: Vec<PlGroup>,
+    pub pl_stats: HashMap<String, PlClusterStats>,
+    pub pl_issues_map: HashMap<String, Vec<PlIssue>>,
+    pub pl_issues: Vec<PlIssue>,
+    pub pl_issues_filter: String,
+    pub pl_issues_filter_edit: String,
+    pub pl_issues_sort: PlIssueSort,
+    pub pl_issues_sort_desc: bool,
+    pub pl_issues_selected: usize,
+    pub pl_selected_group: usize,
+    pub pl_selected_cluster: usize,
+    pub pl_last_refresh: std::time::Instant,
+    pub pl_show_detail: bool,
+    pub pl_detail_scroll: u16,
+    // Flat list of (group_idx, cluster_idx) for dashboard navigation
+    pub pl_cluster_list: Vec<(usize, usize)>,
 }
 
 impl App {
@@ -333,6 +351,22 @@ impl App {
             c3_stats_filtering: false,
             c3_stats_sort_col: 0,
             c3_stats_sort_desc: false,
+            // Parliament state
+            pl_groups: Vec::new(),
+            pl_stats: HashMap::new(),
+            pl_issues_map: HashMap::new(),
+            pl_issues: Vec::new(),
+            pl_issues_filter: String::new(),
+            pl_issues_filter_edit: String::new(),
+            pl_issues_sort: PlIssueSort::LastNoticed,
+            pl_issues_sort_desc: true,
+            pl_issues_selected: 0,
+            pl_selected_group: 0,
+            pl_selected_cluster: 0,
+            pl_last_refresh: std::time::Instant::now(),
+            pl_show_detail: false,
+            pl_detail_scroll: 0,
+            pl_cluster_list: Vec::new(),
         }
     }
 
@@ -811,5 +845,97 @@ impl App {
         if self.c3_link_popup_selected >= self.c3_link_flat.len() {
             self.c3_link_popup_selected = self.c3_link_flat.len().saturating_sub(1);
         }
+    }
+
+    // Parliament methods
+
+    pub async fn pl_fetch_data(&mut self) {
+        match self.client.pl_get_parliament().await {
+            Ok(parliament) => {
+                self.pl_groups = parliament.groups;
+                self.pl_rebuild_cluster_list();
+                self.status_msg = format!("{} groups loaded", self.pl_groups.len());
+            }
+            Err(e) => self.status_msg = format!("Error fetching parliament: {e}"),
+        }
+        match self.client.pl_get_stats().await {
+            Ok(stats) => self.pl_stats = stats,
+            Err(e) => self.status_msg = format!("Error fetching stats: {e}"),
+        }
+        match self.client.pl_get_issues_map().await {
+            Ok(issues) => self.pl_issues_map = issues,
+            Err(e) => self.status_msg = format!("Error fetching issues: {e}"),
+        }
+        self.pl_last_refresh = std::time::Instant::now();
+    }
+
+    pub async fn pl_fetch_issues(&mut self) {
+        match self.client.pl_get_issues().await {
+            Ok(issues) => {
+                let count = issues.len();
+                self.pl_issues = issues;
+                self.pl_sort_issues();
+                self.status_msg = format!("{} issues", count);
+            }
+            Err(e) => self.status_msg = format!("Error fetching issues: {e}"),
+        }
+    }
+
+    pub(crate) fn pl_rebuild_cluster_list(&mut self) {
+        self.pl_cluster_list.clear();
+        for (gi, group) in self.pl_groups.iter().enumerate() {
+            for (ci, _cluster) in group.clusters.iter().enumerate() {
+                self.pl_cluster_list.push((gi, ci));
+            }
+        }
+    }
+
+    pub(crate) fn pl_sort_issues(&mut self) {
+        let sort = self.pl_issues_sort;
+        let desc = self.pl_issues_sort_desc;
+        self.pl_issues.sort_by(|a, b| {
+            let cmp = match sort {
+                PlIssueSort::Cluster => a.cluster.to_lowercase().cmp(&b.cluster.to_lowercase()),
+                PlIssueSort::Title => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
+                PlIssueSort::Severity => a.severity.cmp(&b.severity),
+                PlIssueSort::FirstNoticed => a.first_noticed.cmp(&b.first_noticed),
+                PlIssueSort::LastNoticed => a.last_noticed.cmp(&b.last_noticed),
+            };
+            if desc { cmp.reverse() } else { cmp }
+        });
+    }
+
+    /// Get the currently selected cluster on the dashboard
+    pub(crate) fn pl_selected_cluster_ref(&self) -> Option<&PlCluster> {
+        if self.pl_cluster_list.is_empty() {
+            return None;
+        }
+        let nav_idx = self.pl_dashboard_nav_index();
+        if nav_idx < self.pl_cluster_list.len() {
+            let (gi, ci) = self.pl_cluster_list[nav_idx];
+            self.pl_groups.get(gi).and_then(|g| g.clusters.get(ci))
+        } else {
+            None
+        }
+    }
+
+    /// Get flat index from current group/cluster selection
+    pub(crate) fn pl_dashboard_nav_index(&self) -> usize {
+        self.pl_cluster_list.iter().position(|&(gi, ci)| gi == self.pl_selected_group && ci == self.pl_selected_cluster).unwrap_or(0)
+    }
+
+    /// Get filtered issues list
+    pub(crate) fn pl_filtered_issues(&self) -> Vec<&PlIssue> {
+        let filter = self.pl_issues_filter.to_lowercase();
+        self.pl_issues.iter().filter(|issue| {
+            if filter.is_empty() {
+                return true;
+            }
+            issue.cluster.to_lowercase().contains(&filter)
+                || issue.title.to_lowercase().contains(&filter)
+                || issue.message.to_lowercase().contains(&filter)
+                || issue.node.to_lowercase().contains(&filter)
+                || issue.severity.to_lowercase().contains(&filter)
+        }).collect()
     }
 }

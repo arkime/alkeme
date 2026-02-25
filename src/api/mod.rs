@@ -1,7 +1,9 @@
 mod viewer;
 mod cont3xt;
+mod parliament;
 
 pub use cont3xt::*;
+pub use parliament::*;
 
 use anyhow::Result;
 use reqwest::Client;
@@ -523,6 +525,18 @@ impl ArkimeClient {
 
     pub fn http_log(&self) -> HttpLog {
         self.http_log.clone()
+    }
+
+    pub fn auth_mode(&self) -> AuthMode {
+        self.auth_mode
+    }
+
+    pub fn username(&self) -> Option<String> {
+        self.username.clone()
+    }
+
+    pub fn password(&self) -> Option<String> {
+        self.password.clone()
     }
 
     pub fn clone_for_fetch(&self) -> FetchClient {

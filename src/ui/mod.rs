@@ -3,6 +3,7 @@ mod stats;
 mod arkime;
 mod popups;
 mod cont3xt;
+mod parliament;
 
 // Re-export app types for sub-modules via `use super::*`
 #[allow(unused_imports)]
@@ -127,6 +128,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     match app.app_mode {
         AppMode::Viewer => draw_viewer(f, app),
         AppMode::Cont3xt => cont3xt::draw_cont3xt(f, app),
+        AppMode::Parliament => parliament::draw_parliament(f, app),
         _ => draw_placeholder(f, app),
     }
 

@@ -2,7 +2,7 @@
 
 A terminal user interface (TUI) for the [Arkime](https://arkime.com) ecosystem, built with Rust and [ratatui](https://github.com/ratatui/ratatui).
 
-Alkeme auto-detects the Arkime application mode (Viewer, Cont3xt, WISE, Parliament) and provides a tailored interface for each. Currently supports Viewer (full packet capture session browsing) and Cont3xt (integration search with card-based results).
+Alkeme auto-detects the Arkime application mode (Viewer, Cont3xt, WISE, Parliament) and provides a tailored interface for each. Currently supports Viewer (full packet capture session browsing), Cont3xt (integration search with card-based results), and Parliament (cluster monitoring dashboard with health stats and issue tracking).
 
 This project was entirely created by Claude — code, architecture, documentation, and even this README. The only exception is the screenshots, because sadly no one has given me eyes yet.
 
@@ -46,6 +46,13 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Raw JSON toggle** — press `R` to switch between card view and raw JSON
 - **Integration filter** — press `i` to toggle integrations on/off with bulk actions (all/none/invert)
 - **Link groups** — press `l` to browse applicable link groups for the selected indicator; Enter opens the link URL in your browser
+
+### Parliament Mode
+- **Cluster dashboard** — groups displayed with clusters showing health status (●green/●yellow/●red), bytes/sec, drops/sec, active sessions, node counts, ES info, and inline issues
+- **Issue tracking** — dedicated Issues tab with filterable, sortable table of all cluster issues with severity, timestamps, node info
+- **Cluster detail** — press `i` for a detailed overlay showing full stats and all issues for a cluster
+- **Viewer switch** — press `Enter` on a cluster to connect to it and switch to Viewer mode for live session browsing
+- **Auto-refresh** — dashboard and issues auto-refresh every 30 seconds
 
 ### Common
 - **Multi-app detection** — auto-detects Viewer, Cont3xt, WISE, or Parliament via `/api/appversion`
@@ -170,6 +177,24 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `i` | Integration filter (toggle on/off, `a`:all, `n`:none, `!`:invert, `/`:filter) |
 | `l` | Link groups for selected indicator (Enter opens in browser) |
 | `r` | Re-run search |
+| `D` | HTTP debug log |
+| `h` / `?` | Show help |
+| `q` | Quit |
+
+### Parliament Mode
+
+| Key | Action |
+|---|---|
+| `Tab` / `Shift+Tab` | Switch tabs (Dashboard / Issues / Settings) |
+| `j` / `k` / `↑` / `↓` | Navigate clusters (Dashboard) or issues (Issues) |
+| `Shift+↑` / `Shift+↓` | Page up / down (Issues) |
+| `Home` / `End` | Jump to top / bottom (Issues) |
+| `Enter` | Open cluster in Viewer mode (Dashboard) |
+| `i` | Cluster detail overlay (Dashboard) |
+| `/` or `E` | Filter issues (Issues tab) |
+| `s` | Next sort column (Issues) |
+| `S` | Toggle sort direction (Issues) |
+| `r` | Refresh |
 | `D` | HTTP debug log |
 | `h` / `?` | Show help |
 | `q` | Quit |

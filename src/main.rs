@@ -137,6 +137,10 @@ async fn main() -> Result<()> {
                 app.c3_request_search();
             }
         }
+        app::AppMode::Parliament => {
+            app.pl_fetch_data().await;
+            app.pl_fetch_issues().await;
+        }
         _ => {}
     }
 
@@ -360,13 +364,24 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             }
         }
 
+        // Parliament auto-refresh every 30 seconds
+        if app.app_mode == app::AppMode::Parliament
+            && app.input_mode == app::InputMode::Normal
+            && app.pl_last_refresh.elapsed() >= Duration::from_secs(30)
+        {
+            app.pl_fetch_data().await;
+            if app.active_tab == app::Tab::Issues {
+                app.pl_fetch_issues().await;
+            }
+        }
+
         if event::poll(Duration::from_millis(100))?
             && let Event::Key(key) = event::read()? {
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     return Ok(());
                 }
                 if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
-                    && !app.vr_show_column_editor && !app.vr_show_layout_popup && !app.vr_show_view_popup && !app.show_help && !app.show_debug {
+                    && !app.vr_show_column_editor && !app.vr_show_layout_popup && !app.vr_show_view_popup && !app.show_help && !app.show_debug && !app.pl_show_detail {
                     return Ok(());
                 }
                 app.handle_key(key).await;

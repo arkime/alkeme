@@ -397,6 +397,39 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
+    } else if app.app_mode == AppMode::Parliament && app.active_tab == Tab::Dashboard {
+        ("Parliament Dashboard", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate clusters")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Open cluster in Viewer mode")]),
+            Line::from(vec![key("i"), Span::raw("Cluster detail overlay")]),
+            Line::from(vec![key("r"), Span::raw("Refresh")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ])
+    } else if app.app_mode == AppMode::Parliament && app.active_tab == Tab::Issues {
+        ("Parliament Issues", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate issues")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("/ / E"), Span::raw("Filter issues")]),
+            Line::from(vec![key("s"), Span::raw("Next sort column")]),
+            Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
+            Line::from(vec![key("r"), Span::raw("Refresh issues")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ])
     } else {
         ("Sessions", vec![
             hdr!("Navigation"),
