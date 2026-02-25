@@ -498,7 +498,7 @@ pub struct ArkimeClient {
     pub(super) auth_mode: AuthMode,
     pub(super) username: Option<String>,
     pub(super) password: Option<String>,
-    logged_in: bool,
+    pub(crate) logged_in: bool,
     pub(super) arkime_cookie: Option<String>,
     pub(super) cookie_header_name: &'static str,
     pub(super) http_log: HttpLog,
