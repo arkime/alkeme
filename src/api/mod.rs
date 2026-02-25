@@ -1,8 +1,12 @@
+mod viewer;
+mod cont3xt;
+
+pub use cont3xt::*;
+
 use anyhow::Result;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -24,7 +28,7 @@ pub fn new_http_log() -> HttpLog {
     Arc::new(Mutex::new(Vec::new()))
 }
 
-fn log_http(log: &HttpLog, method: &str, url: &str, post_data: Option<String>, status: u16, first_byte_ms: u64, last_byte_ms: u64, response_body: Option<&str>) {
+pub(crate) fn log_http(log: &HttpLog, method: &str, url: &str, post_data: Option<String>, status: u16, first_byte_ms: u64, last_byte_ms: u64, response_body: Option<&str>) {
     if let Ok(mut entries) = log.lock() {
         let resp = if status >= 300 {
             response_body.map(|b| {
@@ -45,21 +49,6 @@ fn log_http(log: &HttpLog, method: &str, url: &str, post_data: Option<String>, s
             response_body: resp,
         });
     }
-}
-
-#[derive(Deserialize)]
-pub struct SessionsResponse {
-    pub data: Vec<Value>,
-    #[serde(default, rename = "recordsTotal")]
-    pub records_total: u64,
-    #[serde(default, rename = "recordsFiltered")]
-    pub records_filtered: u64,
-    #[serde(default)]
-    pub graph: Option<GraphData>,
-    #[serde(default, rename = "bsqErr")]
-    pub bsq_err: Option<String>,
-    #[serde(default)]
-    pub error: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Default)]
@@ -143,22 +132,6 @@ pub struct SummaryItem {
     pub bytes: u64,
     #[serde(default)]
     pub packets: u64,
-}
-
-/// A link within a link group
-#[derive(Clone)]
-pub struct Cont3xtLink {
-    pub name: String,
-    pub url: String,
-    pub itypes: Vec<String>,
-    pub info: String,
-}
-
-/// A link group from /api/linkGroup
-#[derive(Clone)]
-pub struct Cont3xtLinkGroup {
-    pub name: String,
-    pub links: Vec<Cont3xtLink>,
 }
 
 /// A saved cont3xt view (integration set)
@@ -282,13 +255,13 @@ pub fn parse_card(val: &Value) -> Option<Cont3xtCard> {
 }
 
 pub struct FetchClient {
-    client: Client,
-    auth_mode: AuthMode,
-    username: Option<String>,
-    password: Option<String>,
-    arkime_cookie: Option<String>,
-    cookie_header_name: &'static str,
-    http_log: HttpLog,
+    pub(super) client: Client,
+    pub(super) auth_mode: AuthMode,
+    pub(super) username: Option<String>,
+    pub(super) password: Option<String>,
+    pub(super) arkime_cookie: Option<String>,
+    pub(super) cookie_header_name: &'static str,
+    pub(super) http_log: HttpLog,
 }
 
 impl FetchClient {
@@ -514,195 +487,18 @@ impl FetchClient {
         log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
         Ok(body)
     }
-
-    /// Like fetch_post_json but streams the response line by line, pushing parsed results
-    /// into a shared vec as they arrive. Returns (total, itype) when finished.
-    pub async fn fetch_post_json_streaming(
-        &self,
-        url: &str,
-        json_body: &str,
-        results: Arc<Mutex<Vec<Cont3xtResult>>>,
-        disabled: std::collections::HashSet<String>,
-    ) -> Result<(u64, String, Vec<(String, String)>)> {
-        let start = Instant::now();
-        let post_data = Some(json_body.to_string());
-        let username = match self.username.as_deref() {
-            Some(u) => u,
-            None => {
-                let resp = self.client.post(url)
-                    .header("Content-Type", "application/json")
-                    .body(json_body.to_string())
-                    .send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                log_http(&self.http_log, "POST", url, post_data.clone(), status, first_byte, first_byte, None);
-                return self.stream_response_lines(resp, results, disabled).await;
-            }
-        };
-        let password = self.password.as_deref().unwrap_or("");
-
-        let mut req = match self.auth_mode {
-            AuthMode::None => self.client.post(url),
-            AuthMode::Basic => self.client.post(url).basic_auth(username, Some(password)),
-            AuthMode::Digest => {
-                let resp = self.client.post(url).send().await?;
-                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
-                    let first_byte = start.elapsed().as_millis() as u64;
-                    let status = resp.status().as_u16();
-                    log_http(&self.http_log, "POST", url, post_data.clone(), status, first_byte, first_byte, None);
-                    return self.stream_response_lines(resp, results, disabled).await;
-                }
-                let www_auth = resp.headers().get("www-authenticate")
-                    .and_then(|v| v.to_str().ok())
-                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?.to_string();
-                let parsed_url = reqwest::Url::parse(url)?;
-                let uri = if let Some(q) = parsed_url.query() {
-                    format!("{}?{}", parsed_url.path(), q)
-                } else { parsed_url.path().to_string() };
-                let context = digest_auth::AuthContext::new_post::<_, _, _, &[u8]>(username, password, &uri, None);
-                let mut prompt = digest_auth::parse(&www_auth)?;
-                let auth_header = prompt.respond(&context)?.to_header_string();
-                self.client.post(url).header("Authorization", auth_header)
-            }
-            AuthMode::Form => self.client.post(url),
-        };
-        req = req.header("Content-Type", "application/json").body(json_body.to_string());
-        if let Some(ref cookie) = self.arkime_cookie {
-            if self.auth_mode != AuthMode::Form {
-                req = req.header("Cookie", cookie.as_str());
-            }
-            req = req.header(self.cookie_header_name, cookie.as_str());
-        }
-        let resp = req.send().await?;
-        let first_byte = start.elapsed().as_millis() as u64;
-        let status = resp.status().as_u16();
-        log_http(&self.http_log, "POST", url, post_data, status, first_byte, first_byte, None);
-        self.stream_response_lines(resp, results, disabled).await
-    }
-
-    async fn stream_response_lines(
-        &self,
-        resp: reqwest::Response,
-        results: Arc<Mutex<Vec<Cont3xtResult>>>,
-        disabled: std::collections::HashSet<String>,
-    ) -> Result<(u64, String, Vec<(String, String)>)> {
-        use futures_util::StreamExt;
-        let mut total = 0u64;
-        let mut itype = String::new();
-        let mut init_indicators: Vec<(String, String)> = Vec::new();
-        let mut buffer = String::new();
-        let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
-
-        let mut stream = resp.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-            // Process complete lines
-            while let Some(newline_pos) = buffer.find('\n') {
-                let line = buffer[..newline_pos].to_string();
-                buffer = buffer[newline_pos + 1..].to_string();
-
-                let line = line.trim().trim_start_matches('[').trim_end_matches(']').trim_end_matches(',');
-                if line.is_empty() { continue; }
-                let obj: Value = match serde_json::from_str(line) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-                let purpose = obj.get("purpose").and_then(|v| v.as_str()).unwrap_or("");
-                match purpose {
-                    "init" => {
-                        total = obj.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
-                        if let Some(indicators) = obj.get("indicators").and_then(|v| v.as_array()) {
-                            for ind in indicators {
-                                let ind_itype = ind.get("itype").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                let ind_query = ind.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                if itype.is_empty() {
-                                    itype = ind_itype.clone();
-                                }
-                                init_indicators.push((ind_itype, ind_query));
-                            }
-                        }
-                    }
-                    "link" => {
-                        // Capture parent-child indicator relationships
-                        let child_query = obj.get("indicator")
-                            .and_then(|v| v.get("query"))
-                            .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let child_itype = obj.get("indicator")
-                            .and_then(|v| v.get("itype"))
-                            .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let parent_query = obj.get("parentIndicator")
-                            .and_then(|v| v.get("query"))
-                            .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let parent_itype = obj.get("parentIndicator")
-                            .and_then(|v| v.get("itype"))
-                            .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        if !child_query.is_empty() && !parent_query.is_empty() {
-                            if let Ok(mut vec) = results.lock() {
-                                // Store link as a special marker result with empty name
-                                vec.push(Cont3xtResult {
-                                    name: String::new(),
-                                    indicator: child_query,
-                                    itype: child_itype,
-                                    data: serde_json::json!({
-                                        "_link_parent_query": parent_query,
-                                        "_link_parent_itype": parent_itype,
-                                    }),
-                                    has_data: false,
-                                });
-                            }
-                        }
-                    }
-                    "data" => {
-                        let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        if disabled.contains(&name) { continue; }
-                        let indicator = obj.get("indicator")
-                            .and_then(|v| v.get("query"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("").to_string();
-                        let ind_itype = obj.get("indicator")
-                            .and_then(|v| v.get("itype"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("").to_string();
-                        let data = obj.get("data").cloned().unwrap_or(Value::Null);
-                        let has_data = data.as_object()
-                            .map(|o| o.keys().any(|k| k != "_cont3xt"))
-                            .unwrap_or(false);
-                        if has_data {
-                            let key = (name.clone(), indicator.clone());
-                            if !seen.contains(&key) {
-                                seen.insert(key);
-                                if let Ok(mut vec) = results.lock() {
-                                    vec.push(Cont3xtResult {
-                                        name,
-                                        indicator,
-                                        itype: ind_itype,
-                                        data,
-                                        has_data,
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        Ok((total, itype, init_indicators))
-    }
 }
 
 pub struct ArkimeClient {
-    client: Client,
-    base_url: String,
-    auth_mode: AuthMode,
-    username: Option<String>,
-    password: Option<String>,
+    pub(super) client: Client,
+    pub(super) base_url: String,
+    pub(super) auth_mode: AuthMode,
+    pub(super) username: Option<String>,
+    pub(super) password: Option<String>,
     logged_in: bool,
-    arkime_cookie: Option<String>,
-    cookie_header_name: &'static str,
-    http_log: HttpLog,
+    pub(super) arkime_cookie: Option<String>,
+    pub(super) cookie_header_name: &'static str,
+    pub(super) http_log: HttpLog,
 }
 
 impl ArkimeClient {
@@ -753,7 +549,6 @@ impl ArkimeClient {
             .send()
             .await?;
         if resp.status() == reqwest::StatusCode::FOUND {
-            // 302 to /auth means bad credentials; 302 to / means success
             if let Some(loc) = resp.headers().get("location").and_then(|v| v.to_str().ok()) {
                 if loc.contains("/auth") {
                     anyhow::bail!("Form login failed: invalid username or password");
@@ -762,7 +557,6 @@ impl ArkimeClient {
         } else if !resp.status().is_success() {
             anyhow::bail!("Form login failed: HTTP {}", resp.status());
         }
-        // Fetch /api/user/settings to get the ARKIME-COOKIE (needed for CSRF protection)
         let settings_url = format!("{}/api/user/settings", self.base_url);
         let resp = self.client.get(&settings_url).send().await?;
         self.extract_cookie(&resp);
@@ -770,7 +564,7 @@ impl ArkimeClient {
         Ok(())
     }
 
-    async fn authenticated_get(&self, url: &str) -> Result<String> {
+    pub(super) async fn authenticated_get(&self, url: &str) -> Result<String> {
         let start = Instant::now();
         let username = match self.username.as_deref() {
             Some(u) => u,
@@ -869,7 +663,7 @@ impl ArkimeClient {
     }
 
     /// Like authenticated_get but sends x-arkime-cookie header (for endpoints with checkCookieToken)
-    async fn authenticated_get_with_cookie(&self, url: &str) -> Result<String> {
+    pub(super) async fn authenticated_get_with_cookie(&self, url: &str) -> Result<String> {
         let start = Instant::now();
         let username = match self.username.as_deref() {
             Some(u) => u,
@@ -973,7 +767,7 @@ impl ArkimeClient {
         }
     }
 
-    async fn authenticated_post(&self, url: &str, form: &[(&str, &str)]) -> Result<String> {
+    pub(super) async fn authenticated_post(&self, url: &str, form: &[(&str, &str)]) -> Result<String> {
         let start = Instant::now();
         let post_data = Some(form.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join("&"));
         let username = match self.username.as_deref() {
@@ -1082,7 +876,7 @@ impl ArkimeClient {
         }
     }
 
-    async fn authenticated_get_bytes(&self, url: &str) -> Result<Vec<u8>> {
+    pub(super) async fn authenticated_get_bytes(&self, url: &str) -> Result<Vec<u8>> {
         let start = Instant::now();
         let username = match self.username.as_deref() {
             Some(u) => u,
@@ -1181,85 +975,12 @@ impl ArkimeClient {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn append_view(url: &mut String, view: &Option<String>) {
+    pub(super) fn append_view(url: &mut String, view: &Option<String>) {
         if let Some(v) = view {
             if !v.is_empty() {
                 url.push_str(&format!("&view={}", urlencoding::encode(v)));
             }
         }
-    }
-
-    pub async fn vr_get_sessions(&self, fields: &[String], expression: &str, date: &str, sort_field: &str, sort_desc: bool, facets: bool, start: u64, length: u64, view: &Option<String>) -> Result<SessionsResponse> {
-        let fields_str = fields.join(",");
-        let dir = if sort_desc { "desc" } else { "asc" };
-        let mut url = format!(
-            "{}/api/sessions?fields={}&length={}&start={}&flatten=1&date={}&order={}:{}",
-            self.base_url, fields_str, length, start, date, urlencoding::encode(sort_field), dir
-        );
-        if facets {
-            url.push_str("&facets=1");
-        }
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
-
-        let body = self.authenticated_get(&url).await?;
-        let parsed: SessionsResponse = serde_json::from_str(&body)?;
-        Ok(parsed)
-    }
-
-    pub async fn vr_get_session(&self, id: &str) -> Result<Value> {
-        let url = format!(
-            "{}/api/session/{}?flatten=1&date=-1",
-            self.base_url,
-            urlencoding::encode(id)
-        );
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
-    }
-
-    pub async fn vr_get_stats(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
-        let dir = if sort_desc { "desc" } else { "asc" };
-        let mut url = format!(
-            "{}/api/stats?sortField={}&desc={}",
-            self.base_url, urlencoding::encode(sort_field), dir
-        );
-        if !filter.is_empty() {
-            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
-        }
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
-    }
-
-    pub async fn vr_get_esstats(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
-        let dir = if sort_desc { "desc" } else { "asc" };
-        let mut url = format!(
-            "{}/api/esstats?sortField={}&desc={}",
-            self.base_url, urlencoding::encode(sort_field), dir
-        );
-        if !filter.is_empty() {
-            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
-        }
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
-    }
-
-    pub async fn vr_get_esindices(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
-        let dir = if sort_desc { "desc" } else { "asc" };
-        let mut url = format!(
-            "{}/api/esindices?sortField={}&desc={}",
-            self.base_url, urlencoding::encode(sort_field), dir
-        );
-        if !filter.is_empty() {
-            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
-        }
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
     }
 
     pub async fn get_user(&self) -> Result<Value> {
@@ -1274,121 +995,6 @@ impl ArkimeClient {
         let body = self.authenticated_get(&url).await?;
         let val: Value = serde_json::from_str(&body)?;
         Ok(val)
-    }
-
-    pub async fn c3_get_integrations(&self) -> Result<Value> {
-        let url = format!("{}/api/integration", self.base_url);
-        let body = self.authenticated_get(&url).await?;
-        let val: Value = serde_json::from_str(&body)?;
-        Ok(val)
-    }
-
-    pub fn cont3xt_search_url(&self) -> String {
-        format!("{}/api/integration/search", self.base_url)
-    }
-
-    pub async fn vr_get_fields(&self) -> Result<(Vec<ArkimeField>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>)> {
-        let url = format!("{}/api/fields?array=true", self.base_url);
-        let body = self.authenticated_get(&url).await?;
-        let fields: Vec<ArkimeField> = serde_json::from_str(&body)?;
-        let date_fields: HashMap<String, String> = fields
-            .iter()
-            .filter(|f| f.field_type == "seconds" || f.field_type == "date")
-            .map(|f| (f.db_field.clone(), f.field_type.clone()))
-            .collect();
-        let field_exp_map: HashMap<String, String> = fields
-            .iter()
-            .filter(|f| !f.exp.is_empty())
-            .map(|f| (f.db_field.clone(), f.exp.clone()))
-            .collect();
-        let field_friendly_map: HashMap<String, String> = fields
-            .iter()
-            .filter(|f| !f.friendly_name.is_empty())
-            .map(|f| (f.db_field.clone(), f.friendly_name.clone()))
-            .collect();
-        Ok((fields, date_fields, field_exp_map, field_friendly_map))
-    }
-
-    pub async fn vr_download_session_pcap(&self, node: &str, id: &str) -> Result<Vec<u8>> {
-        let url = format!(
-            "{}/api/session/{}/{}.pcap?date=-1",
-            self.base_url, urlencoding::encode(node), urlencoding::encode(id)
-        );
-        self.authenticated_get_bytes(&url).await
-    }
-
-    pub async fn vr_download_sessions_pcap(&self, expression: &str, date: &str, view: &Option<String>) -> Result<Vec<u8>> {
-        let mut url = format!("{}/api/sessions.pcap?date={}", self.base_url, urlencoding::encode(date));
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
-        self.authenticated_get_bytes(&url).await
-    }
-
-    pub async fn vr_download_sessions_pcap_ids(&self, ids: &[String]) -> Result<Vec<u8>> {
-        let ids_str = ids.join(",");
-        let url = format!("{}/api/sessions.pcap?date=-1&ids={}", self.base_url, urlencoding::encode(&ids_str));
-        self.authenticated_get_bytes(&url).await
-    }
-
-    pub async fn vr_export_sessions_csv(&self, expression: &str, date: &str, fields: &[String], view: &Option<String>) -> Result<Vec<u8>> {
-        let fields_str = fields.join(",");
-        let mut url = format!("{}/api/sessions/csv?date={}&fields={}", self.base_url, urlencoding::encode(date), urlencoding::encode(&fields_str));
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
-        self.authenticated_get_bytes(&url).await
-    }
-
-    pub async fn vr_export_sessions_csv_ids(&self, ids: &[String], fields: &[String]) -> Result<Vec<u8>> {
-        let fields_str = fields.join(",");
-        let ids_str = ids.join(",");
-        let url = format!("{}/api/sessions/csv?date=-1&fields={}&ids={}", self.base_url, urlencoding::encode(&fields_str), urlencoding::encode(&ids_str));
-        self.authenticated_get_bytes(&url).await
-    }
-
-    pub async fn vr_add_session_tags(&self, id: &str, tags: &str) -> Result<String> {
-        let url = format!("{}/api/sessions/addtags", self.base_url);
-        self.authenticated_post(&url, &[("tags", tags), ("ids", id)]).await
-    }
-
-    pub async fn vr_add_sessions_tags(&self, expression: &str, date: &str, tags: &str, view: &Option<String>) -> Result<String> {
-        let mut url = format!("{}/api/sessions/addtags?date={}", self.base_url, urlencoding::encode(date));
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
-        self.authenticated_post(&url, &[("tags", tags)]).await
-    }
-
-    pub async fn vr_remove_session_tags(&self, id: &str, tags: &str) -> Result<String> {
-        let url = format!("{}/api/sessions/removetags", self.base_url);
-        self.authenticated_post(&url, &[("tags", tags), ("ids", id)]).await
-    }
-
-    pub async fn vr_remove_sessions_tags(&self, expression: &str, date: &str, tags: &str, view: &Option<String>) -> Result<String> {
-        let mut url = format!("{}/api/sessions/removetags?date={}", self.base_url, urlencoding::encode(date));
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
-        self.authenticated_post(&url, &[("tags", tags)]).await
-    }
-
-    pub fn vr_summary_url(&self, expression: &str, date: &str, view: &Option<String>) -> String {
-        let mut url = format!("{}/api/sessions/summary?date={}", self.base_url, urlencoding::encode(date));
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
-        url
-    }
-
-    pub fn vr_packets_url(&self, node: &str, id: &str, raw: bool) -> String {
-        format!("{}/api/session/{}/{}/packets?base=hex&ts=true&packets=10000&showFrames={}",
-            self.base_url, urlencoding::encode(node), urlencoding::encode(id), raw)
     }
 
     /// Fetch the ARKIME-COOKIE from /api/user/settings (has setCookie middleware).
@@ -1449,7 +1055,7 @@ impl ArkimeClient {
         }
     }
 
-    async fn authenticated_post_json(&self, url: &str, body: &Value) -> Result<Value> {
+    pub(super) async fn authenticated_post_json(&self, url: &str, body: &Value) -> Result<Value> {
         let start = Instant::now();
         let post_data = Some(body.to_string());
         let username = match self.username.as_deref() {
@@ -1512,7 +1118,7 @@ impl ArkimeClient {
         Ok(result)
     }
 
-    async fn authenticated_put_json(&self, url: &str, body: &Value) -> Result<Value> {
+    pub(super) async fn authenticated_put_json(&self, url: &str, body: &Value) -> Result<Value> {
         let start = Instant::now();
         let post_data = Some(body.to_string());
         let username = match self.username.as_deref() {
@@ -1575,7 +1181,7 @@ impl ArkimeClient {
         Ok(result)
     }
 
-    async fn authenticated_delete(&self, url: &str) -> Result<Value> {
+    pub(super) async fn authenticated_delete(&self, url: &str) -> Result<Value> {
         let start = Instant::now();
         let username = match self.username.as_deref() {
             Some(u) => u,
@@ -1629,158 +1235,6 @@ impl ArkimeClient {
         let result = resp.json().await?;
         log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
         Ok(result)
-    }
-
-    // Layout API methods
-    pub async fn vr_get_layouts(&self) -> Result<Value> {
-        let url = format!("{}/api/user/layouts/sessionstable", self.base_url);
-        let body = self.authenticated_get_with_cookie(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
-    }
-
-    pub async fn vr_create_layout(&self, name: &str, columns: &[String], sort_field: &str, sort_dir: &str) -> Result<Value> {
-        let url = format!("{}/api/user/layouts/sessionstable", self.base_url);
-        let body = serde_json::json!({
-            "name": name,
-            "columns": columns,
-            "order": [[sort_field, sort_dir]]
-        });
-        self.authenticated_post_json(&url, &body).await
-    }
-
-    pub async fn vr_update_layout(&self, name: &str, columns: &[String], sort_field: &str, sort_dir: &str) -> Result<Value> {
-        let url = format!("{}/api/user/layouts/sessionstable", self.base_url);
-        let body = serde_json::json!({
-            "name": name,
-            "columns": columns,
-            "order": [[sort_field, sort_dir]]
-        });
-        self.authenticated_put_json(&url, &body).await
-    }
-
-    pub async fn vr_delete_layout(&self, name: &str) -> Result<Value> {
-        let url = format!("{}/api/user/layouts/sessionstable/{}", self.base_url, urlencoding::encode(name));
-        self.authenticated_delete(&url).await
-    }
-
-    pub async fn vr_get_views(&self) -> Result<Vec<ArkimeView>> {
-        let url = format!("{}/api/views?length=1000", self.base_url);
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        let mut views = Vec::new();
-        if let Some(data) = parsed.get("data").and_then(|d| d.as_array()) {
-            let current_user = self.username.as_deref().unwrap_or("");
-            for item in data {
-                let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let expression = item.get("expression").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let user = item.get("user").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let shared = user != current_user;
-                views.push(ArkimeView { id, name, expression, user, shared });
-            }
-        }
-        Ok(views)
-    }
-
-    pub async fn vr_create_view(&self, name: &str, expression: &str, col_config: Option<(&[String], &str, &str)>) -> Result<Value> {
-        let url = format!("{}/api/view", self.base_url);
-        let mut body = serde_json::json!({
-            "name": name,
-            "expression": expression,
-        });
-        if let Some((columns, sort_field, sort_dir)) = col_config {
-            body["sessionsColConfig"] = serde_json::json!({
-                "visibleHeaders": columns,
-                "order": [[sort_field, sort_dir]],
-            });
-        }
-        self.authenticated_post_json(&url, &body).await
-    }
-
-    pub async fn vr_delete_view(&self, id: &str) -> Result<Value> {
-        let url = format!("{}/api/view/{}", self.base_url, urlencoding::encode(id));
-        self.authenticated_delete(&url).await
-    }
-
-    /// Fetch cont3xt views (saved integration sets)
-    pub async fn c3_get_views(&self) -> Result<Vec<Cont3xtView>> {
-        let url = format!("{}/api/views", self.base_url);
-        let body = self.authenticated_get_with_cookie(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        let mut views = Vec::new();
-        if let Some(data) = parsed.get("views").and_then(|d| d.as_array()) {
-            let current_user = self.username.as_deref().unwrap_or("");
-            for item in data {
-                let id = item.get("_id").or_else(|| item.get("id"))
-                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let creator = item.get("creator").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let integrations: Vec<String> = item.get("integrations")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                    .unwrap_or_default();
-                let editable = item.get("_editable").and_then(|v| v.as_bool()).unwrap_or(false)
-                    || creator == current_user;
-                views.push(Cont3xtView { id, name, integrations, creator, editable });
-            }
-        }
-        Ok(views)
-    }
-
-    /// Create a cont3xt view (saved integration set)
-    pub async fn c3_create_view(&self, name: &str, integrations: &[String]) -> Result<Value> {
-        let url = format!("{}/api/view", self.base_url);
-        let body = serde_json::json!({
-            "name": name,
-            "integrations": integrations,
-        });
-        self.authenticated_post_json(&url, &body).await
-    }
-
-    /// Delete a cont3xt view
-    pub async fn c3_delete_view(&self, id: &str) -> Result<Value> {
-        let url = format!("{}/api/view/{}", self.base_url, urlencoding::encode(id));
-        self.authenticated_delete(&url).await
-    }
-
-    /// Fetch cont3xt integration stats
-    pub async fn c3_get_stats(&self) -> Result<Value> {
-        let url = format!("{}/api/integration/stats", self.base_url);
-        let body = self.authenticated_get_with_cookie(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
-    }
-
-    pub async fn c3_get_link_groups(&self) -> Result<Vec<Cont3xtLinkGroup>> {
-        let url = format!("{}/api/linkGroup", self.base_url);
-        let body = self.authenticated_get_with_cookie(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        let mut groups = Vec::new();
-        if let Some(arr) = parsed.get("linkGroups").and_then(|v| v.as_array()) {
-            for g in arr {
-                let name = g.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                let links_arr = g.get("links").and_then(|l| l.as_array());
-                let mut links = Vec::new();
-                if let Some(larr) = links_arr {
-                    for l in larr {
-                        let lname = l.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                        let lurl = l.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
-                        let itypes: Vec<String> = l.get("itypes")
-                            .and_then(|i| i.as_array())
-                            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                            .unwrap_or_default();
-                        if lname == "----------" { continue; } // skip separators
-                        let info = l.get("infoField").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                        links.push(Cont3xtLink { name: lname, url: lurl, itypes, info });
-                    }
-                }
-                if !links.is_empty() {
-                    groups.push(Cont3xtLinkGroup { name, links });
-                }
-            }
-        }
-        Ok(groups)
     }
 }
 
