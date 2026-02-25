@@ -133,6 +133,9 @@ async fn main() -> Result<()> {
             app.c3_fetch_integrations().await;
             app.c3_fetch_views().await;
             app.c3_fetch_link_groups().await;
+            if !app.expression.is_empty() {
+                app.c3_request_search();
+            }
         }
         _ => {}
     }
@@ -156,6 +159,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
     let mut c3_search_handle: Option<tokio::task::JoinHandle<Result<(u64, String), anyhow::Error>>> = None;
     let c3_streaming_results: std::sync::Arc<std::sync::Mutex<Vec<crate::api::Cont3xtResult>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut c3_stream_consumed: usize = 0;
 
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
@@ -267,8 +271,10 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 // Clear shared results for new search
                 if let Ok(mut vec) = shared.lock() { vec.clear(); }
                 app.c3_results.clear();
+                app.c3_indicator_parents.clear();
                 app.c3_selected = 0;
                 app.c3_detail_scroll = 0;
+                c3_stream_consumed = 0;
                 c3_search_handle = Some(tokio::spawn(async move {
                     client.fetch_post_json_streaming(&url, &json_body, shared, disabled).await
                 }));
@@ -278,9 +284,23 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             // Poll for streaming results and copy into app
             if app.c3_searching {
                 if let Ok(vec) = c3_streaming_results.lock() {
-                    if vec.len() > app.c3_results.len() {
-                        let new_items: Vec<_> = vec[app.c3_results.len()..].to_vec();
-                        app.c3_results.extend(new_items);
+                    if vec.len() > c3_stream_consumed {
+                        for item in &vec[c3_stream_consumed..] {
+                            if item.name.is_empty() {
+                                // Link marker: extract parent relationship
+                                let parent_query = item.data.get("_link_parent_query")
+                                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let parent_itype = item.data.get("_link_parent_itype")
+                                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                app.c3_indicator_parents.insert(
+                                    (item.indicator.clone(), item.itype.clone()),
+                                    (parent_query, parent_itype),
+                                );
+                            } else {
+                                app.c3_results.push(item.clone());
+                            }
+                        }
+                        c3_stream_consumed = vec.len();
                         app.status_msg = format!(
                             "Searching... {} results so far",
                             app.c3_results.len()
@@ -294,10 +314,21 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     let handle = c3_search_handle.take().unwrap();
                     // Final drain of any remaining results
                     if let Ok(vec) = c3_streaming_results.lock() {
-                        if vec.len() > app.c3_results.len() {
-                            let new_items: Vec<_> = vec[app.c3_results.len()..].to_vec();
-                            app.c3_results.extend(new_items);
+                        for item in &vec[c3_stream_consumed..] {
+                            if item.name.is_empty() {
+                                let parent_query = item.data.get("_link_parent_query")
+                                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let parent_itype = item.data.get("_link_parent_itype")
+                                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                app.c3_indicator_parents.insert(
+                                    (item.indicator.clone(), item.itype.clone()),
+                                    (parent_query, parent_itype),
+                                );
+                            } else {
+                                app.c3_results.push(item.clone());
+                            }
                         }
+                        c3_stream_consumed = vec.len();
                     }
                     match handle.await {
                         Ok(Ok((total, itype))) => {

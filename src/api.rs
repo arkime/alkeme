@@ -618,6 +618,36 @@ impl FetchClient {
                             }
                         }
                     }
+                    "link" => {
+                        // Capture parent-child indicator relationships
+                        let child_query = obj.get("indicator")
+                            .and_then(|v| v.get("query"))
+                            .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let child_itype = obj.get("indicator")
+                            .and_then(|v| v.get("itype"))
+                            .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let parent_query = obj.get("parentIndicator")
+                            .and_then(|v| v.get("query"))
+                            .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let parent_itype = obj.get("parentIndicator")
+                            .and_then(|v| v.get("itype"))
+                            .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if !child_query.is_empty() && !parent_query.is_empty() {
+                            if let Ok(mut vec) = results.lock() {
+                                // Store link as a special marker result with empty name
+                                vec.push(Cont3xtResult {
+                                    name: String::new(),
+                                    indicator: child_query,
+                                    itype: child_itype,
+                                    data: serde_json::json!({
+                                        "_link_parent_query": parent_query,
+                                        "_link_parent_itype": parent_itype,
+                                    }),
+                                    has_data: false,
+                                });
+                            }
+                        }
+                    }
                     "data" => {
                         let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         if disabled.contains(&name) { continue; }

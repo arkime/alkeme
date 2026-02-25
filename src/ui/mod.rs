@@ -288,7 +288,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         ])
         .split(area);
 
-    // Left pane: integration results list
+    // Left pane: results tree grouped by indicator
     let results_focused = app.c3_focus == Cont3xtFocus::Results;
     let results_border_style = if results_focused {
         Style::default().fg(Color::Cyan)
@@ -298,7 +298,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     let results_block = Block::default()
         .borders(Borders::ALL)
         .border_style(results_border_style)
-        .title(format!(" Integrations ({}) ", app.c3_results.len()));
+        .title(format!(" Results ({}) ", app.c3_results.len()));
 
     let inner = results_block.inner(horiz[0]);
     f.render_widget(results_block, horiz[0]);
@@ -306,19 +306,80 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_height = inner.height as usize;
     app.visible_rows = visible_height;
 
-    // Scroll the list to keep selection visible
-    let scroll_offset = if app.c3_selected >= visible_height {
-        app.c3_selected - visible_height + 1
+    // Build tree using parent-child indicator relationships
+    // Group results by (itype, indicator)
+    let mut indicator_results: std::collections::HashMap<(String, String), Vec<usize>> = std::collections::HashMap::new();
+    let mut indicator_order: Vec<(String, String)> = Vec::new();
+    for (idx, result) in app.c3_results.iter().enumerate() {
+        let key = (result.itype.clone(), result.indicator.clone());
+        if !indicator_results.contains_key(&key) {
+            indicator_order.push(key.clone());
+        }
+        indicator_results.entry(key).or_default().push(idx);
+    }
+
+    // Build a tree: find root indicators (those with no parent or whose parent is not in our set)
+    let mut children_of: std::collections::HashMap<(String, String), Vec<(String, String)>> = std::collections::HashMap::new();
+    let mut has_parent: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for key in &indicator_order {
+        if let Some(parent) = app.c3_indicator_parents.get(key) {
+            if indicator_results.contains_key(parent) || indicator_order.contains(parent) {
+                children_of.entry(parent.clone()).or_default().push(key.clone());
+                has_parent.insert(key.clone());
+            }
+        }
+    }
+
+    // Recursive tree builder
+    fn build_tree(
+        key: &(String, String),
+        depth: u16,
+        children_of: &std::collections::HashMap<(String, String), Vec<(String, String)>>,
+        indicator_results: &std::collections::HashMap<(String, String), Vec<usize>>,
+        results: &[crate::api::Cont3xtResult],
+        rows: &mut Vec<(u16, String, Option<usize>)>,
+    ) {
+        rows.push((depth, format!("{} {}", key.0.to_uppercase(), key.1), None));
+        if let Some(indices) = indicator_results.get(key) {
+            for &idx in indices {
+                rows.push((depth + 2, results[idx].name.clone(), Some(idx)));
+            }
+        }
+        if let Some(kids) = children_of.get(key) {
+            for child in kids {
+                build_tree(child, depth + 2, children_of, indicator_results, results, rows);
+            }
+        }
+    }
+
+    let mut display_rows: Vec<(u16, String, Option<usize>)> = Vec::new();
+    // Only start from root indicators (not children)
+    for key in &indicator_order {
+        if !has_parent.contains(key) {
+            build_tree(key, 0, &children_of, &indicator_results, &app.c3_results, &mut display_rows);
+        }
+    }
+
+    // Find which display row corresponds to c3_selected
+    let selected_display_row = display_rows.iter().position(|(_, _, idx)| *idx == Some(app.c3_selected)).unwrap_or(0);
+
+    // Scroll to keep selected visible
+    let scroll_offset = if selected_display_row >= visible_height {
+        selected_display_row - visible_height + 1
     } else {
         0
     };
 
-    for (i, result) in app.c3_results.iter().enumerate().skip(scroll_offset).take(visible_height) {
-        let y = inner.y + (i - scroll_offset) as u16;
+    for (row_i, (indent, label, result_idx)) in display_rows.iter().enumerate().skip(scroll_offset).take(visible_height) {
+        let y = inner.y + (row_i - scroll_offset) as u16;
         if y >= inner.y + inner.height { break; }
 
-        let is_selected = i == app.c3_selected;
-        let style = if is_selected && results_focused {
+        let is_header = result_idx.is_none();
+        let is_selected = *result_idx == Some(app.c3_selected);
+
+        let style = if is_header {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else if is_selected && results_focused {
             Style::default().fg(Color::Black).bg(Color::Cyan)
         } else if is_selected {
             Style::default().fg(Color::Black).bg(Color::Yellow)
@@ -326,16 +387,12 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
             Style::default().fg(Color::White)
         };
 
-        let indicator_suffix = if result.indicator != app.expression {
-            format!(" ({})", result.indicator)
+        let prefix = " ".repeat(*indent as usize);
+        let full_label = format!("{prefix}{label}");
+        let truncated = if full_label.len() > inner.width as usize {
+            format!("{}…", &full_label[..inner.width as usize - 1])
         } else {
-            String::new()
-        };
-        let label = format!(" {}{}", result.name, indicator_suffix);
-        let truncated = if label.len() > inner.width as usize {
-            format!("{}…", &label[..inner.width as usize - 1])
-        } else {
-            format!("{:<width$}", label, width = inner.width as usize)
+            format!("{:<width$}", full_label, width = inner.width as usize)
         };
 
         let span = Span::styled(truncated, style);
