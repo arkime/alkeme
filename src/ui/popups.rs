@@ -378,6 +378,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Tab (in results)"), Span::raw("Toggle results / detail focus")]),
             Line::from(vec![key("R"), Span::raw("Toggle raw JSON / card view")]),
             Line::from(vec![key("i"), Span::raw("Integrations popup (v:views inside)")]),
+            Line::from(vec![key("l"), Span::raw("Link groups popup")]),
             Line::from(vec![key("r"), Span::raw("Re-run search")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),

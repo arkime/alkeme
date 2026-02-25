@@ -1840,6 +1840,68 @@ impl App {
             return;
         }
 
+        // Link groups popup handler
+        if self.c3_show_link_popup {
+            if self.c3_link_popup_filtering {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.c3_link_popup_filtering = false;
+                        self.c3_link_popup_filter.clear();
+                        self.c3_build_link_flat();
+                    }
+                    KeyCode::Enter => {
+                        self.c3_link_popup_filtering = false;
+                    }
+                    KeyCode::Backspace => {
+                        self.c3_link_popup_filter.pop();
+                        self.c3_build_link_flat();
+                    }
+                    KeyCode::Char(c) => {
+                        self.c3_link_popup_filter.push(c);
+                        self.c3_build_link_flat();
+                    }
+                    _ => {}
+                }
+                return;
+            }
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('l') => {
+                    self.c3_show_link_popup = false;
+                }
+                KeyCode::Char('/') => {
+                    self.c3_link_popup_filtering = true;
+                }
+                KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    self.c3_link_popup_selected = self.c3_link_popup_selected.saturating_sub(10);
+                }
+                KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    if !self.c3_link_flat.is_empty() {
+                        self.c3_link_popup_selected = (self.c3_link_popup_selected + 10).min(self.c3_link_flat.len() - 1);
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.c3_link_popup_selected = self.c3_link_popup_selected.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if !self.c3_link_flat.is_empty() {
+                        self.c3_link_popup_selected = (self.c3_link_popup_selected + 1).min(self.c3_link_flat.len() - 1);
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some((_, _, url)) = self.c3_link_flat.get(self.c3_link_popup_selected) {
+                        let url = url.clone();
+                        #[cfg(target_os = "macos")]
+                        { let _ = std::process::Command::new("open").arg(&url).spawn(); }
+                        #[cfg(target_os = "linux")]
+                        { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+                        self.status_msg = format!("Opening: {url}");
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // Integration popup handler
         if self.c3_show_integration_popup {
             match self.c3_integration_popup_mode {
@@ -2126,6 +2188,17 @@ impl App {
                 self.c3_integration_popup_selected = 0;
                 self.c3_integration_popup_filter.clear();
                 self.c3_integration_popup_mode = IntegrationPopupMode::Integrations;
+            }
+            KeyCode::Char('l') if self.active_tab == Tab::Search => {
+                if self.c3_search_itype.is_empty() {
+                    self.status_msg = "Search for an indicator first".to_string();
+                } else {
+                    self.c3_link_popup_selected = 0;
+                    self.c3_link_popup_filter.clear();
+                    self.c3_link_popup_filtering = false;
+                    self.c3_build_link_flat();
+                    self.c3_show_link_popup = true;
+                }
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 if self.active_tab == Tab::Search {

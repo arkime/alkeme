@@ -3,7 +3,7 @@ mod keys;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtResult, Cont3xtView, GraphData, HttpLog, SummaryItem, parse_card};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtResult, Cont3xtView, GraphData, HttpLog, SummaryItem, parse_card};
 use ratatui::widgets::TableState;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -140,6 +140,13 @@ pub struct App {
     pub c3_view_save_name: String,
     pub c3_searching: bool,           // streaming search in progress
     pub c3_pending_search: bool,
+    // Cont3xt link groups
+    pub c3_link_groups: Vec<Cont3xtLinkGroup>,
+    pub c3_show_link_popup: bool,
+    pub c3_link_popup_selected: usize,
+    pub c3_link_popup_filter: String,
+    pub c3_link_popup_filtering: bool,
+    pub c3_link_flat: Vec<(String, String, String)>, // (group_name, link_name, url) filtered by itype
     // Cont3xt stats
     pub c3_stats_tab: C3StatsTab,
     pub c3_stats_data: Vec<serde_json::Value>,       // integration stats
@@ -300,6 +307,12 @@ impl App {
             c3_view_save_name: String::new(),
             c3_searching: false,
             c3_pending_search: false,
+            c3_link_groups: Vec::new(),
+            c3_show_link_popup: false,
+            c3_link_popup_selected: 0,
+            c3_link_popup_filter: String::new(),
+            c3_link_popup_filtering: false,
+            c3_link_flat: Vec::new(),
             c3_stats_tab: C3StatsTab::Integrations,
             c3_stats_data: Vec::new(),
             c3_itype_stats_data: Vec::new(),
@@ -742,6 +755,44 @@ impl App {
         match self.c3_stats_tab {
             C3StatsTab::Integrations => &self.c3_stats_data,
             C3StatsTab::ITypes => &self.c3_itype_stats_data,
+        }
+    }
+
+    pub async fn c3_fetch_link_groups(&mut self) {
+        match self.client.c3_get_link_groups().await {
+            Ok(groups) => {
+                self.c3_link_groups = groups;
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching link groups: {e}");
+            }
+        }
+    }
+
+    /// Build the flat list of links filtered by current itype
+    pub fn c3_build_link_flat(&mut self) {
+        let itype = &self.c3_search_itype;
+        let filter = self.c3_link_popup_filter.to_lowercase();
+        self.c3_link_flat.clear();
+        for group in &self.c3_link_groups {
+            for link in &group.links {
+                if !link.itypes.iter().any(|t| t == itype) {
+                    continue;
+                }
+                if !filter.is_empty() {
+                    let gn = group.name.to_lowercase();
+                    let ln = link.name.to_lowercase();
+                    if !gn.contains(&filter) && !ln.contains(&filter) {
+                        continue;
+                    }
+                }
+                // Substitute ${indicator} in URL
+                let url = link.url.replace("${indicator}", &self.expression);
+                self.c3_link_flat.push((group.name.clone(), link.name.clone(), url));
+            }
+        }
+        if self.c3_link_popup_selected >= self.c3_link_flat.len() {
+            self.c3_link_popup_selected = self.c3_link_flat.len().saturating_sub(1);
         }
     }
 }

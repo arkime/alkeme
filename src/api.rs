@@ -145,6 +145,21 @@ pub struct SummaryItem {
     pub packets: u64,
 }
 
+/// A link within a link group
+#[derive(Clone)]
+pub struct Cont3xtLink {
+    pub name: String,
+    pub url: String,
+    pub itypes: Vec<String>,
+}
+
+/// A link group from /api/linkGroup
+#[derive(Clone)]
+pub struct Cont3xtLinkGroup {
+    pub name: String,
+    pub links: Vec<Cont3xtLink>,
+}
+
 /// A saved cont3xt view (integration set)
 #[derive(Clone)]
 pub struct Cont3xtView {
@@ -1691,6 +1706,36 @@ impl ArkimeClient {
         let body = self.authenticated_get_with_cookie(&url).await?;
         let parsed: Value = serde_json::from_str(&body)?;
         Ok(parsed)
+    }
+
+    pub async fn c3_get_link_groups(&self) -> Result<Vec<Cont3xtLinkGroup>> {
+        let url = format!("{}/api/linkGroup", self.base_url);
+        let body = self.authenticated_get_with_cookie(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let mut groups = Vec::new();
+        if let Some(arr) = parsed.as_array() {
+            for g in arr {
+                let name = g.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                let links_arr = g.get("links").and_then(|l| l.as_array());
+                let mut links = Vec::new();
+                if let Some(larr) = links_arr {
+                    for l in larr {
+                        let lname = l.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                        let lurl = l.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
+                        let itypes: Vec<String> = l.get("itypes")
+                            .and_then(|i| i.as_array())
+                            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                            .unwrap_or_default();
+                        if lname == "----------" { continue; } // skip separators
+                        links.push(Cont3xtLink { name: lname, url: lurl, itypes });
+                    }
+                }
+                if !links.is_empty() {
+                    groups.push(Cont3xtLinkGroup { name, links });
+                }
+            }
+        }
+        Ok(groups)
     }
 }
 

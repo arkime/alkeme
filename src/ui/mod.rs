@@ -217,6 +217,10 @@ fn draw_cont3xt(f: &mut Frame, app: &mut App) {
 
     draw_status_bar(f, app, chunks[3]);
 
+    if app.c3_show_link_popup {
+        draw_link_popup(f, app, f.area());
+    }
+
     if app.c3_show_integration_popup {
         draw_integration_popup(f, app, f.area());
     }
@@ -867,6 +871,118 @@ fn c3_draw_stats(f: &mut Frame, app: &App, area: Rect) {
         .block(Block::default().borders(Borders::ALL).title(title))
         .row_highlight_style(Style::default());
     f.render_widget(table, chunks[1]);
+}
+
+fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
+    let popup_width = 70u16.min(area.width.saturating_sub(4));
+    let popup_height = 30u16.min(area.height.saturating_sub(4));
+    let popup_area = Rect {
+        x: area.x + (area.width.saturating_sub(popup_width)) / 2,
+        y: area.y + (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+    f.render_widget(Clear, popup_area);
+
+    let title = format!(
+        " Links for {} ({}) — {} links ",
+        app.expression, app.c3_search_itype, app.c3_link_flat.len()
+    );
+    let filter_line = if app.c3_link_popup_filtering {
+        format!("Filter: {}█", app.c3_link_popup_filter)
+    } else if !app.c3_link_popup_filter.is_empty() {
+        format!("Filter: {}", app.c3_link_popup_filter)
+    } else {
+        String::new()
+    };
+
+    let block = Block::default()
+        .title(title)
+        .title_bottom(Line::from(" / filter  Enter open  q close ").centered())
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Black));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let content_area = if !filter_line.is_empty() {
+        let filter_style = if app.c3_link_popup_filtering {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        f.render_widget(
+            Paragraph::new(filter_line).style(filter_style),
+            Rect { x: inner.x, y: inner.y, width: inner.width, height: 1 },
+        );
+        Rect { x: inner.x, y: inner.y + 1, width: inner.width, height: inner.height.saturating_sub(1) }
+    } else {
+        inner
+    };
+
+    if app.c3_link_flat.is_empty() {
+        f.render_widget(
+            Paragraph::new("No links available for this indicator type")
+                .style(Style::default().fg(Color::DarkGray)),
+            content_area,
+        );
+        return;
+    }
+
+    // Scrolling: keep selected in view
+    let visible = content_area.height as usize;
+    let selected = app.c3_link_popup_selected;
+    let scroll_offset = if selected >= visible {
+        selected - visible + 1
+    } else {
+        0
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+    let mut last_group = String::new();
+    for (i, (group, name, url)) in app.c3_link_flat.iter().enumerate().skip(scroll_offset) {
+        if lines.len() >= visible {
+            break;
+        }
+        // Show group header when group changes
+        if *group != last_group {
+            if !last_group.is_empty() && lines.len() < visible {
+                lines.push(Line::from("")); // spacer between groups
+            }
+            if lines.len() < visible {
+                lines.push(Line::from(Span::styled(
+                    format!("── {} ──", group),
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                )));
+            }
+            last_group = group.clone();
+        }
+        if lines.len() >= visible {
+            break;
+        }
+        let style = if i == selected {
+            Style::default().fg(Color::Black).bg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        // Truncate URL display
+        let max_url_len = popup_width as usize - name.len() - 6;
+        let url_display = if url.len() > max_url_len {
+            format!("{}…", &url[..max_url_len.saturating_sub(1)])
+        } else {
+            url.clone()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {name}"), style),
+            Span::styled(format!("  {url_display}"), if i == selected {
+                Style::default().fg(Color::Black).bg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            }),
+        ]));
+    }
+
+    f.render_widget(Paragraph::new(lines), content_area);
 }
 
 fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
