@@ -366,8 +366,19 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
+    // Build tree_order: list of result indices in display order
+    let tree_order: Vec<usize> = display_rows.iter()
+        .filter_map(|(_, _, idx)| *idx)
+        .collect();
+    app.c3_tree_order = tree_order;
+
+    // The actual result index for the current selection
+    let selected_result_idx = app.c3_tree_order.get(app.c3_selected).copied();
+
     // Find which display row corresponds to c3_selected
-    let selected_display_row = display_rows.iter().position(|(_, _, idx)| *idx == Some(app.c3_selected)).unwrap_or(0);
+    let selected_display_row = display_rows.iter()
+        .position(|(_, _, idx)| *idx == selected_result_idx)
+        .unwrap_or(0);
 
     // Scroll to keep selected visible
     let scroll_offset = if selected_display_row >= visible_height {
@@ -381,7 +392,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         if y >= inner.y + inner.height { break; }
 
         let is_header = result_idx.is_none();
-        let is_selected = *result_idx == Some(app.c3_selected);
+        let is_selected = *result_idx == selected_result_idx && result_idx.is_some();
 
         let style = if is_header {
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
@@ -413,7 +424,8 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(Color::DarkGray)
     };
 
-    if let Some(result) = app.c3_results.get(app.c3_selected) {
+    let actual_result_idx = app.c3_tree_order.get(app.c3_selected).copied().unwrap_or(0);
+    if let Some(result) = app.c3_results.get(actual_result_idx) {
         // Find the card definition for this integration
         let card = if !app.c3_raw_view {
             app.c3_integrations.iter()
@@ -947,7 +959,8 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
     };
     f.render_widget(Clear, popup_area);
 
-    let (indicator, itype) = app.c3_results.get(app.c3_selected)
+    let link_result_idx = app.c3_tree_order.get(app.c3_selected).copied().unwrap_or(0);
+    let (indicator, itype) = app.c3_results.get(link_result_idx)
         .map(|r| (r.indicator.as_str(), r.itype.as_str()))
         .unwrap_or((app.expression.as_str(), app.c3_search_itype.as_str()));
     let title = format!(

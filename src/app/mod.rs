@@ -122,7 +122,8 @@ pub struct App {
     // Cont3xt state
     pub c3_integrations: Vec<Cont3xtIntegration>,
     pub c3_results: Vec<Cont3xtResult>,
-    pub c3_selected: usize,           // selected integration result
+    pub c3_selected: usize,           // index into c3_tree_order
+    pub c3_tree_order: Vec<usize>,    // result indices in tree display order
     pub c3_detail_scroll: u16,        // scroll in detail pane
     pub c3_detail_hscroll: u16,       // horizontal scroll in detail pane
     pub c3_search_total: u64,
@@ -292,6 +293,7 @@ impl App {
             c3_integrations: Vec::new(),
             c3_results: Vec::new(),
             c3_selected: 0,
+            c3_tree_order: Vec::new(),
             c3_detail_scroll: 0,
             c3_detail_hscroll: 0,
             c3_search_total: 0,
@@ -775,7 +777,8 @@ impl App {
     /// Build the flat list of links filtered by selected result's itype
     pub fn c3_build_link_flat(&mut self) {
         // Use the selected result's itype and indicator
-        let (itype, indicator) = if let Some(result) = self.c3_results.get(self.c3_selected) {
+        let result_idx = self.c3_tree_order.get(self.c3_selected).copied().unwrap_or(0);
+        let (itype, indicator) = if let Some(result) = self.c3_results.get(result_idx) {
             (result.itype.clone(), result.indicator.clone())
         } else {
             (self.c3_search_itype.clone(), self.expression.clone())

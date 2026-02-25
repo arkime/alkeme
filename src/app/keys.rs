@@ -2207,8 +2207,8 @@ impl App {
                 if self.active_tab == Tab::Search {
                     match self.c3_focus {
                         Cont3xtFocus::Results => {
-                            if !self.c3_results.is_empty() {
-                                self.c3_selected = (self.c3_selected + self.visible_rows).min(self.c3_results.len() - 1);
+                            if !self.c3_tree_order.is_empty() {
+                                self.c3_selected = (self.c3_selected + self.visible_rows).min(self.c3_tree_order.len() - 1);
                                 self.c3_detail_scroll = 0;
                                 self.c3_detail_hscroll = 0;
                             }
@@ -2237,8 +2237,8 @@ impl App {
                 if self.active_tab == Tab::Search {
                     match self.c3_focus {
                         Cont3xtFocus::Results => {
-                            if !self.c3_results.is_empty() {
-                                self.c3_selected = (self.c3_selected + 1).min(self.c3_results.len() - 1);
+                            if !self.c3_tree_order.is_empty() {
+                                self.c3_selected = (self.c3_selected + 1).min(self.c3_tree_order.len() - 1);
                                 self.c3_detail_scroll = 0;
                                 self.c3_detail_hscroll = 0;
                             }
