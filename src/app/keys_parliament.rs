@@ -158,6 +158,9 @@ impl App {
     }
 
     async fn pl_switch_to_viewer(&mut self, url: &str) {
+        // Save parliament client for Ctrl+P return
+        self.pl_saved_client = Some(self.client.clone());
+
         // Build a new client pointing to the cluster's URL
         let auth_mode = self.client.auth_mode();
         let mut new_client = crate::api::ArkimeClient::new(
@@ -168,6 +171,7 @@ impl App {
         );
         if let Err(e) = new_client.login().await {
             self.status_msg = format!("Failed to connect to {}: {}", url, e);
+            self.pl_saved_client = None;
             return;
         }
         new_client.fetch_cookie().await.ok();
@@ -183,5 +187,17 @@ impl App {
         // Initialize viewer data
         self.vr_fetch_fields().await;
         self.vr_fetch_sessions().await;
+    }
+
+    pub(crate) async fn pl_return_to_parliament(&mut self) {
+        if let Some(saved) = self.pl_saved_client.take() {
+            self.http_log = saved.http_log();
+            self.client = saved;
+            self.app_mode = AppMode::Parliament;
+            self.active_tab = Tab::Dashboard;
+            self.status_msg = "Returned to Parliament".into();
+            // Refresh data
+            self.pl_fetch_data().await;
+        }
     }
 }

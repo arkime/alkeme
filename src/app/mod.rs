@@ -182,6 +182,8 @@ pub struct App {
     pub pl_detail_scroll: u16,
     // Flat list of (group_idx, cluster_idx) for dashboard navigation
     pub pl_cluster_list: Vec<(usize, usize)>,
+    // Saved parliament client for returning from viewer mode (Ctrl+P)
+    pub pl_saved_client: Option<ArkimeClient>,
 }
 
 impl App {
@@ -367,6 +369,7 @@ impl App {
             pl_show_detail: false,
             pl_detail_scroll: 0,
             pl_cluster_list: Vec::new(),
+            pl_saved_client: None,
         }
     }
 

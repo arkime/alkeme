@@ -431,7 +431,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else {
-        ("Sessions", vec![
+        let mut ht = vec![
             hdr!("Navigation"),
             blank(),
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
@@ -455,8 +455,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("A"), Span::raw("All sessions actions")]),
             Line::from(vec![key("c"), Span::raw("Columns & layouts")]),
             Line::from(vec![key("v"), Span::raw("Views")]),
-            Line::from(vec![key("q"), Span::raw("Quit")]),
-        ])
+        ];
+        if app.pl_saved_client.is_some() {
+            ht.push(Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")]));
+        }
+        ht.push(Line::from(vec![key("q"), Span::raw("Quit")]));
+        ("Sessions", ht)
     };
 
     let mut lines = help_text;

@@ -64,6 +64,14 @@ impl App {
             self.debug_scroll = 0;
             return;
         }
+        // Ctrl+P: return to Parliament from Viewer mode
+        if key.code == KeyCode::Char('p') && key.modifiers.contains(KeyModifiers::CONTROL)
+            && self.app_mode == crate::app::AppMode::Viewer
+            && self.pl_saved_client.is_some()
+        {
+            self.pl_return_to_parliament().await;
+            return;
+        }
         match self.app_mode {
             crate::app::AppMode::Viewer => {
                 match self.active_tab {

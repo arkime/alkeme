@@ -169,6 +169,7 @@ src/
 | Home / End | Jump to top/bottom (Issues) |
 | Enter | Open cluster in Viewer mode (Dashboard) |
 | i | Cluster detail overlay (Dashboard) |
+| Ctrl+p | Return to Parliament (from Viewer after entering a cluster) |
 | / or E | Filter issues (Issues tab) |
 | s | Next sort column (Issues) |
 | S | Toggle sort direction (Issues) |
@@ -341,7 +342,8 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Each cluster shows: type icon (⊘ disabled, ⌂ multiviewer, 🔕noAlerts), health indicator (●green/●yellow/●red), title, stats (bps, drops/sec, sessions, nodes, ES info), issue count
 - Navigation: ↑/↓ selects cluster via `pl_cluster_list` flat index (group_idx, cluster_idx pairs)
 - `i` opens detail overlay with full stats and issues for selected cluster
-- `Enter` on a cluster with a URL switches to Viewer mode: creates new `ArkimeClient` with cluster URL, calls `login()`/`fetch_cookie()`, switches `app_mode` to Viewer, loads fields+sessions
+- `Enter` on a cluster with a URL switches to Viewer mode: creates new `ArkimeClient` with cluster URL, calls `login()`/`fetch_cookie()`, switches `app_mode` to Viewer, loads fields+sessions. Parliament client saved in `pl_saved_client`.
+- `Ctrl+P` in Viewer mode (when `pl_saved_client` is Some) restores the parliament client and switches back to Parliament Dashboard
 - Issues tab: filterable, sortable table of all cluster issues with severity color coding
 - Filter uses expression handler (`/` or `E`), stored in `pl_issues_filter`
 - Sort cycles through: Cluster, Title, Severity, FirstNoticed, LastNoticed via `PlIssueSort`

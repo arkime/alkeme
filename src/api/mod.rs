@@ -491,6 +491,7 @@ impl FetchClient {
     }
 }
 
+#[derive(Clone)]
 pub struct ArkimeClient {
     pub(super) client: Client,
     pub(super) base_url: String,
