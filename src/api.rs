@@ -523,7 +523,7 @@ impl FetchClient {
         json_body: &str,
         results: Arc<Mutex<Vec<Cont3xtResult>>>,
         disabled: std::collections::HashSet<String>,
-    ) -> Result<(u64, String)> {
+    ) -> Result<(u64, String, Vec<(String, String)>)> {
         let start = Instant::now();
         let post_data = Some(json_body.to_string());
         let username = match self.username.as_deref() {
@@ -585,10 +585,11 @@ impl FetchClient {
         resp: reqwest::Response,
         results: Arc<Mutex<Vec<Cont3xtResult>>>,
         disabled: std::collections::HashSet<String>,
-    ) -> Result<(u64, String)> {
+    ) -> Result<(u64, String, Vec<(String, String)>)> {
         use futures_util::StreamExt;
         let mut total = 0u64;
         let mut itype = String::new();
+        let mut init_indicators: Vec<(String, String)> = Vec::new();
         let mut buffer = String::new();
         let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
 
@@ -613,8 +614,13 @@ impl FetchClient {
                     "init" => {
                         total = obj.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
                         if let Some(indicators) = obj.get("indicators").and_then(|v| v.as_array()) {
-                            if let Some(first) = indicators.first() {
-                                itype = first.get("itype").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            for ind in indicators {
+                                let ind_itype = ind.get("itype").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let ind_query = ind.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                if itype.is_empty() {
+                                    itype = ind_itype.clone();
+                                }
+                                init_indicators.push((ind_itype, ind_query));
                             }
                         }
                     }
@@ -683,7 +689,7 @@ impl FetchClient {
                 }
             }
         }
-        Ok((total, itype))
+        Ok((total, itype, init_indicators))
     }
 }
 

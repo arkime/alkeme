@@ -310,9 +310,18 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     // Group results by (itype, indicator)
     let mut indicator_results: std::collections::HashMap<(String, String), Vec<usize>> = std::collections::HashMap::new();
     let mut indicator_order: Vec<(String, String)> = Vec::new();
+
+    // Start with init-ordered indicators as the canonical order
+    for (itype, query) in &app.c3_init_indicators {
+        let key = (itype.clone(), query.clone());
+        if !indicator_order.contains(&key) {
+            indicator_order.push(key);
+        }
+    }
+
     for (idx, result) in app.c3_results.iter().enumerate() {
         let key = (result.itype.clone(), result.indicator.clone());
-        if !indicator_results.contains_key(&key) {
+        if !indicator_order.contains(&key) {
             indicator_order.push(key.clone());
         }
         indicator_results.entry(key).or_default().push(idx);

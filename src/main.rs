@@ -156,7 +156,7 @@ async fn main() -> Result<()> {
 async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     let mut packets_handle: Option<tokio::task::JoinHandle<Result<crate::api::PacketsData, anyhow::Error>>> = None;
     let mut summary_handle: Option<tokio::task::JoinHandle<Result<Vec<crate::api::SummaryItem>, anyhow::Error>>> = None;
-    let mut c3_search_handle: Option<tokio::task::JoinHandle<Result<(u64, String), anyhow::Error>>> = None;
+    let mut c3_search_handle: Option<tokio::task::JoinHandle<Result<(u64, String, Vec<(String, String)>), anyhow::Error>>> = None;
     let c3_streaming_results: std::sync::Arc<std::sync::Mutex<Vec<crate::api::Cont3xtResult>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut c3_stream_consumed: usize = 0;
@@ -272,6 +272,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 if let Ok(mut vec) = shared.lock() { vec.clear(); }
                 app.c3_results.clear();
                 app.c3_indicator_parents.clear();
+                app.c3_init_indicators.clear();
                 app.c3_selected = 0;
                 app.c3_detail_scroll = 0;
                 c3_stream_consumed = 0;
@@ -329,10 +330,11 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                         c3_stream_consumed = vec.len();
                     }
                     match handle.await {
-                        Ok(Ok((total, itype))) => {
+                        Ok(Ok((total, itype, init_indicators))) => {
                             let count = app.c3_results.len();
                             app.c3_search_total = total;
                             app.c3_search_itype = itype;
+                            app.c3_init_indicators = init_indicators;
                             app.c3_focus = app::Cont3xtFocus::Results;
                             app.status_msg = format!(
                                 "Search complete: {} integrations returned data (type: {})",

@@ -130,6 +130,8 @@ pub struct App {
     pub c3_search_itype: String,
     // indicator parent map: (child_indicator, child_itype) -> [(parent_query, parent_itype), ...]
     pub c3_indicator_parents: HashMap<(String, String), Vec<(String, String)>>,
+    // init-ordered indicators: (itype, query) in the order from the init response
+    pub c3_init_indicators: Vec<(String, String)>,
     pub c3_focus: Cont3xtFocus,       // which pane has focus
     pub c3_raw_view: bool,            // show raw JSON instead of card
     pub c3_disabled_integrations: std::collections::HashSet<String>, // user-toggled off
@@ -299,6 +301,7 @@ impl App {
             c3_search_total: 0,
             c3_search_itype: String::new(),
             c3_indicator_parents: HashMap::new(),
+            c3_init_indicators: Vec::new(),
             c3_focus: Cont3xtFocus::Results,
             c3_raw_view: false,
             c3_disabled_integrations: std::collections::HashSet::new(),
