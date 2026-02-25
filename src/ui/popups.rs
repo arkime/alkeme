@@ -360,6 +360,19 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
+    } else if app.c3_show_link_popup {
+        ("Link Groups", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate links")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down (10)")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Open link in browser")]),
+            Line::from(vec![key("/"), Span::raw("Filter links by name")]),
+            Line::from(vec![key("Esc / q / l"), Span::raw("Close popup")]),
+        ])
     } else if app.app_mode == AppMode::Cont3xt {
         ("Cont3xt Search", vec![
             hdr!("Navigation"),

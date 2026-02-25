@@ -1897,6 +1897,9 @@ impl App {
                         self.status_msg = format!("Opening: {url}");
                     }
                 }
+                KeyCode::Char('h') | KeyCode::Char('?') => {
+                    self.show_help = true;
+                }
                 _ => {}
             }
             return;
