@@ -559,10 +559,14 @@ impl ArkimeClient {
         let username = self.username.as_deref().unwrap_or("");
         let password = self.password.as_deref().unwrap_or("");
         let url = format!("{}/api/login", self.base_url);
+        let start = Instant::now();
         let resp = self.client.post(&url)
             .form(&[("username", username), ("password", password)])
             .send()
             .await?;
+        let first_byte = start.elapsed().as_millis() as u64;
+        let status = resp.status().as_u16();
+        log_http(&self.http_log, "POST", &url, Some("username=***&password=***".into()), status, first_byte, start.elapsed().as_millis() as u64, None);
         if resp.status() == reqwest::StatusCode::FOUND {
             if let Some(loc) = resp.headers().get("location").and_then(|v| v.to_str().ok()) {
                 if loc.contains("/auth") {
@@ -573,8 +577,16 @@ impl ArkimeClient {
             anyhow::bail!("Form login failed: HTTP {}", resp.status());
         }
         let settings_url = format!("{}/api/user/settings", self.base_url);
+        let start2 = Instant::now();
         let resp = self.client.get(&settings_url).send().await?;
+        let first_byte2 = start2.elapsed().as_millis() as u64;
+        let status2 = resp.status().as_u16();
+        if resp.status() == reqwest::StatusCode::FOUND || !resp.status().is_success() {
+            log_http(&self.http_log, "GET", &settings_url, None, status2, first_byte2, start2.elapsed().as_millis() as u64, None);
+            anyhow::bail!("Form login failed: session not established (HTTP {} on settings fetch)", status2);
+        }
         self.extract_cookie(&resp);
+        log_http(&self.http_log, "GET", &settings_url, None, status2, first_byte2, start2.elapsed().as_millis() as u64, None);
         self.logged_in = true;
         Ok(())
     }
