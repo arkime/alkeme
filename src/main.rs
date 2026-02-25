@@ -126,11 +126,11 @@ async fn main() -> Result<()> {
     // Mode-specific initialization
     match app_mode {
         app::AppMode::Viewer => {
-            app.fetch_fields().await;
-            app.fetch_sessions().await;
+            app.vr_fetch_fields().await;
+            app.vr_fetch_sessions().await;
         }
         app::AppMode::Cont3xt => {
-            app.fetch_integrations().await;
+            app.c3_fetch_integrations().await;
             app.fetch_c3_views().await;
         }
         _ => {}
@@ -166,7 +166,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 let node = std::mem::take(&mut app.packets_node_pending);
                 let id = std::mem::take(&mut app.packets_id_pending);
                 let raw = app.packets_raw;
-                let url = app.client.packets_url(&node, &id, raw);
+                let url = app.client.vr_packets_url(&node, &id, raw);
                 let client = app.client.clone_for_fetch();
                 packets_handle = Some(tokio::spawn(async move {
                     let html = client.fetch_url(&url).await?;
@@ -178,7 +178,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             if app.pending_summary_fetch {
                 app.pending_summary_fetch = false;
                 let field = app.summary_field.clone();
-                let url = app.client.summary_url(&app.expression, app.time_range.date_value(), &app.active_view);
+                let url = app.client.vr_summary_url(&app.expression, app.time_range.date_value(), &app.active_view);
                 let client = app.client.clone_for_fetch();
                 summary_handle = Some(tokio::spawn(async move {
                     let body = client.fetch_post(&url, &[("fields", field.as_str())]).await?;
@@ -203,7 +203,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                             let count = items.len();
                             let field = app.summary_field.clone();
                             app.summary_data = items;
-                            app.sort_summary_data();
+                            app.vr_sort_summary_data();
                             app.summary_selected = 0;
                             app.summary_table_state.select(Some(0));
                             app.status_msg = format!("Summary: {} items for {}", count, field);
@@ -248,7 +248,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 && app.input_mode == app::InputMode::Normal
                 && app.stats_last_refresh.elapsed() >= Duration::from_secs(30)
             {
-                app.fetch_stats().await;
+                app.vr_fetch_stats().await;
             }
         }
 

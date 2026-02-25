@@ -169,7 +169,7 @@ pub(super) fn draw_field_selector(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(filter_input, chunks[0]);
 
     // Field list
-    let filtered = app.filtered_fields();
+    let filtered = app.vr_filtered_fields();
     let items: Vec<ListItem> = filtered.iter().enumerate().map(|(i, field)| {
         let style = if i == app.field_filter_selected {
             Style::default().bg(Color::DarkGray).fg(Color::Yellow)

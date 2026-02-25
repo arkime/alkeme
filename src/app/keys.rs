@@ -139,7 +139,7 @@ impl App {
                 if is_stats {
                     self.stats_filter = self.stats_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
-                    self.fetch_stats().await;
+                    self.vr_fetch_stats().await;
                 } else {
                     self.expression = self.expression_edit.clone();
                     self.input_mode = InputMode::Normal;
@@ -150,9 +150,9 @@ impl App {
                         }
                         _ => {
                             if self.active_tab == Tab::Arkime {
-                                self.request_summary_fetch();
+                                self.vr_request_summary_fetch();
                             } else {
-                                self.fetch_sessions().await;
+                                self.vr_fetch_sessions().await;
                             }
                         }
                     }
@@ -206,13 +206,13 @@ impl App {
             KeyCode::Tab => {
                 self.next_tab();
                 if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
-                    self.fetch_stats().await;
+                    self.vr_fetch_stats().await;
                 }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
                 if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
-                    self.fetch_stats().await;
+                    self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -238,10 +238,10 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                self.open_session_detail().await;
+                self.vr_open_session_detail().await;
             }
             KeyCode::Char('r') => {
-                self.fetch_sessions().await;
+                self.vr_fetch_sessions().await;
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
                 self.expression_edit = self.expression.clone();
@@ -251,62 +251,62 @@ impl App {
             KeyCode::Char('t') => {
                 self.time_range = self.time_range.next();
                 self.page_start = 0;
-                self.fetch_sessions().await;
+                self.vr_fetch_sessions().await;
             }
             KeyCode::Char('T') => {
                 self.time_range = self.time_range.prev();
                 self.page_start = 0;
-                self.fetch_sessions().await;
+                self.vr_fetch_sessions().await;
             }
             KeyCode::Char('s') => {
                 self.sort_column = (self.sort_column + 1) % self.session_fields.len();
                 self.page_start = 0;
-                self.fetch_sessions().await;
+                self.vr_fetch_sessions().await;
             }
             KeyCode::Char('S') => {
                 self.sort_desc = !self.sort_desc;
                 self.page_start = 0;
-                self.fetch_sessions().await;
+                self.vr_fetch_sessions().await;
             }
             KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 if self.sessions_filtered > self.page_size {
                     let last_page = (self.sessions_filtered - 1) / self.page_size * self.page_size;
                     if self.page_start != last_page {
                         self.page_start = last_page;
-                        self.fetch_sessions().await;
+                        self.vr_fetch_sessions().await;
                     }
                 }
             }
             KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 if self.page_start > 0 {
                     self.page_start = 0;
-                    self.fetch_sessions().await;
+                    self.vr_fetch_sessions().await;
                 }
             }
             KeyCode::Right => {
                 let next = self.page_start + self.page_size;
                 if next < self.sessions_filtered {
                     self.page_start = next;
-                    self.fetch_sessions().await;
+                    self.vr_fetch_sessions().await;
                 }
             }
             KeyCode::Left => {
                 if self.page_start > 0 {
                     self.page_start = self.page_start.saturating_sub(self.page_size);
-                    self.fetch_sessions().await;
+                    self.vr_fetch_sessions().await;
                 }
             }
             KeyCode::Home => {
                 if self.page_start > 0 {
                     self.page_start = 0;
-                    self.fetch_sessions().await;
+                    self.vr_fetch_sessions().await;
                 }
             }
             KeyCode::Char('g') => {
                 let was_off = !self.graph_size.is_visible();
                 self.graph_size = self.graph_size.next();
                 if was_off && self.graph_size.is_visible() {
-                    self.fetch_sessions().await;
+                    self.vr_fetch_sessions().await;
                 }
             }
             KeyCode::Char('G') => {
@@ -327,7 +327,7 @@ impl App {
                 self.request_packets();
             }
             KeyCode::Char('c') | KeyCode::Char('C') => {
-                self.fetch_layouts().await;
+                self.vr_fetch_layouts().await;
                 self.layout_popup_mode = LayoutPopupMode::List;
                 self.layout_popup_selected = 0;
                 self.layout_filter.clear();
@@ -492,17 +492,17 @@ impl App {
                 }
             }
             KeyCode::Char('a') => {
-                self.apply_column_editor();
+                self.vr_apply_column_editor();
                 self.show_column_editor = false;
                 self.page_start = 0;
-                self.fetch_sessions().await;
+                self.vr_fetch_sessions().await;
             }
             KeyCode::Char('d') => {
                 self.columns = default_columns();
-                self.sync_session_fields();
+                self.vr_sync_session_fields();
                 self.show_column_editor = false;
                 self.page_start = 0;
-                self.fetch_sessions().await;
+                self.vr_fetch_sessions().await;
             }
             _ => {}
         }
@@ -526,7 +526,7 @@ impl App {
                 match key.code {
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
                         let name = self.layout_delete_name.clone();
-                        match self.client.delete_layout(&name).await {
+                        match self.client.vr_delete_layout(&name).await {
                             Ok(_) => {
                                 self.saved_layouts.retain(|l| l.name != name);
                                 self.status_msg = format!("Deleted layout '{name}'");
@@ -569,11 +569,11 @@ impl App {
                         KeyCode::Enter => {
                             if let Some(&idx) = filtered.iter().find(|&&i| i + 3 == self.layout_popup_selected) {
                                 if let Some(layout) = self.saved_layouts.get(idx).cloned() {
-                                    self.apply_layout(&layout);
+                                    self.vr_apply_layout(&layout);
                                     self.show_layout_popup = false;
                                     self.layout_filter.clear();
                                     self.page_start = 0;
-                                    self.fetch_sessions().await;
+                                    self.vr_fetch_sessions().await;
                                 }
                             }
                         }
@@ -628,7 +628,7 @@ impl App {
                     KeyCode::Enter => {
                         if self.layout_popup_selected == 0 {
                             // Edit Columns
-                            self.build_column_editor();
+                            self.vr_build_column_editor();
                             self.show_layout_popup = false;
                             self.show_column_editor = true;
                         } else if self.layout_popup_selected == 1 {
@@ -637,17 +637,17 @@ impl App {
                             self.layout_save_cursor = 0;
                         } else if self.layout_popup_selected == 2 {
                             self.columns = default_columns();
-                            self.sync_session_fields();
+                            self.vr_sync_session_fields();
                             self.show_layout_popup = false;
                             self.page_start = 0;
-                            self.fetch_sessions().await;
+                            self.vr_fetch_sessions().await;
                         } else {
                             let idx = self.layout_popup_selected - 3;
                             if let Some(layout) = self.saved_layouts.get(idx).cloned() {
-                                self.apply_layout(&layout);
+                                self.vr_apply_layout(&layout);
                                 self.show_layout_popup = false;
                                 self.page_start = 0;
-                                self.fetch_sessions().await;
+                                self.vr_fetch_sessions().await;
                             }
                         }
                     }
@@ -682,14 +682,14 @@ impl App {
                             // Check if layout name already exists → update, else create
                             let exists = self.saved_layouts.iter().any(|l| l.name == name);
                             let result = if exists {
-                                self.client.update_layout(&name, &columns, &sort_field, sort_dir).await
+                                self.client.vr_update_layout(&name, &columns, &sort_field, sort_dir).await
                             } else {
-                                self.client.create_layout(&name, &columns, &sort_field, sort_dir).await
+                                self.client.vr_create_layout(&name, &columns, &sort_field, sort_dir).await
                             };
                             match result {
                                 Ok(_) => {
                                     self.status_msg = format!("Saved layout '{name}'");
-                                    self.fetch_layouts().await;
+                                    self.vr_fetch_layouts().await;
                                 }
                                 Err(e) => self.status_msg = format!("Error saving layout: {e}"),
                             }
@@ -720,7 +720,7 @@ impl App {
 
     async fn open_view_popup(&mut self) {
         self.status_msg = "Fetching views...".into();
-        match self.client.get_views().await {
+        match self.client.vr_get_views().await {
             Ok(views) => {
                 self.saved_views = views;
                 self.status_msg = String::new();
@@ -764,7 +764,7 @@ impl App {
                                 None
                             };
                             let config_ref = col_config.as_ref().map(|(c, sf, sd)| (c.as_slice(), sf.as_str(), sd.as_str()));
-                            match self.client.create_view(&name, &self.expression, config_ref).await {
+                            match self.client.vr_create_view(&name, &self.expression, config_ref).await {
                                 Ok(resp) => {
                                     self.status_msg = format!("View '{}' created", name);
                                     let view_id = resp.get("view")
@@ -819,7 +819,7 @@ impl App {
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
                         let id = self.view_delete_id.clone();
                         let name = self.view_delete_name.clone();
-                        match self.client.delete_view(&id).await {
+                        match self.client.vr_delete_view(&id).await {
                             Ok(_) => {
                                 self.status_msg = format!("View '{}' deleted", name);
                                 if self.active_view.as_deref() == Some(&id) {
@@ -1136,7 +1136,7 @@ impl App {
     }
 
     fn handle_action_menu_key(&mut self, key: KeyEvent) {
-        let remove_enabled = self.remove_enabled();
+        let remove_enabled = self.vr_remove_enabled();
         let menu = match &mut self.action_menu {
             Some(m) => m,
             None => return,
@@ -1279,7 +1279,7 @@ impl App {
                 let id = prompt.session_id.as_deref().unwrap_or("");
                 let node = prompt.session_node.as_deref().unwrap_or("");
                 self.status_msg = "Downloading PCAP...".into();
-                match self.client.download_session_pcap(node, id).await {
+                match self.client.vr_download_session_pcap(node, id).await {
                     Ok(data) => {
                         match std::fs::write(&prompt.input, &data) {
                             Ok(_) => self.status_msg = format!("Saved {} ({} bytes)", prompt.input, data.len()),
@@ -1293,9 +1293,9 @@ impl App {
                 self.status_msg = "Downloading PCAP...".into();
                 let result = if prompt.scope == ActionScope::Visible {
                     let ids = self.visible_session_ids();
-                    self.client.download_sessions_pcap_ids(&ids).await
+                    self.client.vr_download_sessions_pcap_ids(&ids).await
                 } else {
-                    self.client.download_sessions_pcap(&self.expression, date, &self.active_view).await
+                    self.client.vr_download_sessions_pcap(&self.expression, date, &self.active_view).await
                 };
                 match result {
                     Ok(data) => {
@@ -1311,9 +1311,9 @@ impl App {
                 self.status_msg = "Exporting CSV...".into();
                 let result = if prompt.scope == ActionScope::Visible {
                     let ids = self.visible_session_ids();
-                    self.client.export_sessions_csv_ids(&ids, &self.session_fields).await
+                    self.client.vr_export_sessions_csv_ids(&ids, &self.session_fields).await
                 } else {
-                    self.client.export_sessions_csv(&self.expression, date, &self.session_fields, &self.active_view).await
+                    self.client.vr_export_sessions_csv(&self.expression, date, &self.session_fields, &self.active_view).await
                 };
                 match result {
                     Ok(data) => {
@@ -1328,20 +1328,20 @@ impl App {
             (ActionKind::AddTags, ActionTarget::Single) => {
                 let id = prompt.session_id.as_deref().unwrap_or("");
                 self.status_msg = "Adding tags...".into();
-                match self.client.add_session_tags(id, &prompt.input).await {
+                match self.client.vr_add_session_tags(id, &prompt.input).await {
                     Ok(_) => {
                         self.status_msg = format!("Tags added: {}", prompt.input);
-                        self.fetch_sessions().await;
+                        self.vr_fetch_sessions().await;
                     }
                     Err(e) => self.status_msg = format!("Error: {e}"),
                 }
             }
             (ActionKind::AddTags, ActionTarget::All) => {
                 self.status_msg = "Adding tags...".into();
-                match self.client.add_sessions_tags(&self.expression, date, &prompt.input, &self.active_view).await {
+                match self.client.vr_add_sessions_tags(&self.expression, date, &prompt.input, &self.active_view).await {
                     Ok(_) => {
                         self.status_msg = format!("Tags added: {}", prompt.input);
-                        self.fetch_sessions().await;
+                        self.vr_fetch_sessions().await;
                     }
                     Err(e) => self.status_msg = format!("Error: {e}"),
                 }
@@ -1349,20 +1349,20 @@ impl App {
             (ActionKind::RemoveTags, ActionTarget::Single) => {
                 let id = prompt.session_id.as_deref().unwrap_or("");
                 self.status_msg = "Removing tags...".into();
-                match self.client.remove_session_tags(id, &prompt.input).await {
+                match self.client.vr_remove_session_tags(id, &prompt.input).await {
                     Ok(_) => {
                         self.status_msg = format!("Tags removed: {}", prompt.input);
-                        self.fetch_sessions().await;
+                        self.vr_fetch_sessions().await;
                     }
                     Err(e) => self.status_msg = format!("Error: {e}"),
                 }
             }
             (ActionKind::RemoveTags, ActionTarget::All) => {
                 self.status_msg = "Removing tags...".into();
-                match self.client.remove_sessions_tags(&self.expression, date, &prompt.input, &self.active_view).await {
+                match self.client.vr_remove_sessions_tags(&self.expression, date, &prompt.input, &self.active_view).await {
                     Ok(_) => {
                         self.status_msg = format!("Tags removed: {}", prompt.input);
-                        self.fetch_sessions().await;
+                        self.vr_fetch_sessions().await;
                     }
                     Err(e) => self.status_msg = format!("Error: {e}"),
                 }
@@ -1434,7 +1434,7 @@ impl App {
                     }
                     self.expression_edit = self.expression.clone();
                     if self.active_tab == Tab::Arkime {
-                        self.request_summary_fetch();
+                        self.vr_request_summary_fetch();
                     }
                 }
             }
@@ -1525,7 +1525,7 @@ impl App {
                     self.stats_tab = StatsTab::Capture;
                     self.stats_sort_column = 0;
                     self.stats_sort_desc = false;
-                    self.fetch_stats().await;
+                    self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Char('2') => {
@@ -1533,7 +1533,7 @@ impl App {
                     self.stats_tab = StatsTab::DBStats;
                     self.stats_sort_column = 0;
                     self.stats_sort_desc = false;
-                    self.fetch_stats().await;
+                    self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Char('3') => {
@@ -1541,7 +1541,7 @@ impl App {
                     self.stats_tab = StatsTab::DBIndices;
                     self.stats_sort_column = 0;
                     self.stats_sort_desc = false;
-                    self.fetch_stats().await;
+                    self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -1557,10 +1557,10 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                self.open_stats_detail();
+                self.vr_open_stats_detail();
             }
             KeyCode::Char('r') => {
-                self.fetch_stats().await;
+                self.vr_fetch_stats().await;
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
                 self.stats_filter_edit = self.stats_filter.clone();
@@ -1570,11 +1570,11 @@ impl App {
             KeyCode::Char('s') => {
                 let num_cols = self.stats_tab.columns().len();
                 self.stats_sort_column = (self.stats_sort_column + 1) % num_cols;
-                self.fetch_stats().await;
+                self.vr_fetch_stats().await;
             }
             KeyCode::Char('S') => {
                 self.stats_sort_desc = !self.stats_sort_desc;
-                self.fetch_stats().await;
+                self.vr_fetch_stats().await;
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
@@ -1649,13 +1649,13 @@ impl App {
             KeyCode::Tab => {
                 self.next_tab();
                 if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
-                    self.fetch_stats().await;
+                    self.vr_fetch_stats().await;
                 }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
                 if self.active_tab == Tab::Stats && self.stats_data.is_empty() {
-                    self.fetch_stats().await;
+                    self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
@@ -1673,11 +1673,11 @@ impl App {
             }
             KeyCode::Char('s') => {
                 self.summary_sort = self.summary_sort.next();
-                self.sort_summary_data();
+                self.vr_sort_summary_data();
             }
             KeyCode::Char('S') => {
                 self.summary_sort_desc = !self.summary_sort_desc;
-                self.sort_summary_data();
+                self.vr_sort_summary_data();
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 if !self.summary_data.is_empty() {
@@ -1738,15 +1738,15 @@ impl App {
                 }
             }
             KeyCode::Char('r') => {
-                self.request_summary_fetch();
+                self.vr_request_summary_fetch();
             }
             KeyCode::Char('t') => {
                 self.time_range = self.time_range.next();
-                self.request_summary_fetch();
+                self.vr_request_summary_fetch();
             }
             KeyCode::Char('T') => {
                 self.time_range = self.time_range.prev();
-                self.request_summary_fetch();
+                self.vr_request_summary_fetch();
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
@@ -1765,16 +1765,16 @@ impl App {
                 self.field_filter.clear();
             }
             KeyCode::Enter => {
-                let filtered = self.filtered_fields();
+                let filtered = self.vr_filtered_fields();
                 if let Some(field) = filtered.get(self.field_filter_selected) {
                     self.summary_field = field.exp.clone();
                     self.input_mode = InputMode::Normal;
                     self.field_filter.clear();
-                    self.request_summary_fetch();
+                    self.vr_request_summary_fetch();
                 }
             }
             KeyCode::Down => {
-                let count = self.filtered_fields().len();
+                let count = self.vr_filtered_fields().len();
                 if count > 0 {
                     self.field_filter_selected = (self.field_filter_selected + 1).min(count - 1);
                 }
@@ -1851,7 +1851,7 @@ impl App {
                         KeyCode::Enter => {
                             if !self.c3_view_save_name.is_empty() {
                                 let name = self.c3_view_save_name.clone();
-                                let integrations = self.enabled_integration_names();
+                                let integrations = self.c3_enabled_integration_names();
                                 let status = tokio::task::block_in_place(|| {
                                     tokio::runtime::Handle::current().block_on(
                                         self.client.create_c3_view(&name, &integrations)

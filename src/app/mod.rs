@@ -332,7 +332,7 @@ impl App {
     }
 
     /// Rebuild session_fields from columns
-    pub fn sync_session_fields(&mut self) {
+    pub fn vr_sync_session_fields(&mut self) {
         self.session_fields = self.columns.iter().map(|c| c.field.clone()).collect();
         if self.sort_column >= self.columns.len() {
             self.sort_column = 0;
@@ -340,7 +340,7 @@ impl App {
     }
 
     /// Apply a saved layout
-    pub fn apply_layout(&mut self, layout: &SavedLayout) {
+    pub fn vr_apply_layout(&mut self, layout: &SavedLayout) {
         // Always start with the special ipProtocol column
         let mut cols = vec![ColumnDef::new("ipProtocol", "ip.protocol", "IP", 4)];
         for field in &layout.columns {
@@ -366,7 +366,7 @@ impl App {
         }
         if !cols.is_empty() {
             self.columns = cols;
-            self.sync_session_fields();
+            self.vr_sync_session_fields();
             // Apply sort from layout (resolve to dbField)
             if !layout.sort_field.is_empty() {
                 let sort_db = self.all_fields.iter()
@@ -382,7 +382,7 @@ impl App {
     }
 
     /// Build column_editor_available from all_fields + current columns
-    pub fn build_column_editor(&mut self) {
+    pub fn vr_build_column_editor(&mut self) {
         let enabled: std::collections::HashSet<String> = self.columns.iter().map(|c| c.field.clone()).collect();
         let mut items: Vec<ColumnEditorItem> = Vec::new();
         // Add enabled columns first, in order
@@ -417,7 +417,7 @@ impl App {
     }
 
     /// Apply column editor selections back to columns
-    pub fn apply_column_editor(&mut self) {
+    pub fn vr_apply_column_editor(&mut self) {
         let mut new_cols = Vec::new();
         for item in &self.column_editor_available {
             if !item.enabled { continue; }
@@ -438,12 +438,12 @@ impl App {
         }
         if !new_cols.is_empty() {
             self.columns = new_cols;
-            self.sync_session_fields();
+            self.vr_sync_session_fields();
         }
     }
 
-    pub async fn fetch_layouts(&mut self) {
-        match self.client.get_layouts().await {
+    pub async fn vr_fetch_layouts(&mut self) {
+        match self.client.vr_get_layouts().await {
             Ok(val) => {
                 // Response can be an array of layouts or an object keyed by name
                 let mut layouts = Vec::new();
@@ -481,7 +481,7 @@ impl App {
         }
     }
 
-    pub fn remove_enabled(&self) -> bool {
+    pub fn vr_remove_enabled(&self) -> bool {
         self.user.get("removeEnabled").and_then(|v| v.as_bool()).unwrap_or(false)
     }
 
@@ -496,8 +496,8 @@ impl App {
         }
     }
 
-    pub async fn fetch_fields(&mut self) {
-        match self.client.get_fields().await {
+    pub async fn vr_fetch_fields(&mut self) {
+        match self.client.vr_get_fields().await {
             Ok((fields, date_fields, field_exp_map, field_friendly_map)) => {
                 self.all_fields = fields;
                 self.date_fields = date_fields;
@@ -512,18 +512,18 @@ impl App {
 
     async fn refresh_for_active_tab(&mut self) {
         if self.active_tab == Tab::Arkime {
-            self.request_summary_fetch();
+            self.vr_request_summary_fetch();
         } else {
-            self.fetch_sessions().await;
+            self.vr_fetch_sessions().await;
         }
     }
 
-    pub async fn fetch_sessions(&mut self) {
+    pub async fn vr_fetch_sessions(&mut self) {
         self.status_msg = "Fetching sessions...".into();
         let sort_field = self.session_fields.get(self.sort_column)
             .cloned()
             .unwrap_or_else(|| "firstPacket".into());
-        match self.client.get_sessions(&self.session_fields, &self.expression, self.time_range.date_value(), &sort_field, self.sort_desc, self.graph_size.is_visible(), self.page_start, self.page_size, &self.active_view).await {
+        match self.client.vr_get_sessions(&self.session_fields, &self.expression, self.time_range.date_value(), &sort_field, self.sort_desc, self.graph_size.is_visible(), self.page_start, self.page_size, &self.active_view).await {
             Ok(response) => {
                 if let Some(err) = response.bsq_err.as_ref().or(response.error.as_ref()) {
                     self.status_msg = format!("Expression error: {err}");
@@ -547,7 +547,7 @@ impl App {
         }
     }
 
-    pub async fn open_session_detail(&mut self) {
+    pub async fn vr_open_session_detail(&mut self) {
         if let Some(session) = self.sessions.get(self.selected_session) {
             let id = session.get("id").and_then(|v| v.as_str()).unwrap_or("");
             if id.is_empty() {
@@ -555,7 +555,7 @@ impl App {
                 return;
             }
             self.status_msg = "Fetching session detail...".into();
-            match self.client.get_session(id).await {
+            match self.client.vr_get_session(id).await {
                 Ok(data) => {
                     let total_rows = data.as_object()
                         .map(|o| o.keys().filter(|k| !is_hidden_detail_field(k)).count())
@@ -571,7 +571,7 @@ impl App {
         }
     }
 
-    pub async fn fetch_stats(&mut self) {
+    pub async fn vr_fetch_stats(&mut self) {
         self.status_msg = format!("Fetching {}...", self.stats_tab.name());
         let columns = self.stats_tab.columns();
         let sort_field = columns.get(self.stats_sort_column)
@@ -579,9 +579,9 @@ impl App {
             .unwrap_or(columns[0].0);
 
         let result = match self.stats_tab {
-            StatsTab::Capture => self.client.get_stats(&self.stats_filter, sort_field, self.stats_sort_desc).await,
-            StatsTab::DBStats => self.client.get_esstats(&self.stats_filter, sort_field, self.stats_sort_desc).await,
-            StatsTab::DBIndices => self.client.get_esindices(&self.stats_filter, sort_field, self.stats_sort_desc).await,
+            StatsTab::Capture => self.client.vr_get_stats(&self.stats_filter, sort_field, self.stats_sort_desc).await,
+            StatsTab::DBStats => self.client.vr_get_esstats(&self.stats_filter, sort_field, self.stats_sort_desc).await,
+            StatsTab::DBIndices => self.client.vr_get_esindices(&self.stats_filter, sort_field, self.stats_sort_desc).await,
         };
 
         match result {
@@ -610,14 +610,14 @@ impl App {
         }
     }
 
-    pub fn open_stats_detail(&mut self) {
+    pub fn vr_open_stats_detail(&mut self) {
         if let Some(item) = self.stats_data.get(self.stats_selected) {
             self.stats_detail = Some(StatsDetail { data: item.clone(), scroll: 0, filter: String::new() });
             self.stats_view = StatsView::Detail;
         }
     }
 
-    pub fn request_summary_fetch(&mut self) {
+    pub fn vr_request_summary_fetch(&mut self) {
         if self.summary_field.is_empty() {
             return;
         }
@@ -625,7 +625,7 @@ impl App {
         self.pending_summary_fetch = true;
     }
 
-    pub fn sort_summary_data(&mut self) {
+    pub fn vr_sort_summary_data(&mut self) {
         let desc = self.summary_sort_desc;
         match self.summary_sort {
             SummarySort::Value => self.summary_data.sort_by(|a, b| {
@@ -647,7 +647,7 @@ impl App {
         self.summary_table_state.select(Some(0));
     }
 
-    pub fn filtered_fields(&self) -> Vec<&ArkimeField> {
+    pub fn vr_filtered_fields(&self) -> Vec<&ArkimeField> {
         if self.field_filter.is_empty() {
             self.all_fields.iter().filter(|f| f.is_visible()).collect()
         } else {
@@ -659,8 +659,8 @@ impl App {
         }
     }
 
-    pub async fn fetch_integrations(&mut self) {
-        match self.client.get_integrations().await {
+    pub async fn c3_fetch_integrations(&mut self) {
+        match self.client.c3_get_integrations().await {
             Ok(val) => {
                 let mut integrations = Vec::new();
                 if let Some(obj) = val.get("integrations").and_then(|v| v.as_object()) {
@@ -705,7 +705,7 @@ impl App {
     }
 
     /// Get the list of currently enabled integration names
-    pub fn enabled_integration_names(&self) -> Vec<String> {
+    pub fn c3_enabled_integration_names(&self) -> Vec<String> {
         self.c3_integrations.iter()
             .filter(|i| !self.c3_disabled_integrations.contains(&i.name))
             .map(|i| i.name.clone())

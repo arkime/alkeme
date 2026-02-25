@@ -42,7 +42,7 @@ pub(super) fn draw_action_menu(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let options = menu.options(app.remove_enabled());
+    let options = menu.options(app.vr_remove_enabled());
     let title = match menu.target {
         crate::app::ActionTarget::Single => " Session Action ",
         crate::app::ActionTarget::All => " All Sessions Action ",
