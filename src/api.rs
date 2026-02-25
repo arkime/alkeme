@@ -752,7 +752,14 @@ impl ArkimeClient {
             .form(&[("username", username), ("password", password)])
             .send()
             .await?;
-        if resp.status() != reqwest::StatusCode::FOUND && !resp.status().is_success() {
+        if resp.status() == reqwest::StatusCode::FOUND {
+            // 302 to /auth means bad credentials; 302 to / means success
+            if let Some(loc) = resp.headers().get("location").and_then(|v| v.to_str().ok()) {
+                if loc.contains("/auth") {
+                    anyhow::bail!("Form login failed: invalid username or password");
+                }
+            }
+        } else if !resp.status().is_success() {
             anyhow::bail!("Form login failed: HTTP {}", resp.status());
         }
         // Fetch /api/user/settings to get the ARKIME-COOKIE (needed for CSRF protection)
