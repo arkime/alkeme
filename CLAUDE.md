@@ -1,7 +1,7 @@
 # CLAUDE.md - Alkeme Development Guide
 
 ## What is this?
-Rust/ratatui TUI for Arkime ecosystem. Auto-detects app mode (Viewer, Cont3xt, WISE, Parliament) via `/api/appversion`. Run: `cargo run -- http://localhost:8005`
+Rust/ratatui TUI for Arkime ecosystem. Auto-detects app mode (Viewer, Cont3xt, WISE, Parliament) via `/api/appinfo`. Run: `cargo run -- http://localhost:8005`
 
 ## Build
 ```
@@ -33,11 +33,11 @@ src/
 
 ## App Mode / Multi-App
 
-- At startup, `/api/appversion` is the first API call (after login/cookie)
+- At startup, `/api/appinfo` is the first API call (after login/cookie)
 - `result.app` determines `AppMode`: "viewer" (default if empty), "cont3xt", "wise"/"wiseService", "parliament"
-- If `/api/appversion` fails, exits with "please upgrade to Arkime 6" message
-- `--app <mode>` CLI flag skips appversion call and forces a mode
-- `/api/user` provides user info (separate call)
+- If `/api/appinfo` fails, exits with "please upgrade to Arkime 6" message
+- `--app <mode>` CLI flag skips appinfo call and forces a mode
+- `/api/user` provides user info (from `result.user` in appinfo response)
 - Each mode has its own tab set via `AppMode::tabs()`:
   - **Viewer**: Arkime, Sessions, Stats, Settings (defaults to Sessions)
   - **Cont3xt**: Search, History, Settings (defaults to Search)
@@ -50,8 +50,8 @@ src/
 
 ## Key types
 
-- `App` — All mutable state. Passed as `&mut` to handlers and renderers.
-- `AppMode` — Enum: `Viewer` | `Cont3xt` | `Wise` | `Parliament`. Determined at startup from `/api/appversion` `result.app` or `--app` flag. Has `tabs()`, `default_tab()`, `label()`.
+- `App` — All mutable state. Passed as `&mut` to handlers and renderers. Viewer fields prefixed `vr_`, cont3xt fields prefixed `c3_`. Public methods follow same convention.
+- `AppMode` — Enum: `Viewer` | `Cont3xt` | `Wise` | `Parliament`. Determined at startup from `/api/appinfo` `result.app` or `--app` flag. Has `tabs()`, `default_tab()`, `label()`.
 - `Tab` — Enum: `Arkime` | `Sessions` | `Stats` | `Search` | `History` | `Settings`. Which tabs are available depends on `AppMode::tabs()`.
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
 - `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
@@ -88,6 +88,8 @@ src/
 - `Cont3xtCard` — Card display definition: title, fields (Vec<CardField>).
 - `CardField` — Card field: label, field (dot-joined path), field_type (string/url/date/ms/seconds/array/table/json/dnsRecords), join, fields (sub-fields for tables), defang, field_root, filter_empty.
 - `Cont3xtResult` — Search result from one integration: name, indicator, itype, data (Value), has_data.
+- `Cont3xtLink` — Link definition: name, url, itypes (Vec<String>), info (String). From link groups API.
+- `Cont3xtLinkGroup` — Link group: name, links (Vec<Cont3xtLink>). Fetched from `/api/linkGroup`.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
@@ -134,10 +136,11 @@ src/
 | Shift+← / Shift+→ | Fast scroll detail left/right |
 | Home | Jump to top, reset horizontal scroll |
 | End | Jump to bottom |
-| / or E | Edit search indicator |
+| / or E | Search expression or filter (Enter to apply, Esc to cancel); in session detail, live-filter fields |
 | R | Toggle raw JSON / card view |
 | i | Integration filter popup (Space:toggle, a:all, n:none, !:invert, /:filter) |
 | r | Re-run search |
+| l | Link groups for selected indicator (Enter opens in browser, / filter) |
 | D | HTTP debug log overlay |
 | h / ? | Show help |
 | q | Quit |
@@ -278,6 +281,25 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - `c3_search_total`, `c3_search_itype`, `c3_focus`, `c3_raw_view`
 - `c3_disabled_integrations`, `show_integration_popup`, `integration_popup_selected`, `integration_popup_filter`, `integration_popup_filtering`
 - `c3_searching`, `pending_c3_search`
+- `c3_tree_order` — result indices in tree display order (navigation uses this, not flat c3_results)
+- `c3_indicator_parents` — HashMap<(indicator, itype), Vec<(parent_query, parent_itype)>> for tree nesting
+- `c3_link_groups`, `c3_show_link_popup`, `c3_link_popup_selected`, `c3_link_popup_filter`, `c3_link_popup_filtering`, `c3_link_flat`
+
+### Results tree hierarchy
+- Results panel shows indicators in a tree structure: parent indicators contain child indicators
+- Link messages in streaming response (`{purpose: "link"}`) establish parent-child relationships
+- `c3_indicator_parents` maps (child_indicator, child_itype) → Vec<(parent_query, parent_itype)>
+- Children appear under all their parents (multi-parent support for shared IPs, etc.)
+- Parent indicators without results are injected into the tree (e.g., URL with no integrations)
+- `c3_tree_order` stores result indices in display order; `c3_selected` indexes into this
+- All navigation and lookups go through `c3_tree_order`: `c3_results[c3_tree_order[c3_selected]]`
+
+### Link groups
+- `l` key opens link groups popup filtered by the selected indicator's itype
+- `GET /api/linkGroup` returns `{success, linkGroups: [{name, links: [{name, url, itypes: [], infoField}]}]}`
+- Links filtered by itype match; `${indicator}` substituted in URLs
+- Popup shows grouped links with description panel; Enter opens URL in browser
+- Uses `open` (macOS) or `xdg-open` (Linux) via `std::process::Command`
 
 ## Owl animation
 - Settings tab shows a 90s "Under Construction" page with animated owl
@@ -337,7 +359,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ## User API
 
-- At startup, `/api/user` is called and the response stored as `serde_json::Value` in `App.user`
+- User info comes from `result.user` in the `/api/appinfo` response, stored as `serde_json::Value` in `App.user`
 - `removeEnabled` controls whether "Remove Tags" appears in action menus
 - `App::remove_enabled()` helper checks `user["removeEnabled"]`
 
@@ -417,6 +439,18 @@ All endpoints are relative to base_url. Use `flatten=1` to get dot-notation fiel
 | `/api/valueactions` | GET | Right-click actions | |
 | `/api/reversedns` | GET | Reverse DNS | `ip` |
 | `/api/users` | GET/POST | User management | |
+| `/api/appinfo` | GET | App mode detection + user info | returns `app`, `user` |
+
+### Cont3xt API endpoints
+
+| Endpoint | Method | Purpose | Key params |
+|---|---|---|---|
+| `/api/integration` | GET | List available integrations | returns `{integrations: {...}}` with card definitions |
+| `/api/integration/search` | POST | Search indicators | JSON body: `{query: "..."}`, streaming JSON response |
+| `/api/linkGroup` | GET | List shared link groups | returns `{linkGroups: [...]}` |
+| `/api/views` | GET | List saved views | returns `{data: [...]}` |
+| `/api/view` | POST | Create a view | body: `{name, expression}` |
+| `/api/view/:id` | DELETE | Delete a view | |
 
 Session fields use dot notation with `flatten=1`: `source.ip`, `destination.port`, `http.uri`, `dns.host`, etc.
 Expression syntax: `ip.src == 10.0.0.1 && protocols == tls`
@@ -433,6 +467,13 @@ Facets: `facets=1` adds `graph` object with histogram arrays to response (slower
 - `Block::default().borders(Borders::ALL).title()` / `.title_bottom()` wraps most widgets
 - `Style::default().fg(Color::X).add_modifier(Modifier::BOLD)` for styling
 - Direct buffer writes (`f.buffer_mut()`) for custom graph rendering with block chars
+
+## Naming conventions
+
+- All viewer-specific App fields and public methods use `vr_` prefix (e.g., `vr_sessions`, `vr_fetch_sessions()`)
+- All cont3xt-specific App fields and public methods use `c3_` prefix (e.g., `c3_results`, `c3_fetch_views()`)
+- Private methods and non-App struct fields do not use prefixes
+- Common/shared fields (user, expression, mode, owl animation) have no prefix
 
 ## Crate versions
 ratatui 0.29, crossterm 0.28, tokio 1 (full), reqwest 0.12 (rustls-tls), serde/serde_json 1, anyhow 1, urlencoding 2, digest_auth 0.3, rpassword 7, clap 4, chrono, regex 1

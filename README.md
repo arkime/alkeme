@@ -40,14 +40,15 @@ Select any field to see top values with a bar chart and sortable table showing s
 
 ### Cont3xt Mode
 - **Integration search** — search indicators (IPs, domains, emails, hashes) across all configured integrations
-- **Streaming results** — results appear incrementally as integrations respond
+- **Streaming results** — results appear incrementally as integrations respond; tree hierarchy shows parent-child indicator chains (e.g., URL → DOMAIN → IP)
 - **Card-based rendering** — integration results displayed using server-defined card templates with proper field types (string, date, url, table, array, JSON, DNS records)
 - **Table alignment** — card tables have properly aligned columns with horizontal scroll support
 - **Raw JSON toggle** — press `R` to switch between card view and raw JSON
 - **Integration filter** — press `i` to toggle integrations on/off with bulk actions (all/none/invert)
+- **Link groups** — press `l` to browse applicable link groups for the selected indicator; Enter opens the link URL in your browser
 
 ### Common
-- **Multi-app detection** — auto-detects Viewer, Cont3xt, WISE, or Parliament via `/api/appversion`
+- **Multi-app detection** — auto-detects Viewer, Cont3xt, WISE, or Parliament via `/api/appinfo`
 - **Authentication** — supports no-auth, HTTP Basic, HTTP Digest, and form-based (cookie) authentication
 - **Credential prompting** — prompts for username/password if not provided; `--user username` (no colon) prompts for password only
 - **User permissions** — respects `removeEnabled` from the Arkime user profile
@@ -116,8 +117,8 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `<URL>` | Arkime URL (default: `http://localhost:8005`) |
 | `--auth <MODE>` | Authentication mode: `basic`, `digest`, or `form` |
 | `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`); `user` without colon prompts for password only |
-| `--search <EXPR>` | Default search expression for sessions |
-| `--app <MODE>` | Force app mode: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appversion` detection) |
+| `--search <EXPR>` | Default search expression (viewer) or indicator (cont3xt); auto-submits in cont3xt mode |
+| `--app <MODE>` | Force app mode: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appinfo` detection) |
 
 ## Keybindings
 
@@ -164,9 +165,10 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `Shift+←` / `Shift+→` | Fast scroll detail left / right |
 | `Home` | Jump to top, reset horizontal scroll |
 | `End` | Jump to bottom |
-| `/` | Edit search indicator |
+| `/` or `E` | Edit search indicator |
 | `R` | Toggle raw JSON / card view |
 | `i` | Integration filter (toggle on/off, `a`:all, `n`:none, `!`:invert, `/`:filter) |
+| `l` | Link groups for selected indicator (Enter opens in browser) |
 | `r` | Re-run search |
 | `D` | HTTP debug log |
 | `h` / `?` | Show help |
