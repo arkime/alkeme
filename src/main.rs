@@ -265,7 +265,12 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 let query = app.expression.clone();
                 let url = app.client.cont3xt_search_url();
                 let client = app.client.clone_for_fetch();
-                let json_body = serde_json::json!({"query": query}).to_string();
+                let json_body = if app.c3_no_cache {
+                    app.c3_no_cache = false;
+                    serde_json::json!({"query": query, "skipCache": 1}).to_string()
+                } else {
+                    serde_json::json!({"query": query}).to_string()
+                };
                 let shared = c3_streaming_results.clone();
                 let disabled = app.c3_disabled_integrations.clone();
                 // Clear shared results for new search

@@ -145,6 +145,7 @@ pub struct App {
     pub c3_view_save_name: String,
     pub c3_searching: bool,           // streaming search in progress
     pub c3_pending_search: bool,
+    pub c3_no_cache: bool,
     // Cont3xt link groups
     pub c3_link_groups: Vec<Cont3xtLinkGroup>,
     pub c3_show_link_popup: bool,
@@ -315,6 +316,7 @@ impl App {
             c3_view_save_name: String::new(),
             c3_searching: false,
             c3_pending_search: false,
+            c3_no_cache: false,
             c3_link_groups: Vec::new(),
             c3_show_link_popup: false,
             c3_link_popup_selected: 0,

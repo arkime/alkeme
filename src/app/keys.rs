@@ -2178,6 +2178,10 @@ impl App {
                 self.c3_detail_scroll = 0;
                 self.c3_detail_hscroll = 0;
             }
+            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) && self.active_tab == Tab::Search => {
+                self.c3_no_cache = true;
+                self.c3_request_search();
+            }
             KeyCode::Char('r') if self.active_tab == Tab::Search => {
                 self.c3_request_search();
             }
