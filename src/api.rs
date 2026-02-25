@@ -1713,7 +1713,7 @@ impl ArkimeClient {
         let body = self.authenticated_get_with_cookie(&url).await?;
         let parsed: Value = serde_json::from_str(&body)?;
         let mut groups = Vec::new();
-        if let Some(arr) = parsed.as_array() {
+        if let Some(arr) = parsed.get("linkGroups").and_then(|v| v.as_array()) {
             for g in arr {
                 let name = g.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
                 let links_arr = g.get("links").and_then(|l| l.as_array());

@@ -884,9 +884,12 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
     };
     f.render_widget(Clear, popup_area);
 
+    let (indicator, itype) = app.c3_results.get(app.c3_selected)
+        .map(|r| (r.indicator.as_str(), r.itype.as_str()))
+        .unwrap_or((app.expression.as_str(), app.c3_search_itype.as_str()));
     let title = format!(
         " Links for {} ({}) — {} links ",
-        app.expression, app.c3_search_itype, app.c3_link_flat.len()
+        indicator, itype, app.c3_link_flat.len()
     );
     let filter_line = if app.c3_link_popup_filtering {
         format!("Filter: {}█", app.c3_link_popup_filter)

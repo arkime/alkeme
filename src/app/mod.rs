@@ -769,14 +769,19 @@ impl App {
         }
     }
 
-    /// Build the flat list of links filtered by current itype
+    /// Build the flat list of links filtered by selected result's itype
     pub fn c3_build_link_flat(&mut self) {
-        let itype = &self.c3_search_itype;
+        // Use the selected result's itype and indicator
+        let (itype, indicator) = if let Some(result) = self.c3_results.get(self.c3_selected) {
+            (result.itype.clone(), result.indicator.clone())
+        } else {
+            (self.c3_search_itype.clone(), self.expression.clone())
+        };
         let filter = self.c3_link_popup_filter.to_lowercase();
         self.c3_link_flat.clear();
         for group in &self.c3_link_groups {
             for link in &group.links {
-                if !link.itypes.iter().any(|t| t == itype) {
+                if !link.itypes.iter().any(|t| *t == itype) {
                     continue;
                 }
                 if !filter.is_empty() {
@@ -786,8 +791,7 @@ impl App {
                         continue;
                     }
                 }
-                // Substitute ${indicator} in URL
-                let url = link.url.replace("${indicator}", &self.expression);
+                let url = link.url.replace("${indicator}", &indicator);
                 self.c3_link_flat.push((group.name.clone(), link.name.clone(), url));
             }
         }

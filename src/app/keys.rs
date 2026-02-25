@@ -2190,7 +2190,7 @@ impl App {
                 self.c3_integration_popup_mode = IntegrationPopupMode::Integrations;
             }
             KeyCode::Char('l') if self.active_tab == Tab::Search => {
-                if self.c3_search_itype.is_empty() {
+                if self.c3_results.is_empty() {
                     self.status_msg = "Search for an indicator first".to_string();
                 } else {
                     self.c3_link_popup_selected = 0;
