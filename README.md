@@ -48,7 +48,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Link groups** — press `l` to browse applicable link groups for the selected indicator; Enter opens the link URL in your browser
 
 ### Common
-- **Multi-app detection** — auto-detects Viewer, Cont3xt, WISE, or Parliament via `/api/appinfo`
+- **Multi-app detection** — auto-detects Viewer, Cont3xt, WISE, or Parliament via `/api/appversion`
 - **Authentication** — supports no-auth, HTTP Basic, HTTP Digest, and form-based (cookie) authentication
 - **Credential prompting** — prompts for username/password if not provided; `--user username` (no colon) prompts for password only
 - **User permissions** — respects `removeEnabled` from the Arkime user profile
@@ -118,7 +118,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `--auth <MODE>` | Authentication mode: `basic`, `digest`, or `form` |
 | `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`); `user` without colon prompts for password only |
 | `--search <EXPR>` | Default search expression (viewer) or indicator (cont3xt); auto-submits in cont3xt mode |
-| `--app <MODE>` | Force app mode: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appinfo` detection) |
+| `--app <MODE>` | Force app mode: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appversion` detection) |
 
 ## Keybindings
 

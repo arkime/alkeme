@@ -1,7 +1,7 @@
 # CLAUDE.md - Alkeme Development Guide
 
 ## What is this?
-Rust/ratatui TUI for Arkime ecosystem. Auto-detects app mode (Viewer, Cont3xt, WISE, Parliament) via `/api/appinfo`. Run: `cargo run -- http://localhost:8005`
+Rust/ratatui TUI for Arkime ecosystem. Auto-detects app mode (Viewer, Cont3xt, WISE, Parliament) via `/api/appversion`. Run: `cargo run -- http://localhost:8005`
 
 ## Build
 ```
@@ -33,11 +33,11 @@ src/
 
 ## App Mode / Multi-App
 
-- At startup, `/api/appinfo` is the first API call (after login/cookie)
+- At startup, `/api/appversion` is the first API call (after login/cookie)
 - `result.app` determines `AppMode`: "viewer" (default if empty), "cont3xt", "wise"/"wiseService", "parliament"
-- If `/api/appinfo` fails, exits with "please upgrade to Arkime 6" message
-- `--app <mode>` CLI flag skips appinfo call and forces a mode
-- `/api/user` provides user info (from `result.user` in appinfo response)
+- If `/api/appversion` fails, exits with "please upgrade to Arkime 6" message
+- `--app <mode>` CLI flag skips appversion call and forces a mode
+- `/api/user` provides user info (from `result.user` in appversion response)
 - Each mode has its own tab set via `AppMode::tabs()`:
   - **Viewer**: Arkime, Sessions, Stats, Settings (defaults to Sessions)
   - **Cont3xt**: Search, History, Settings (defaults to Search)
@@ -51,7 +51,7 @@ src/
 ## Key types
 
 - `App` — All mutable state. Passed as `&mut` to handlers and renderers. Viewer fields prefixed `vr_`, cont3xt fields prefixed `c3_`. Public methods follow same convention.
-- `AppMode` — Enum: `Viewer` | `Cont3xt` | `Wise` | `Parliament`. Determined at startup from `/api/appinfo` `result.app` or `--app` flag. Has `tabs()`, `default_tab()`, `label()`.
+- `AppMode` — Enum: `Viewer` | `Cont3xt` | `Wise` | `Parliament`. Determined at startup from `/api/appversion` `result.app` or `--app` flag. Has `tabs()`, `default_tab()`, `label()`.
 - `Tab` — Enum: `Arkime` | `Sessions` | `Stats` | `Search` | `History` | `Settings`. Which tabs are available depends on `AppMode::tabs()`.
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
 - `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
@@ -359,7 +359,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ## User API
 
-- User info comes from `result.user` in the `/api/appinfo` response, stored as `serde_json::Value` in `App.user`
+- User info comes from `result.user` in the `/api/appversion` response, stored as `serde_json::Value` in `App.user`
 - `removeEnabled` controls whether "Remove Tags" appears in action menus
 - `App::remove_enabled()` helper checks `user["removeEnabled"]`
 
@@ -439,7 +439,7 @@ All endpoints are relative to base_url. Use `flatten=1` to get dot-notation fiel
 | `/api/valueactions` | GET | Right-click actions | |
 | `/api/reversedns` | GET | Reverse DNS | `ip` |
 | `/api/users` | GET/POST | User management | |
-| `/api/appinfo` | GET | App mode detection + user info | returns `app`, `user` |
+| `/api/appversion` | GET | App mode detection + user info | returns `app`, `user` |
 
 ### Cont3xt API endpoints
 
