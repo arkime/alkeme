@@ -1888,7 +1888,7 @@ impl App {
                     }
                 }
                 KeyCode::Enter => {
-                    if let Some((_, _, url)) = self.c3_link_flat.get(self.c3_link_popup_selected) {
+                    if let Some((_, _, url, _)) = self.c3_link_flat.get(self.c3_link_popup_selected) {
                         let url = url.clone();
                         #[cfg(target_os = "macos")]
                         { let _ = std::process::Command::new("open").arg(&url).spawn(); }

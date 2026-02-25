@@ -151,6 +151,7 @@ pub struct Cont3xtLink {
     pub name: String,
     pub url: String,
     pub itypes: Vec<String>,
+    pub info: String,
 }
 
 /// A link group from /api/linkGroup
@@ -1727,7 +1728,8 @@ impl ArkimeClient {
                             .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
                             .unwrap_or_default();
                         if lname == "----------" { continue; } // skip separators
-                        links.push(Cont3xtLink { name: lname, url: lurl, itypes });
+                        let info = l.get("infoField").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                        links.push(Cont3xtLink { name: lname, url: lurl, itypes, info });
                     }
                 }
                 if !links.is_empty() {

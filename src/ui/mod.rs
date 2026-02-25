@@ -932,8 +932,25 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    // Reserve bottom for selected link description
+    let selected_info = app.c3_link_flat.get(app.c3_link_popup_selected)
+        .map(|(_, _, url, info)| (url.clone(), info.clone()))
+        .unwrap_or_default();
+    let has_desc = !selected_info.0.is_empty();
+    let desc_height = if has_desc { 3u16 } else { 0 };
+    let list_area = Rect {
+        x: content_area.x, y: content_area.y,
+        width: content_area.width,
+        height: content_area.height.saturating_sub(desc_height),
+    };
+    let desc_area = Rect {
+        x: content_area.x, y: list_area.y + list_area.height,
+        width: content_area.width,
+        height: desc_height.min(content_area.height),
+    };
+
     // Scrolling: keep selected in view
-    let visible = content_area.height as usize;
+    let visible = list_area.height as usize;
     let selected = app.c3_link_popup_selected;
     let scroll_offset = if selected >= visible {
         selected - visible + 1
@@ -943,7 +960,7 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
 
     let mut lines: Vec<Line> = Vec::new();
     let mut last_group = String::new();
-    for (i, (group, name, url)) in app.c3_link_flat.iter().enumerate().skip(scroll_offset) {
+    for (i, (group, name, url, _info)) in app.c3_link_flat.iter().enumerate().skip(scroll_offset) {
         if lines.len() >= visible {
             break;
         }
@@ -985,7 +1002,29 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
         ]));
     }
 
-    f.render_widget(Paragraph::new(lines), content_area);
+    f.render_widget(Paragraph::new(lines), list_area);
+
+    // Render description of selected link
+    if has_desc {
+        let mut desc_lines: Vec<Line> = Vec::new();
+        desc_lines.push(Line::from(Span::styled(
+            "─".repeat(desc_area.width as usize),
+            Style::default().fg(Color::DarkGray),
+        )));
+        let url_line = format!("URL: {}", selected_info.0);
+        let w = desc_area.width as usize;
+        desc_lines.push(Line::from(Span::styled(
+            if url_line.len() > w { format!("{}…", &url_line[..w.saturating_sub(1)]) } else { url_line },
+            Style::default().fg(Color::Gray),
+        )));
+        if !selected_info.1.is_empty() {
+            desc_lines.push(Line::from(Span::styled(
+                selected_info.1.clone(),
+                Style::default().fg(Color::Green),
+            )));
+        }
+        f.render_widget(Paragraph::new(desc_lines), desc_area);
+    }
 }
 
 fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {

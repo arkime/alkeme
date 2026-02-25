@@ -146,7 +146,7 @@ pub struct App {
     pub c3_link_popup_selected: usize,
     pub c3_link_popup_filter: String,
     pub c3_link_popup_filtering: bool,
-    pub c3_link_flat: Vec<(String, String, String)>, // (group_name, link_name, url) filtered by itype
+    pub c3_link_flat: Vec<(String, String, String, String)>, // (group_name, link_name, url, info) filtered by itype
     // Cont3xt stats
     pub c3_stats_tab: C3StatsTab,
     pub c3_stats_data: Vec<serde_json::Value>,       // integration stats
@@ -792,7 +792,7 @@ impl App {
                     }
                 }
                 let url = link.url.replace("${indicator}", &indicator);
-                self.c3_link_flat.push((group.name.clone(), link.name.clone(), url));
+                self.c3_link_flat.push((group.name.clone(), link.name.clone(), url, link.info.clone()));
             }
         }
         if self.c3_link_popup_selected >= self.c3_link_flat.len() {
