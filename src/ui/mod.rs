@@ -322,9 +322,13 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     let mut children_of: std::collections::HashMap<(String, String), Vec<(String, String)>> = std::collections::HashMap::new();
     let mut has_parent: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
     for key in &indicator_order {
-        if let Some(parent) = app.c3_indicator_parents.get(key) {
-            if indicator_results.contains_key(parent) || indicator_order.contains(parent) {
-                children_of.entry(parent.clone()).or_default().push(key.clone());
+        // c3_indicator_parents is keyed as (indicator, itype), convert to match our (itype, indicator)
+        let lookup_key = (key.1.clone(), key.0.clone());
+        if let Some(parent) = app.c3_indicator_parents.get(&lookup_key) {
+            // parent is (parent_query, parent_itype), convert to (itype, indicator)
+            let parent_key = (parent.1.clone(), parent.0.clone());
+            if indicator_results.contains_key(&parent_key) || indicator_order.contains(&parent_key) {
+                children_of.entry(parent_key).or_default().push(key.clone());
                 has_parent.insert(key.clone());
             }
         }
