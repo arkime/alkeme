@@ -292,10 +292,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                                     .and_then(|v| v.as_str()).unwrap_or("").to_string();
                                 let parent_itype = item.data.get("_link_parent_itype")
                                     .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                app.c3_indicator_parents.insert(
+                                app.c3_indicator_parents.entry(
                                     (item.indicator.clone(), item.itype.clone()),
-                                    (parent_query, parent_itype),
-                                );
+                                ).or_default().push((parent_query, parent_itype));
                             } else {
                                 app.c3_results.push(item.clone());
                             }
@@ -320,10 +319,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                                     .and_then(|v| v.as_str()).unwrap_or("").to_string();
                                 let parent_itype = item.data.get("_link_parent_itype")
                                     .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                app.c3_indicator_parents.insert(
+                                app.c3_indicator_parents.entry(
                                     (item.indicator.clone(), item.itype.clone()),
-                                    (parent_query, parent_itype),
-                                );
+                                ).or_default().push((parent_query, parent_itype));
                             } else {
                                 app.c3_results.push(item.clone());
                             }

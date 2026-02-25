@@ -127,8 +127,8 @@ pub struct App {
     pub c3_detail_hscroll: u16,       // horizontal scroll in detail pane
     pub c3_search_total: u64,
     pub c3_search_itype: String,
-    // indicator parent map: (child_query, child_itype) -> (parent_query, parent_itype)
-    pub c3_indicator_parents: HashMap<(String, String), (String, String)>,
+    // indicator parent map: (child_indicator, child_itype) -> [(parent_query, parent_itype), ...]
+    pub c3_indicator_parents: HashMap<(String, String), Vec<(String, String)>>,
     pub c3_focus: Cont3xtFocus,       // which pane has focus
     pub c3_raw_view: bool,            // show raw JSON instead of card
     pub c3_disabled_integrations: std::collections::HashSet<String>, // user-toggled off
