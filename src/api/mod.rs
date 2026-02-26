@@ -1049,6 +1049,16 @@ impl ArkimeClient {
     async fn okta_idx_login(&self, okta_base: &str, _from_uri: &str, page_state_token: &str, username: &str, password: &str) -> Result<Option<String>> {
         // The Okta Sign-In Widget on Identity Engine uses the page's stateToken
         // directly with /idp/idx/introspect (no interact call needed).
+
+        // Helper: build IDX request with proper headers matching the Okta Sign-In Widget
+        let idx_post = |url: &str, body: serde_json::Value, accept: Option<&str>| {
+            self.client.post(url)
+                .header("Content-Type", "application/json")
+                .header("Accept", accept.unwrap_or("application/ion+json; okta-version=1.0.0"))
+                .header("X-Okta-User-Agent-Extended", "okta-auth-js/7.14.0")
+                .body(body.to_string())
+        };
+        // directly with /idp/idx/introspect (no interact call needed).
         // This works even when the app doesn't have interaction_code grant type.
 
         // Step 1: POST /idp/idx/introspect with the page's stateToken
@@ -1058,6 +1068,7 @@ impl ArkimeClient {
         let resp = self.client.post(&introspect_url)
             .header("Content-Type", "application/ion+json; okta-version=1.0.0")
             .header("Accept", "application/ion+json; okta-version=1.0.0")
+            .header("X-Okta-User-Agent-Extended", "okta-auth-js/7.14.0")
             .body(serde_json::json!({"stateToken": page_state_token}).to_string())
             .send()
             .await?;
@@ -1078,23 +1089,24 @@ impl ArkimeClient {
             eprintln!("  IDX: available remediations: {:?}", names);
         }
 
-        // Step 2: POST /idp/idx/identify (submit username)
-        // Use the href from the "identify" remediation if available
-        let identify_url = introspect_resp["remediation"]["value"].as_array()
-            .and_then(|rems| rems.iter().find(|r| r["name"].as_str() == Some("identify")))
+        // Step 2: POST /idp/idx/identify (submit username + password)
+        // Use the href and accepts from the "identify" remediation
+        let identify_rem = introspect_resp["remediation"]["value"].as_array()
+            .and_then(|rems| rems.iter().find(|r| r["name"].as_str() == Some("identify")));
+        let identify_url = identify_rem
             .and_then(|r| r["href"].as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("{}/idp/idx/identify", okta_base));
+        let identify_accepts = identify_rem
+            .and_then(|r| r["accepts"].as_str())
+            .map(|s| s.to_string());
         eprintln!("  IDX: identify → {}", identify_url);
         let start = Instant::now();
-        let resp = self.client.post(&identify_url)
-            .header("Content-Type", "application/ion+json; okta-version=1.0.0")
-            .header("Accept", "application/ion+json; okta-version=1.0.0")
-            .body(serde_json::json!({
-                "identifier": username,
-                "credentials": {"passcode": password},
-                "stateHandle": state_handle,
-            }).to_string())
+        let resp = idx_post(&identify_url, serde_json::json!({
+            "identifier": username,
+            "credentials": {"passcode": password},
+            "stateHandle": state_handle,
+        }), identify_accepts.as_deref())
             .send()
             .await?;
         let status = resp.status().as_u16();
@@ -1118,13 +1130,10 @@ impl ArkimeClient {
         let (identify_resp, identify_included_password) = if status == 400 {
             eprintln!("  IDX: identify with password failed, retrying without...");
             let start = Instant::now();
-            let resp = self.client.post(&identify_url)
-                .header("Content-Type", "application/ion+json; okta-version=1.0.0")
-                .header("Accept", "application/ion+json; okta-version=1.0.0")
-                .body(serde_json::json!({
-                    "identifier": username,
-                    "stateHandle": state_handle,
-                }).to_string())
+            let resp = idx_post(&identify_url, serde_json::json!({
+                "identifier": username,
+                "stateHandle": state_handle,
+            }), identify_accepts.as_deref())
                 .send()
                 .await?;
             let st = resp.status().as_u16();
@@ -1202,10 +1211,8 @@ impl ArkimeClient {
                         }
 
                         let start = Instant::now();
-                        let resp = self.client.post(select_url)
-                            .header("Content-Type", "application/ion+json; okta-version=1.0.0")
-                            .header("Accept", "application/ion+json; okta-version=1.0.0")
-                            .body(select_body.to_string())
+                        let select_accepts = select_auth["accepts"].as_str();
+                        let resp = idx_post(select_url, select_body, select_accepts)
                             .send()
                             .await?;
                         let status = resp.status().as_u16();
@@ -1225,23 +1232,22 @@ impl ArkimeClient {
 
             // Submit password via challenge/answer (only if not already included in identify)
             if !identify_included_password {
-                let challenge_url = current_resp["remediation"]["value"].as_array()
+                let challenge_rem = current_resp["remediation"]["value"].as_array()
                     .and_then(|rems| rems.iter().find(|r| {
                         let name = r["name"].as_str().unwrap_or("");
                         name == "challenge-authenticator" || name == "answer"
-                    }))
+                    }));
+                let challenge_url = challenge_rem
                     .and_then(|r| r["href"].as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| format!("{}/idp/idx/challenge/answer", okta_base));
+                let challenge_accepts = challenge_rem.and_then(|r| r["accepts"].as_str()).map(|s| s.to_string());
                 eprintln!("  IDX: challenge/answer → {}", challenge_url);
                 let start = Instant::now();
-                let resp = self.client.post(&challenge_url)
-                    .header("Content-Type", "application/ion+json; okta-version=1.0.0")
-                    .header("Accept", "application/ion+json; okta-version=1.0.0")
-                    .body(serde_json::json!({
-                        "credentials": {"passcode": password},
-                        "stateHandle": state_handle,
-                    }).to_string())
+                let resp = idx_post(&challenge_url, serde_json::json!({
+                    "credentials": {"passcode": password},
+                    "stateHandle": state_handle,
+                }), challenge_accepts.as_deref())
                     .send()
                     .await?;
                 let status = resp.status().as_u16();
