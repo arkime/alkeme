@@ -1132,9 +1132,9 @@ impl ArkimeClient {
         let body = resp.text().await?;
         log_http(&self.http_log, "POST", &identify_url, Some(format!("identifier={}", username)), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
 
-        // IDX returns 401 with a full response body — parse it for detailed errors
+        // IDX returns 401 with a full response body — dump entire response
         if status == 401 {
-            eprintln!("  IDX identify 401 response (first 500 chars): {}", &body[..body.len().min(500)]);
+            eprintln!("  IDX identify 401 full response:\n{}", body);
         }
 
         if status != 200 && status != 400 {
