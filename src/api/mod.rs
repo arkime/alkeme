@@ -895,6 +895,7 @@ impl ArkimeClient {
 
         // Step 1: Navigate to app URL, following redirects to Okta login page
         let (auth_url, resp) = self.follow_redirects(&self.base_url.clone(), "GET").await?;
+        eprintln!("Okta login page: {}", auth_url);
         let html_body = resp.text().await?;
 
         // Step 2: Extract stateToken and config from page
@@ -905,6 +906,7 @@ impl ArkimeClient {
             .map(|m| m.as_str().to_string())
             .ok_or_else(|| anyhow::anyhow!("Okta login: could not find stateToken in page ({})", auth_url))?;
         let state_token = decode_js_escapes(&raw_state_token);
+        eprintln!("stateToken length: {} (raw: {}), starts: {}...", state_token.len(), raw_state_token.len(), &state_token[..state_token.len().min(40)]);
 
         // Extract modelDataBag JSON for baseUrl and labels
         let model_data = regex::Regex::new(r"var modelDataBag = '([^']+)'")
