@@ -999,8 +999,17 @@ impl ArkimeClient {
                 }
                 Ok(Some(token)) => token,
                 Err(idx_err) => {
+                    let err_str = idx_err.to_string();
+                    // Only fall back to classic if IDX had a protocol/setup error,
+                    // NOT if the user's credentials were actually rejected
+                    let is_auth_failure = err_str.contains("Authentication failed")
+                        || err_str.contains("Unable to sign in")
+                        || err_str.contains("locked")
+                        || err_str.contains("suspended");
+                    if is_auth_failure {
+                        anyhow::bail!("{}", err_str);
+                    }
                     eprintln!("IDX flow failed ({}), trying classic authn...", idx_err);
-                    // Fall back to classic /api/v1/authn
                     self.okta_classic_authn(&okta_base, &username, &password, &state_token).await?
                 }
             }
@@ -1092,9 +1101,16 @@ impl ArkimeClient {
         let body = resp.text().await?;
         log_http(&self.http_log, "POST", &identify_url, Some(format!("identifier={}", username)), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
         if status != 200 && status != 400 {
-            let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
-                .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
-                .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+            let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
+            let err_msg = parsed.as_ref()
+                .and_then(|v| {
+                    // IDX errors can be in messages.value[].message or at top level
+                    v["messages"]["value"][0]["message"].as_str()
+                        .or_else(|| v["errorSummary"].as_str())
+                        .map(|s| s.to_string())
+                })
+                .unwrap_or_else(|| body[..body.len().min(300)].to_string());
+            eprintln!("  IDX identify failed (HTTP {}): {}", status, err_msg);
             anyhow::bail!("Okta login failed: {}", err_msg);
         }
 
