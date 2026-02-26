@@ -55,6 +55,29 @@ pub(crate) fn log_http(log: &HttpLog, method: &str, url: &str, post_data: Option
     }
 }
 
+/// Decode JavaScript string escapes (\xNN hex codes) commonly found in Okta pages
+fn decode_js_escapes(raw: &str) -> String {
+    let mut decoded = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.next() {
+                Some('x') => {
+                    let hex: String = chars.by_ref().take(2).collect();
+                    if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                        decoded.push(byte as char);
+                    }
+                }
+                Some(other) => { decoded.push('\\'); decoded.push(other); }
+                None => { decoded.push('\\'); }
+            }
+        } else {
+            decoded.push(ch);
+        }
+    }
+    decoded
+}
+
 #[derive(Deserialize, Clone, Default)]
 pub struct GraphData {
     #[serde(default, rename = "sessionsHisto")]
@@ -874,41 +897,20 @@ impl ArkimeClient {
         let html_body = resp.text().await?;
 
         // Step 2: Extract stateToken and config from page
-        let state_token = regex::Regex::new(r"var stateToken = '([^']+)'")
+        let raw_state_token = regex::Regex::new(r"var stateToken = '([^']+)'")
             .unwrap()
             .captures(&html_body)
             .and_then(|c| c.get(1))
             .map(|m| m.as_str().to_string())
             .ok_or_else(|| anyhow::anyhow!("Okta login: could not find stateToken in page ({})", auth_url))?;
+        let state_token = decode_js_escapes(&raw_state_token);
 
         // Extract modelDataBag JSON for baseUrl and labels
         let model_data = regex::Regex::new(r"var modelDataBag = '([^']+)'")
             .unwrap()
             .captures(&html_body)
             .and_then(|c| c.get(1))
-            .map(|m| {
-                // Decode \xNN escapes
-                let raw = m.as_str();
-                let mut decoded = String::new();
-                let mut chars = raw.chars();
-                while let Some(ch) = chars.next() {
-                    if ch == '\\' {
-                        match chars.next() {
-                            Some('x') => {
-                                let hex: String = chars.by_ref().take(2).collect();
-                                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                                    decoded.push(byte as char);
-                                }
-                            }
-                            Some(other) => { decoded.push('\\'); decoded.push(other); }
-                            None => { decoded.push('\\'); }
-                        }
-                    } else {
-                        decoded.push(ch);
-                    }
-                }
-                decoded
-            });
+            .map(|m| decode_js_escapes(m.as_str()));
 
         let (okta_base_url, username_label, password_label, app_name, brand_name) = if let Some(ref json_str) = model_data {
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
@@ -969,6 +971,7 @@ impl ArkimeClient {
 
         // Step 4: POST to Okta authn API
         let authn_url = format!("{}/api/v1/authn", okta_base);
+        eprintln!("Authenticating as '{}' via {}", username, authn_url);
         let authn_body = serde_json::json!({
             "username": username,
             "password": password,
@@ -988,10 +991,18 @@ impl ArkimeClient {
         log_http(&self.http_log, "POST", &authn_url, Some("username=***&password=***".into()), status, first_byte, last_byte, Some(&body[..body.len().min(200)]));
 
         if status == 401 {
-            anyhow::bail!("Okta login failed: invalid credentials");
+            let err_msg = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| v["errorSummary"].as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+            anyhow::bail!("Okta login failed: {}", err_msg);
         }
         if status != 200 {
-            anyhow::bail!("Okta login failed: HTTP {} — {}", status, &body[..body.len().min(200)]);
+            let err_msg = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| v["errorSummary"].as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+            anyhow::bail!("Okta login failed: HTTP {} — {}", status, err_msg);
         }
 
         let authn_resp: serde_json::Value = serde_json::from_str(&body)?;
