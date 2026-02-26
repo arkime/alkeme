@@ -28,7 +28,7 @@ struct Cli {
     url: String,
 
     /// Authentication mode
-    #[arg(long, value_parser = ["basic", "digest", "form"])]
+    #[arg(long, value_parser = ["basic", "digest", "form", "web"])]
     auth: Option<String>,
 
     /// Credentials as user:pass (prompts if omitted with --auth)
@@ -52,6 +52,7 @@ async fn main() -> Result<()> {
         Some("basic") => api::AuthMode::Basic,
         Some("digest") => api::AuthMode::Digest,
         Some("form") => api::AuthMode::Form,
+        Some("web") => api::AuthMode::Web,
         _ => api::AuthMode::None,
     };
 

@@ -63,7 +63,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 
 ### Common
 - **Multi-app detection** — auto-detects Viewer, Cont3xt, WISE, or Parliament via `/api/appversion`
-- **Authentication** — supports no-auth, HTTP Basic, HTTP Digest, and form-based (cookie) authentication
+- **Authentication** — supports no-auth, HTTP Basic, HTTP Digest, form-based (cookie), and web (HTML form parsing with redirect support) authentication
 - **Credential prompting** — prompts for username/password if not provided; `--user username` (no colon) prompts for password only
 - **User permissions** — respects `removeEnabled` from the Arkime user profile
 - **HTTP debug log** — press `D` to view all HTTP requests with timing, status, and response bodies for errors
@@ -117,6 +117,9 @@ alkeme http://viewer.example.com:8005 --auth digest --user admin:password
 # With form-based authentication
 alkeme http://viewer.example.com:8005 --auth form --user admin:password
 
+# With web authentication (parses HTML login forms, supports SSO redirects)
+alkeme http://viewer.example.com:8005 --auth web --user admin:password
+
 # With basic authentication (prompts for credentials)
 alkeme http://viewer.example.com:8005 --auth basic
 
@@ -129,7 +132,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | Option | Description |
 |---|---|
 | `<URL>` | Arkime URL (default: `http://localhost:8005`) |
-| `--auth <MODE>` | Authentication mode: `basic`, `digest`, or `form` |
+| `--auth <MODE>` | Authentication mode: `basic`, `digest`, `form`, or `web` |
 | `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`); `user` without colon prompts for password only |
 | `--search <EXPR>` | Default search expression (viewer) or indicator (cont3xt); auto-submits in cont3xt mode |
 | `--app <MODE>` | Force app mode: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appversion` detection) |

@@ -108,6 +108,7 @@ pub enum AuthMode {
     Basic,
     Digest,
     Form,
+    Web,
 }
 
 #[derive(Clone)]
@@ -332,7 +333,7 @@ impl FetchClient {
                 log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
-            AuthMode::Form => {
+            AuthMode::Form | AuthMode::Web => {
                 let mut req = self.client.get(url);
                 if let Some(ref cookie) = self.arkime_cookie {
                     req = req.header("Cookie", cookie.as_str());
@@ -416,7 +417,7 @@ impl FetchClient {
                 log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
-            AuthMode::Form => {
+            AuthMode::Form | AuthMode::Web => {
                 let mut req = self.client.post(url).form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
                     req = req.header(self.cookie_header_name, cookie.as_str());
@@ -475,11 +476,11 @@ impl FetchClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.post(url).header("Authorization", auth_header)
             }
-            AuthMode::Form => self.client.post(url),
+            AuthMode::Form | AuthMode::Web => self.client.post(url),
         };
         req = req.header("Content-Type", "application/json").body(json_body.to_string());
         if let Some(ref cookie) = self.arkime_cookie {
-            if self.auth_mode != AuthMode::Form {
+            if self.auth_mode != AuthMode::Form && self.auth_mode != AuthMode::Web {
                 req = req.header("Cookie", cookie.as_str());
             }
             req = req.header(self.cookie_header_name, cookie.as_str());
@@ -510,7 +511,7 @@ impl ArkimeClient {
     pub fn new(base_url: &str, auth_mode: AuthMode, username: Option<String>, password: Option<String>) -> Self {
         let mut builder = Client::builder()
             .danger_accept_invalid_certs(true);
-        if auth_mode == AuthMode::Form {
+        if auth_mode == AuthMode::Form || auth_mode == AuthMode::Web {
             builder = builder.cookie_store(true).redirect(reqwest::redirect::Policy::none());
         }
         Self {
@@ -555,6 +556,9 @@ impl ArkimeClient {
     }
 
     pub async fn login(&mut self) -> Result<()> {
+        if self.auth_mode == AuthMode::Web {
+            return self.web_login().await;
+        }
         if self.auth_mode != AuthMode::Form || self.logged_in {
             return Ok(());
         }
@@ -589,6 +593,186 @@ impl ArkimeClient {
         }
         self.extract_cookie(&resp);
         log_http(&self.http_log, "GET", &settings_url, None, status2, first_byte2, start2.elapsed().as_millis() as u64, None);
+        self.logged_in = true;
+        Ok(())
+    }
+
+    /// Follow redirects manually, logging each hop. Returns final (url, response).
+    async fn follow_redirects(&self, initial_url: &str, method: &str) -> Result<(String, reqwest::Response)> {
+        let max_redirects = 10;
+        let mut url = initial_url.to_string();
+        for _ in 0..max_redirects {
+            let start = Instant::now();
+            let resp = self.client.get(&url).send().await?;
+            let first_byte = start.elapsed().as_millis() as u64;
+            let status = resp.status().as_u16();
+            log_http(&self.http_log, method, &url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
+
+            if resp.status().is_redirection() {
+                let location = resp.headers().get("location")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                if location.is_empty() {
+                    anyhow::bail!("Redirect with no Location header from {}", url);
+                }
+                url = if location.starts_with("http") {
+                    location
+                } else {
+                    // Resolve relative to current URL
+                    let parsed = reqwest::Url::parse(&url)?;
+                    parsed.join(&location)?.to_string()
+                };
+            } else {
+                return Ok((url, resp));
+            }
+        }
+        anyhow::bail!("Too many redirects (>{}) following {}", max_redirects, initial_url)
+    }
+
+    /// Web auth: fetch the login page, parse the HTML form, fill in credentials, and submit.
+    /// Supports multi-hop redirects for enterprise SSO (e.g., app → auth system → app).
+    async fn web_login(&mut self) -> Result<()> {
+        if self.logged_in {
+            return Ok(());
+        }
+        use scraper::{Html, Selector};
+
+        let username = self.username.as_deref().unwrap_or("");
+        let password = self.password.as_deref().unwrap_or("");
+
+        // Step 1: Navigate to base URL, following redirects to find the login page
+        let (auth_url, resp) = self.follow_redirects(&self.base_url.clone(), "GET").await?;
+        let html_body = resp.text().await?;
+
+        // Step 2: Parse the HTML to find the first <form> with a password field
+        let document = Html::parse_document(&html_body);
+        let form_sel = Selector::parse("form").unwrap();
+        let input_sel = Selector::parse("input").unwrap();
+
+        let form = document.select(&form_sel)
+            .find(|f| {
+                // Prefer forms that have a password input
+                f.select(&input_sel).any(|i| {
+                    i.value().attr("type").unwrap_or("").eq_ignore_ascii_case("password")
+                })
+            })
+            .or_else(|| document.select(&form_sel).next())
+            .ok_or_else(|| anyhow::anyhow!("Web login: no <form> found on auth page ({})", auth_url))?;
+
+        // Get form action URL
+        let action = form.value().attr("action").unwrap_or("");
+        let method = form.value().attr("method").unwrap_or("post").to_lowercase();
+        if method != "post" {
+            anyhow::bail!("Web login: form method is '{}', expected 'post'", method);
+        }
+
+        let submit_url = if action.is_empty() {
+            // Empty action means submit to the same URL
+            auth_url.clone()
+        } else if action.starts_with("http") {
+            action.to_string()
+        } else {
+            // Resolve relative/absolute path against the auth page URL
+            let parsed = reqwest::Url::parse(&auth_url)?;
+            parsed.join(action)?.to_string()
+        };
+
+        // Step 3: Collect all input fields and fill in credentials
+        let mut form_data: Vec<(String, String)> = Vec::new();
+        let mut found_user = false;
+        let mut found_pass = false;
+
+        for input in form.select(&input_sel) {
+            let name = input.value().attr("name").unwrap_or("").to_string();
+            let input_type = input.value().attr("type").unwrap_or("text").to_lowercase();
+            let value = input.value().attr("value").unwrap_or("").to_string();
+
+            if name.is_empty() {
+                continue;
+            }
+
+            match input_type.as_str() {
+                "password" => {
+                    form_data.push((name, password.to_string()));
+                    found_pass = true;
+                }
+                "submit" | "button" | "image" => {}
+                "hidden" => {
+                    form_data.push((name, value));
+                }
+                _ => {
+                    if !found_user {
+                        form_data.push((name, username.to_string()));
+                        found_user = true;
+                    } else {
+                        form_data.push((name, value));
+                    }
+                }
+            }
+        }
+
+        if !found_user || !found_pass {
+            anyhow::bail!("Web login: could not find username/password fields in form (found_user={}, found_pass={})", found_user, found_pass);
+        }
+
+        // Step 4: Submit the form
+        let start = Instant::now();
+        let resp = self.client.post(&submit_url)
+            .form(&form_data)
+            .send()
+            .await?;
+        let first_byte = start.elapsed().as_millis() as u64;
+        let status = resp.status().as_u16();
+        log_http(&self.http_log, "POST", &submit_url, Some("username=***&password=***".into()), status, first_byte, start.elapsed().as_millis() as u64, None);
+
+        // Step 5: Follow post-login redirects (auth system → app callback → app)
+        if resp.status().is_redirection() {
+            let location = resp.headers().get("location")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+
+            if location.is_empty() {
+                anyhow::bail!("Web login: POST redirect with no Location header");
+            }
+
+            // Check if redirected back to login page (auth failure)
+            if location.contains("/auth") || location.contains("/login") {
+                let parsed_loc = reqwest::Url::parse(&location)
+                    .or_else(|_| reqwest::Url::parse(&submit_url).and_then(|u| u.join(&location)));
+                let loc_path = parsed_loc.map(|u| u.path().to_string()).unwrap_or(location.clone());
+                let auth_parsed = reqwest::Url::parse(&auth_url).ok();
+                let auth_path = auth_parsed.as_ref().map(|u| u.path()).unwrap_or("");
+                if loc_path == auth_path {
+                    anyhow::bail!("Web login failed: redirected back to login page (invalid credentials?)");
+                }
+            }
+
+            // Follow the redirect chain back to the app
+            let next_url = if location.starts_with("http") {
+                location
+            } else {
+                let parsed = reqwest::Url::parse(&submit_url)?;
+                parsed.join(&location)?.to_string()
+            };
+            self.follow_redirects(&next_url, "GET").await?;
+        } else if !resp.status().is_success() {
+            anyhow::bail!("Web login failed: HTTP {}", status);
+        }
+
+        // Step 6: Verify session is established
+        let verify_url = format!("{}/api/appversion", self.base_url);
+        let start2 = Instant::now();
+        let resp = self.client.get(&verify_url).send().await?;
+        let first_byte2 = start2.elapsed().as_millis() as u64;
+        let status2 = resp.status().as_u16();
+        if resp.status().is_redirection() || !resp.status().is_success() {
+            log_http(&self.http_log, "GET", &verify_url, None, status2, first_byte2, start2.elapsed().as_millis() as u64, None);
+            anyhow::bail!("Web login failed: session not established (HTTP {} on appversion fetch)", status2);
+        }
+        self.extract_cookie(&resp);
+        log_http(&self.http_log, "GET", &verify_url, None, status2, first_byte2, start2.elapsed().as_millis() as u64, None);
         self.logged_in = true;
         Ok(())
     }
@@ -676,7 +860,7 @@ impl ArkimeClient {
                 log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
-            AuthMode::Form => {
+            AuthMode::Form | AuthMode::Web => {
                 let resp = self.client.get(url).send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
@@ -777,7 +961,7 @@ impl ArkimeClient {
                 log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
-            AuthMode::Form => {
+            AuthMode::Form | AuthMode::Web => {
                 let mut req = self.client.get(url);
                 if let Some(ref cookie) = self.arkime_cookie {
                     req = req.header(self.cookie_header_name, cookie);
@@ -886,7 +1070,7 @@ impl ArkimeClient {
                 log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
-            AuthMode::Form => {
+            AuthMode::Form | AuthMode::Web => {
                 let mut req = self.client.post(url).form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
                     req = req.header(self.cookie_header_name, cookie);
@@ -988,7 +1172,7 @@ impl ArkimeClient {
                 log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
                 Ok(bytes)
             }
-            AuthMode::Form => {
+            AuthMode::Form | AuthMode::Web => {
                 let resp = self.client.get(url).send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
@@ -1062,7 +1246,7 @@ impl ArkimeClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.get(&url).header("Authorization", auth_header).send().await?
             }
-            AuthMode::Form => return Ok(()), // already captured during login
+            AuthMode::Form | AuthMode::Web => return Ok(()), // already captured during login
         };
         self.extract_cookie(&resp);
         Ok(())
@@ -1126,7 +1310,7 @@ impl ArkimeClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.post(url).header("Authorization", auth_header)
             }
-            AuthMode::Form => self.client.post(url),
+            AuthMode::Form | AuthMode::Web => self.client.post(url),
         };
         if let Some(ref cookie) = self.arkime_cookie {
             req = req.header(self.cookie_header_name, cookie);
@@ -1189,7 +1373,7 @@ impl ArkimeClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.put(url).header("Authorization", auth_header)
             }
-            AuthMode::Form => self.client.put(url),
+            AuthMode::Form | AuthMode::Web => self.client.put(url),
         };
         if let Some(ref cookie) = self.arkime_cookie {
             req = req.header(self.cookie_header_name, cookie);
@@ -1248,7 +1432,7 @@ impl ArkimeClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.delete(url).header("Authorization", auth_header)
             }
-            AuthMode::Form => self.client.delete(url),
+            AuthMode::Form | AuthMode::Web => self.client.delete(url),
         };
         if let Some(ref cookie) = self.arkime_cookie {
             req = req.header(self.cookie_header_name, cookie);
