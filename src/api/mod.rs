@@ -1100,18 +1100,43 @@ impl ArkimeClient {
         let identify_accepts = identify_rem
             .and_then(|r| r["accepts"].as_str())
             .map(|s| s.to_string());
+
+        // Build body from remediation's value array (matching widget behavior)
+        // Immutable params (like stateHandle) come from fields with mutable=false
+        let mut identify_body = serde_json::json!({});
+        if let Some(rem) = identify_rem {
+            if let Some(fields) = rem["value"].as_array() {
+                for field in fields {
+                    let name = field["name"].as_str().unwrap_or("");
+                    let mutable = field["mutable"].as_bool().unwrap_or(true);
+                    if !mutable {
+                        // Immutable field — use its pre-set value
+                        if let Some(val) = field.get("value") {
+                            identify_body[name] = val.clone();
+                        }
+                    }
+                }
+            }
+        }
+        // Set mutable fields
+        identify_body["identifier"] = serde_json::Value::String(username.to_string());
+        identify_body["credentials"] = serde_json::json!({"passcode": password});
+
         eprintln!("  IDX: identify → {}", identify_url);
+        eprintln!("  IDX: identify body keys: {:?}", identify_body.as_object().map(|m| m.keys().collect::<Vec<_>>()));
         let start = Instant::now();
-        let resp = idx_post(&identify_url, serde_json::json!({
-            "identifier": username,
-            "credentials": {"passcode": password},
-            "stateHandle": state_handle,
-        }), identify_accepts.as_deref())
+        let resp = idx_post(&identify_url, identify_body.clone(), identify_accepts.as_deref())
             .send()
             .await?;
         let status = resp.status().as_u16();
         let body = resp.text().await?;
         log_http(&self.http_log, "POST", &identify_url, Some(format!("identifier={}", username)), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+
+        // IDX returns 401 with a full response body — parse it for detailed errors
+        if status == 401 {
+            eprintln!("  IDX identify 401 response (first 500 chars): {}", &body[..body.len().min(500)]);
+        }
+
         if status != 200 && status != 400 {
             let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
             let err_msg = parsed.as_ref()
@@ -1129,11 +1154,10 @@ impl ArkimeClient {
         // If 400, might mean password shouldn't be in identify — retry without it
         let (identify_resp, identify_included_password) = if status == 400 {
             eprintln!("  IDX: identify with password failed, retrying without...");
+            let mut retry_body = identify_body.clone();
+            retry_body.as_object_mut().map(|m| m.remove("credentials"));
             let start = Instant::now();
-            let resp = idx_post(&identify_url, serde_json::json!({
-                "identifier": username,
-                "stateHandle": state_handle,
-            }), identify_accepts.as_deref())
+            let resp = idx_post(&identify_url, retry_body, identify_accepts.as_deref())
                 .send()
                 .await?;
             let st = resp.status().as_u16();
