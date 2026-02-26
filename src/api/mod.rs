@@ -1046,20 +1046,21 @@ impl ArkimeClient {
 
     /// Okta IDX API flow (Identity Engine) — returns None if cookies are set directly,
     /// or Some(sessionToken) if a classic redirect is needed.
-    async fn okta_idx_login(&self, okta_base: &str, _from_uri: &str, page_state_token: &str, username: &str, password: &str) -> Result<Option<String>> {
+    async fn okta_idx_login(&self, okta_base: &str, from_uri: &str, page_state_token: &str, username: &str, password: &str) -> Result<Option<String>> {
         // The Okta Sign-In Widget on Identity Engine uses the page's stateToken
         // directly with /idp/idx/introspect (no interact call needed).
 
         // Helper: build IDX request with proper headers matching the Okta Sign-In Widget
+        let okta_origin = okta_base.to_string();
         let idx_post = |url: &str, body: serde_json::Value, accept: Option<&str>| {
             self.client.post(url)
                 .header("Content-Type", "application/json")
                 .header("Accept", accept.unwrap_or("application/ion+json; okta-version=1.0.0"))
                 .header("X-Okta-User-Agent-Extended", "okta-auth-js/7.14.0")
+                .header("Origin", &okta_origin)
+                .header("Referer", &okta_origin)
                 .body(body.to_string())
         };
-        // directly with /idp/idx/introspect (no interact call needed).
-        // This works even when the app doesn't have interaction_code grant type.
 
         // Step 1: POST /idp/idx/introspect with the page's stateToken
         let introspect_url = format!("{}/idp/idx/introspect", okta_base);
@@ -1069,6 +1070,8 @@ impl ArkimeClient {
             .header("Content-Type", "application/ion+json; okta-version=1.0.0")
             .header("Accept", "application/ion+json; okta-version=1.0.0")
             .header("X-Okta-User-Agent-Extended", "okta-auth-js/7.14.0")
+            .header("Origin", okta_base)
+            .header("Referer", okta_base)
             .body(serde_json::json!({"stateToken": page_state_token}).to_string())
             .send()
             .await?;
@@ -1118,12 +1121,12 @@ impl ArkimeClient {
                 }
             }
         }
-        // Set mutable fields
+        // Set mutable fields — include credentials like the widget does
         identify_body["identifier"] = serde_json::Value::String(username.to_string());
         identify_body["credentials"] = serde_json::json!({"passcode": password});
 
         eprintln!("  IDX: identify → {}", identify_url);
-        eprintln!("  IDX: identify body keys: {:?}", identify_body.as_object().map(|m| m.keys().collect::<Vec<_>>()));
+        eprintln!("  IDX: identify body keys: {:?}", identify_body.as_object().map(|o| o.keys().collect::<Vec<_>>()));
         let start = Instant::now();
         let resp = idx_post(&identify_url, identify_body.clone(), identify_accepts.as_deref())
             .send()
@@ -1132,77 +1135,58 @@ impl ArkimeClient {
         let body = resp.text().await?;
         log_http(&self.http_log, "POST", &identify_url, Some(format!("identifier={}", username)), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
 
-        // IDX returns 401 with a full response body — dump entire response
-        if status == 401 {
-            eprintln!("  IDX identify 401 full response:\n{}", body);
-        }
+        // Parse IDX response (both 200 and 401 are valid IDX responses)
+        let identify_resp: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|_| anyhow::anyhow!("Okta IDX identify failed: HTTP {} — {}", status, &body[..body.len().min(300)]))?;
 
-        if status != 200 && status != 400 {
-            let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
-            let err_msg = parsed.as_ref()
-                .and_then(|v| {
-                    // IDX errors can be in messages.value[].message or at top level
-                    v["messages"]["value"][0]["message"].as_str()
-                        .or_else(|| v["errorSummary"].as_str())
-                        .map(|s| s.to_string())
-                })
-                .unwrap_or_else(|| body[..body.len().min(300)].to_string());
-            eprintln!("  IDX identify failed (HTTP {}): {}", status, err_msg);
+        if status == 401 {
+            // 401 means "Authentication failed" — wrong password or unknown user
+            // Print diagnostic info for debugging
+            let has_user = identify_resp["user"]["value"]["identifier"].as_str();
+            let auth_key = identify_resp["currentAuthenticator"]["value"]["key"].as_str();
+            let rems: Vec<&str> = identify_resp["remediation"]["value"].as_array()
+                .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
+                .unwrap_or_default();
+            eprintln!("  IDX identify 401: user={:?}, currentAuth={:?}, remediations={:?}", has_user, auth_key, rems);
+            let err_msg = identify_resp["messages"]["value"][0]["message"].as_str()
+                .unwrap_or("Authentication failed");
             anyhow::bail!("Okta login failed: {}", err_msg);
         }
+        if status != 200 {
+            let err_msg = identify_resp["messages"]["value"][0]["message"].as_str()
+                .or_else(|| identify_resp["errorSummary"].as_str())
+                .unwrap_or("Unknown error");
+            anyhow::bail!("Okta login failed: HTTP {} — {}", status, err_msg);
+        }
 
-        // If 400, might mean password shouldn't be in identify — retry without it
-        let (identify_resp, identify_included_password) = if status == 400 {
-            eprintln!("  IDX: identify with password failed, retrying without...");
-            let mut retry_body = identify_body.clone();
-            retry_body.as_object_mut().map(|m| m.remove("credentials"));
-            let start = Instant::now();
-            let resp = idx_post(&identify_url, retry_body, identify_accepts.as_deref())
-                .send()
-                .await?;
-            let st = resp.status().as_u16();
-            let bd = resp.text().await?;
-            log_http(&self.http_log, "POST", &identify_url, Some(format!("identifier={}", username)), st, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&bd[..bd.len().min(200)]));
-            if st != 200 {
-                let err_msg = serde_json::from_str::<serde_json::Value>(&bd).ok()
-                    .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
-                    .unwrap_or_else(|| bd[..bd.len().min(200)].to_string());
-                anyhow::bail!("Okta login failed: {}", err_msg);
-            }
-            (serde_json::from_str::<serde_json::Value>(&bd)?, false)
-        } else {
-            (serde_json::from_str::<serde_json::Value>(&body)?, true)
-        };
-
-        // Update stateHandle (it may change between steps)
+        // Update stateHandle (it changes between steps)
         let mut state_handle = identify_resp["stateHandle"].as_str()
             .unwrap_or(&state_handle)
             .to_string();
 
-        // After identify, Okta may require selecting a password authenticator first
         let mut current_resp = identify_resp;
-
-        // Check if identify already succeeded (password was included and accepted)
-        let already_authenticated = identify_included_password && {
-            let has_success = current_resp["successWithInteractionCode"]["href"].as_str().is_some()
-                || current_resp["sessionToken"].as_str().is_some();
-            let needs_more = current_resp["remediation"]["value"].as_array()
-                .map(|rems| rems.iter().any(|r| {
-                    let n = r["name"].as_str().unwrap_or("");
-                    n == "select-authenticator-authenticate" || n == "challenge-authenticator"
-                }))
-                .unwrap_or(false);
-            has_success || (!needs_more && identify_included_password)
-        };
 
         if let Some(rems) = current_resp["remediation"]["value"].as_array() {
             let rem_names: Vec<&str> = rems.iter().filter_map(|r| r["name"].as_str()).collect();
             eprintln!("  IDX: after identify, remediations: {:?}", rem_names);
         }
 
-        if !already_authenticated {
-            if let Some(rems) = current_resp.clone()["remediation"]["value"].as_array().cloned() {
-                if let Some(select_auth) = rems.iter().find(|r| r["name"].as_str() == Some("select-authenticator-authenticate")) {
+        // Check if already succeeded (some orgs complete after identify alone)
+        let already_done = current_resp["successWithInteractionCode"]["href"].as_str().is_some()
+            || current_resp["sessionToken"].as_str().is_some();
+
+        if !already_done {
+            // Check if password authenticator is already selected via currentAuthenticator
+            let current_auth_key = current_resp["currentAuthenticator"]["value"]["key"].as_str().unwrap_or("");
+            let needs_authenticator_select = current_auth_key != "okta_password" && {
+                current_resp["remediation"]["value"].as_array()
+                    .map(|rems| rems.iter().any(|r| r["name"].as_str() == Some("select-authenticator-authenticate")))
+                    .unwrap_or(false)
+            };
+
+            if needs_authenticator_select {
+                if let Some(rems) = current_resp.clone()["remediation"]["value"].as_array().cloned() {
+                    if let Some(select_auth) = rems.iter().find(|r| r["name"].as_str() == Some("select-authenticator-authenticate")) {
                 // Find the password authenticator
                 if let Some(auth_options) = select_auth["value"].as_array()
                     .and_then(|vals| vals.iter().find(|v| v["name"].as_str() == Some("authenticator")))
@@ -1253,47 +1237,67 @@ impl ArkimeClient {
                 }
             }
             } // close if let select_auth
+            } // close if needs_authenticator_select
 
-            // Submit password via challenge/answer (only if not already included in identify)
-            if !identify_included_password {
-                let challenge_rem = current_resp["remediation"]["value"].as_array()
-                    .and_then(|rems| rems.iter().find(|r| {
-                        let name = r["name"].as_str().unwrap_or("");
-                        name == "challenge-authenticator" || name == "answer"
-                    }));
-                let challenge_url = challenge_rem
-                    .and_then(|r| r["href"].as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| format!("{}/idp/idx/challenge/answer", okta_base));
-                let challenge_accepts = challenge_rem.and_then(|r| r["accepts"].as_str()).map(|s| s.to_string());
-                eprintln!("  IDX: challenge/answer → {}", challenge_url);
-                let start = Instant::now();
-                let resp = idx_post(&challenge_url, serde_json::json!({
-                    "credentials": {"passcode": password},
-                    "stateHandle": state_handle,
-                }), challenge_accepts.as_deref())
-                    .send()
-                    .await?;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                log_http(&self.http_log, "POST", &challenge_url, Some("credentials=***".into()), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+            // Submit password via challenge/answer
+            // Build body from the challenge remediation's immutable fields
+            let challenge_rem = current_resp["remediation"]["value"].as_array()
+                .and_then(|rems| rems.iter().find(|r| {
+                    let name = r["name"].as_str().unwrap_or("");
+                    name == "challenge-authenticator" || name == "answer"
+                }));
 
-                if status == 401 || status == 403 {
-                    let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
-                        .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
-                        .unwrap_or_else(|| body[..body.len().min(200)].to_string());
-                    anyhow::bail!("Okta login failed: {}", err_msg);
+            // If no challenge remediation, the identify response might still have "identify"
+            // with currentAuthenticator=password, meaning we need to re-POST identify with password
+            let (challenge_url, challenge_accepts, mut challenge_body) = if let Some(rem) = challenge_rem {
+                let url = rem["href"].as_str().unwrap_or(&format!("{}/idp/idx/challenge/answer", okta_base)).to_string();
+                let accepts = rem["accepts"].as_str().map(|s| s.to_string());
+                let mut body = serde_json::json!({});
+                if let Some(fields) = rem["value"].as_array() {
+                    for field in fields {
+                        let name = field["name"].as_str().unwrap_or("");
+                        if field["mutable"].as_bool().unwrap_or(true) == false {
+                            if let Some(val) = field.get("value") {
+                                body[name] = val.clone();
+                            }
+                        }
+                    }
                 }
-                if status != 200 {
-                    let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
-                        .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
-                        .unwrap_or_else(|| body[..body.len().min(200)].to_string());
-                    anyhow::bail!("Okta login failed: HTTP {} — {}", status, err_msg);
-                }
+                (url, accepts, body)
+            } else {
+                // Fall back: re-submit identify with password using new stateHandle
+                let url = identify_url.clone();
+                let accepts = identify_accepts.clone();
+                let mut body = serde_json::json!({"stateHandle": state_handle});
+                body["identifier"] = serde_json::Value::String(username.to_string());
+                (url, accepts, body)
+            };
+            challenge_body["credentials"] = serde_json::json!({"passcode": password});
 
-                current_resp = serde_json::from_str(&body)?;
+            eprintln!("  IDX: submitting password → {}", challenge_url);
+            let start = Instant::now();
+            let resp = idx_post(&challenge_url, challenge_body, challenge_accepts.as_deref())
+                .send()
+                .await?;
+            let status = resp.status().as_u16();
+            let body = resp.text().await?;
+            log_http(&self.http_log, "POST", &challenge_url, Some("credentials=***".into()), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+
+            if status == 401 || status == 403 {
+                let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
+                    .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
+                    .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+                anyhow::bail!("Okta login failed: {}", err_msg);
             }
-        } // close if !already_authenticated
+            if status != 200 {
+                let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
+                    .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
+                    .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+                anyhow::bail!("Okta login failed: HTTP {} — {}", status, err_msg);
+            }
+
+            current_resp = serde_json::from_str(&body)?;
+        } // close if !already_done
 
         // Check if we need MFA
         if let Some(remediations) = current_resp["remediation"]["value"].as_array() {
@@ -1311,14 +1315,17 @@ impl ArkimeClient {
             }
         }
 
-        // Check for success — look for the redirect URL with authorization code
-        if let Some(success_url) = current_resp["successWithInteractionCode"]["href"].as_str() {
-            eprintln!("  IDX: following success redirect...");
-            self.follow_redirects(success_url, "GET").await?;
+        // Check for success
+        // successWithInteractionCode means IDX flow completed — Okta session should be established
+        if current_resp["successWithInteractionCode"]["href"].as_str().is_some() {
+            eprintln!("  IDX: authentication succeeded, following authorize redirect...");
+            // Re-visit the original authorize URL — Okta session cookies should
+            // cause it to redirect back to the app with ?code=XXX
+            self.follow_redirects(from_uri, "GET").await?;
             return Ok(None);
         }
 
-        // Some flows return a sessionToken
+        // Some flows return a sessionToken (use classic sessionCookieRedirect)
         if let Some(token) = current_resp["sessionToken"].as_str() {
             return Ok(Some(token.to_string()));
         }
