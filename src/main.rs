@@ -60,10 +60,17 @@ async fn main() -> Result<()> {
         if let Some((u, p)) = userpass.split_once(':') {
             (Some(u.to_string()), Some(p.to_string()))
         } else {
-            // Username only (no colon) — prompt for password
-            let pass = rpassword::prompt_password(format!("Password for {userpass}: "))?;
-            (Some(userpass.clone()), Some(pass))
+            // Username only (no colon) — prompt for password (unless web auth defers)
+            if auth_mode == api::AuthMode::Web {
+                (Some(userpass.clone()), None)
+            } else {
+                let pass = rpassword::prompt_password(format!("Password for {userpass}: "))?;
+                (Some(userpass.clone()), Some(pass))
+            }
         }
+    } else if auth_mode == api::AuthMode::Web {
+        // Web auth will prompt using form labels after fetching the page
+        (None, None)
     } else if auth_mode != api::AuthMode::None {
         eprint!("Username: ");
         let mut user = String::new();
@@ -75,6 +82,13 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
+    // For web auth, login before entering raw mode (needs interactive stdin for prompts)
+    let mut client = api::ArkimeClient::new(&cli.url, auth_mode, username.clone(), password.clone());
+    if auth_mode == api::AuthMode::Web {
+        client.login().await?;
+        client.fetch_cookie().await.ok();
+    }
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -82,9 +96,10 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Fetch app version to determine mode
-    let mut client = api::ArkimeClient::new(&cli.url, auth_mode, username.clone(), password.clone());
-    client.login().await?;
-    client.fetch_cookie().await.ok();
+    if auth_mode != api::AuthMode::Web {
+        client.login().await?;
+        client.fetch_cookie().await.ok();
+    }
 
     let app_mode = if let Some(ref app_name) = cli.app {
         match app_name.as_str() {

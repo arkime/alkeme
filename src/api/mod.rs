@@ -638,9 +638,6 @@ impl ArkimeClient {
         }
         use scraper::{Html, Selector};
 
-        let username = self.username.as_deref().unwrap_or("");
-        let password = self.password.as_deref().unwrap_or("");
-
         // Step 1: Navigate to base URL, following redirects to find the login page
         let (auth_url, resp) = self.follow_redirects(&self.base_url.clone(), "GET").await?;
         let html_body = resp.text().await?;
@@ -678,7 +675,42 @@ impl ArkimeClient {
             parsed.join(action)?.to_string()
         };
 
-        // Step 3: Build label map from <label for="id"> elements
+        // Step 3: Display visible text from the page to give context
+        let body_sel = Selector::parse("body").unwrap();
+        if let Some(body) = document.select(&body_sel).next() {
+            let mut page_text = String::new();
+            fn collect_text(el: scraper::ElementRef, out: &mut String) {
+                let tag = el.value().name();
+                if tag == "script" || tag == "style" || tag == "input" {
+                    return;
+                }
+                if matches!(tag, "br" | "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" | "tr") {
+                    if !out.is_empty() && !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                }
+                for child in el.children() {
+                    if let Some(text) = child.value().as_text() {
+                        let t = text.trim();
+                        if !t.is_empty() {
+                            if !out.is_empty() && !out.ends_with('\n') {
+                                out.push(' ');
+                            }
+                            out.push_str(t);
+                        }
+                    } else if let Some(child_el) = scraper::ElementRef::wrap(child) {
+                        collect_text(child_el, out);
+                    }
+                }
+            }
+            collect_text(body, &mut page_text);
+            let page_text = page_text.trim();
+            if !page_text.is_empty() {
+                eprintln!("\n{}\n", page_text);
+            }
+        }
+
+        // Step 4: Build label map from <label for="id"> elements
         let label_sel = Selector::parse("label").unwrap();
         let mut label_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         for label_el in form.select(&label_sel) {
@@ -700,6 +732,10 @@ impl ArkimeClient {
             let input_type = input.value().attr("type").unwrap_or("text").to_lowercase();
             let value = input.value().attr("value").unwrap_or("").to_string();
             let id = input.value().attr("id").unwrap_or("").to_string();
+            let field_label = label_map.get(&id)
+                .cloned()
+                .or_else(|| input.value().attr("placeholder").map(|s| s.to_string()))
+                .unwrap_or_else(|| name.clone());
 
             if name.is_empty() {
                 continue;
@@ -707,7 +743,16 @@ impl ArkimeClient {
 
             match input_type.as_str() {
                 "password" => {
-                    form_data.push((name, password.to_string()));
+                    let pass_value = if let Some(ref p) = self.password {
+                        p.clone()
+                    } else {
+                        let prompt = format!("{}: ", field_label);
+                        rpassword::prompt_password(&prompt)?
+                    };
+                    form_data.push((name, pass_value.clone()));
+                    if self.password.is_none() {
+                        self.password = Some(pass_value);
+                    }
                     found_pass = true;
                 }
                 "submit" | "button" | "image" | "checkbox" | "radio" => {
@@ -723,15 +768,22 @@ impl ArkimeClient {
                 _ => {
                     // text, email, tel, number, etc.
                     if !found_user {
-                        form_data.push((name, username.to_string()));
+                        let user_value = if let Some(ref u) = self.username {
+                            u.clone()
+                        } else {
+                            eprint!("{}: ", field_label);
+                            let mut input_val = String::new();
+                            std::io::stdin().read_line(&mut input_val)?;
+                            input_val.trim().to_string()
+                        };
+                        if self.username.is_none() {
+                            self.username = Some(user_value.clone());
+                        }
+                        form_data.push((name, user_value));
                         found_user = true;
                     } else {
                         // Extra field — prompt the user interactively
-                        let prompt_label = label_map.get(&id)
-                            .cloned()
-                            .or_else(|| input.value().attr("placeholder").map(|s| s.to_string()))
-                            .unwrap_or_else(|| name.clone());
-                        eprint!("{}: ", prompt_label);
+                        eprint!("{}: ", field_label);
                         let mut input_value = String::new();
                         std::io::stdin().read_line(&mut input_value)?;
                         let input_value = input_value.trim().to_string();
