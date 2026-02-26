@@ -977,86 +977,7 @@ impl ArkimeClient {
             val
         };
 
-        // Step 4: POST to Okta authn API (try without stateToken first, then with)
-        let authn_url = format!("{}/api/v1/authn", okta_base);
-        eprintln!("Authenticating as '{}' via {}", username, authn_url);
-
-        let mut authn_body = serde_json::json!({
-            "username": username,
-            "password": password,
-        });
-        let start = Instant::now();
-        let resp = self.client.post(&authn_url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .body(authn_body.to_string())
-            .send()
-            .await?;
-        let first_byte = start.elapsed().as_millis() as u64;
-        let mut status = resp.status().as_u16();
-        let mut body = resp.text().await?;
-        let last_byte = start.elapsed().as_millis() as u64;
-        log_http(&self.http_log, "POST", &authn_url, Some(format!("username={}&password=***", username)), status, first_byte, last_byte, Some(&body[..body.len().min(200)]));
-
-        // If primary auth fails with "Invalid token", retry with stateToken
-        if status != 200 && !state_token.is_empty() {
-            let err_check = serde_json::from_str::<serde_json::Value>(&body).ok();
-            let err_msg = err_check.as_ref().and_then(|v| v["errorSummary"].as_str()).unwrap_or("");
-            if err_msg.contains("token") || err_msg.contains("stateToken") {
-                eprintln!("Retrying with stateToken...");
-                authn_body = serde_json::json!({
-                    "username": username,
-                    "password": password,
-                    "stateToken": state_token,
-                });
-                let start2 = Instant::now();
-                let resp2 = self.client.post(&authn_url)
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "application/json")
-                    .body(authn_body.to_string())
-                    .send()
-                    .await?;
-                status = resp2.status().as_u16();
-                body = resp2.text().await?;
-                log_http(&self.http_log, "POST", &authn_url, Some(format!("username={}&password=***&stateToken=...", username)), status, start2.elapsed().as_millis() as u64, start2.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
-            }
-        }
-
-        if status == 401 {
-            let err_msg = serde_json::from_str::<serde_json::Value>(&body)
-                .ok()
-                .and_then(|v| v["errorSummary"].as_str().map(|s| s.to_string()))
-                .unwrap_or_else(|| body[..body.len().min(200)].to_string());
-            anyhow::bail!("Okta login failed: {}", err_msg);
-        }
-        if status != 200 {
-            let err_msg = serde_json::from_str::<serde_json::Value>(&body)
-                .ok()
-                .and_then(|v| v["errorSummary"].as_str().map(|s| s.to_string()))
-                .unwrap_or_else(|| body[..body.len().min(200)].to_string());
-            anyhow::bail!("Okta login failed: HTTP {} — {}", status, err_msg);
-        }
-
-        let authn_resp: serde_json::Value = serde_json::from_str(&body)?;
-        let authn_status = authn_resp["status"].as_str().unwrap_or("");
-
-        // Step 5: Handle MFA if required
-        let session_token = match authn_status {
-            "SUCCESS" => {
-                authn_resp["sessionToken"].as_str()
-                    .ok_or_else(|| anyhow::anyhow!("Okta login: SUCCESS but no sessionToken"))?
-                    .to_string()
-            }
-            "MFA_REQUIRED" => {
-                self.okta_handle_mfa(&authn_resp, &okta_base).await?
-            }
-            other => {
-                anyhow::bail!("Okta login: unexpected status '{}'. May require additional setup.", other);
-            }
-        };
-
-        // Step 6: Exchange session token for session cookie
-        // Follow the fromURI redirect with the session token
+        // Extract fromURI (OAuth2 authorize URL) for the IDX flow
         let from_uri = {
             use scraper::{Html, Selector};
             let doc = Html::parse_document(&html_body);
@@ -1066,14 +987,37 @@ impl ArkimeClient {
                 .map(|v| v.to_string())
         };
 
-        let redirect_url = if let Some(uri) = from_uri {
-            format!("{}/login/sessionCookieRedirect?checkAccountSetupComplete=true&token={}&redirectUrl={}", okta_base, session_token, urlencoding::encode(&uri))
+        // Step 4: Authenticate via Okta IDX API (Identity Engine) or classic authn
+        eprintln!("Authenticating as '{}'...", username);
+
+        let session_token = if let Some(ref from_uri_str) = from_uri {
+            // Try IDX flow first (for Identity Engine orgs)
+            match self.okta_idx_login(&okta_base, from_uri_str, &username, &password).await {
+                Ok(None) => {
+                    // IDX flow completed and cookies are set — no sessionToken needed
+                    String::new()
+                }
+                Ok(Some(token)) => token,
+                Err(idx_err) => {
+                    eprintln!("IDX flow failed ({}), trying classic authn...", idx_err);
+                    // Fall back to classic /api/v1/authn
+                    self.okta_classic_authn(&okta_base, &username, &password, &state_token).await?
+                }
+            }
         } else {
-            format!("{}/login/sessionCookieRedirect?checkAccountSetupComplete=true&token={}&redirectUrl={}", okta_base, session_token, urlencoding::encode(&self.base_url))
+            // No fromURI, use classic authn
+            self.okta_classic_authn(&okta_base, &username, &password, &state_token).await?
         };
 
-        // Follow the redirect chain back to the app
-        self.follow_redirects(&redirect_url, "GET").await?;
+        // Step 5: Exchange session token for session cookie (if we got one)
+        if !session_token.is_empty() {
+            let redirect_url = if let Some(ref uri) = from_uri {
+                format!("{}/login/sessionCookieRedirect?checkAccountSetupComplete=true&token={}&redirectUrl={}", okta_base, session_token, urlencoding::encode(uri))
+            } else {
+                format!("{}/login/sessionCookieRedirect?checkAccountSetupComplete=true&token={}&redirectUrl={}", okta_base, session_token, urlencoding::encode(&self.base_url))
+            };
+            self.follow_redirects(&redirect_url, "GET").await?;
+        }
 
         // Step 7: Verify session is established
         let verify_url = format!("{}/api/appversion", self.base_url);
@@ -1089,6 +1033,227 @@ impl ArkimeClient {
         log_http(&self.http_log, "GET", &verify_url, None, status2, first_byte2, start2.elapsed().as_millis() as u64, None);
         self.logged_in = true;
         Ok(())
+    }
+
+    /// Okta IDX API flow (Identity Engine) — returns None if cookies are set directly,
+    /// or Some(sessionToken) if a classic redirect is needed.
+    async fn okta_idx_login(&self, okta_base: &str, from_uri: &str, username: &str, password: &str) -> Result<Option<String>> {
+        // Parse the OAuth2 authorize URL to extract client_id, redirect_uri, and auth server
+        let authorize_url = reqwest::Url::parse(from_uri)
+            .map_err(|e| anyhow::anyhow!("Okta IDX: invalid fromURI: {}", e))?;
+        let client_id = authorize_url.query_pairs()
+            .find(|(k, _)| k == "client_id")
+            .map(|(_, v)| v.to_string())
+            .ok_or_else(|| anyhow::anyhow!("Okta IDX: no client_id in fromURI"))?;
+        let redirect_uri = authorize_url.query_pairs()
+            .find(|(k, _)| k == "redirect_uri")
+            .map(|(_, v)| v.to_string())
+            .ok_or_else(|| anyhow::anyhow!("Okta IDX: no redirect_uri in fromURI"))?;
+        let scope = authorize_url.query_pairs()
+            .find(|(k, _)| k == "scope")
+            .map(|(_, v)| v.to_string())
+            .unwrap_or_else(|| "openid".to_string());
+        let state = authorize_url.query_pairs()
+            .find(|(k, _)| k == "state")
+            .map(|(_, v)| v.to_string())
+            .unwrap_or_default();
+        let nonce = authorize_url.query_pairs()
+            .find(|(k, _)| k == "nonce")
+            .map(|(_, v)| v.to_string())
+            .unwrap_or_default();
+        // Auth server path: e.g., /oauth2/ausdqo06iBskQbfv0696
+        let path_segments: Vec<&str> = authorize_url.path().split('/').collect();
+        let issuer_path = if path_segments.len() >= 3 && path_segments[1] == "oauth2" {
+            format!("/oauth2/{}", path_segments[2])
+        } else {
+            "/oauth2/default".to_string()
+        };
+
+        // Step 1: POST /oauth2/{authServerId}/v1/interact
+        let interact_url = format!("{}{}/v1/interact", okta_base, issuer_path);
+        eprintln!("  IDX: interact → {}", interact_url);
+        let start = Instant::now();
+        let resp = self.client.post(&interact_url)
+            .form(&[
+                ("client_id", client_id.as_str()),
+                ("scope", scope.as_str()),
+                ("redirect_uri", redirect_uri.as_str()),
+                ("state", state.as_str()),
+                ("nonce", nonce.as_str()),
+            ])
+            .send()
+            .await?;
+        let status = resp.status().as_u16();
+        let body = resp.text().await?;
+        log_http(&self.http_log, "POST", &interact_url, Some(format!("client_id={}", client_id)), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+        if status != 200 {
+            anyhow::bail!("IDX interact failed: HTTP {} — {}", status, &body[..body.len().min(200)]);
+        }
+        let interact_resp: serde_json::Value = serde_json::from_str(&body)?;
+        let interaction_handle = interact_resp["interaction_handle"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("IDX: no interaction_handle in response"))?;
+
+        // Step 2: POST /idp/idx/introspect
+        let introspect_url = format!("{}/idp/idx/introspect", okta_base);
+        let start = Instant::now();
+        let resp = self.client.post(&introspect_url)
+            .header("Content-Type", "application/ion+json; okta-version=1.0.0")
+            .header("Accept", "application/ion+json; okta-version=1.0.0")
+            .body(serde_json::json!({"interactionHandle": interaction_handle}).to_string())
+            .send()
+            .await?;
+        let status = resp.status().as_u16();
+        let body = resp.text().await?;
+        log_http(&self.http_log, "POST", &introspect_url, None, status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+        if status != 200 {
+            anyhow::bail!("IDX introspect failed: HTTP {} — {}", status, &body[..body.len().min(200)]);
+        }
+        let introspect_resp: serde_json::Value = serde_json::from_str(&body)?;
+        let state_handle = introspect_resp["stateHandle"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("IDX: no stateHandle in introspect response"))?
+            .to_string();
+
+        // Step 3: POST /idp/idx/identify
+        let identify_url = format!("{}/idp/idx/identify", okta_base);
+        let start = Instant::now();
+        let resp = self.client.post(&identify_url)
+            .header("Content-Type", "application/ion+json; okta-version=1.0.0")
+            .header("Accept", "application/ion+json; okta-version=1.0.0")
+            .body(serde_json::json!({
+                "identifier": username,
+                "stateHandle": state_handle,
+            }).to_string())
+            .send()
+            .await?;
+        let status = resp.status().as_u16();
+        let body = resp.text().await?;
+        log_http(&self.http_log, "POST", &identify_url, Some(format!("identifier={}", username)), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+        if status != 200 {
+            let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
+                .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+            anyhow::bail!("Okta login failed: {}", err_msg);
+        }
+        let identify_resp: serde_json::Value = serde_json::from_str(&body)?;
+
+        // Update stateHandle (it may change between steps)
+        let state_handle = identify_resp["stateHandle"].as_str()
+            .unwrap_or(&state_handle)
+            .to_string();
+
+        // Step 4: POST /idp/idx/challenge/answer (submit password)
+        let challenge_url = format!("{}/idp/idx/challenge/answer", okta_base);
+        let start = Instant::now();
+        let resp = self.client.post(&challenge_url)
+            .header("Content-Type", "application/ion+json; okta-version=1.0.0")
+            .header("Accept", "application/ion+json; okta-version=1.0.0")
+            .body(serde_json::json!({
+                "credentials": {"passcode": password},
+                "stateHandle": state_handle,
+            }).to_string())
+            .send()
+            .await?;
+        let status = resp.status().as_u16();
+        let body = resp.text().await?;
+        log_http(&self.http_log, "POST", &challenge_url, Some("credentials=***".into()), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+
+        if status == 401 || status == 403 {
+            let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
+                .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+            anyhow::bail!("Okta login failed: {}", err_msg);
+        }
+        if status != 200 {
+            let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
+                .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+            anyhow::bail!("Okta login failed: HTTP {} — {}", status, err_msg);
+        }
+
+        let answer_resp: serde_json::Value = serde_json::from_str(&body)?;
+
+        // Check if we need MFA
+        let remediation = &answer_resp["remediation"];
+        if let Some(remediations) = remediation["value"].as_array() {
+            for rem in remediations {
+                let rem_name = rem["name"].as_str().unwrap_or("");
+                if rem_name == "select-authenticator-authenticate" || rem_name == "challenge-authenticator" {
+                    // MFA required — for now bail with info
+                    let authenticators = rem["value"].as_array()
+                        .map(|arr| arr.iter()
+                            .filter_map(|v| v["label"].as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "))
+                        .unwrap_or_default();
+                    anyhow::bail!("Okta MFA required via IDX. Available: {}. MFA via IDX is not yet supported.", authenticators);
+                }
+            }
+        }
+
+        // Check for success — look for the redirect URL with authorization code
+        if let Some(success_url) = answer_resp["successWithInteractionCode"]["href"].as_str() {
+            // Follow the success redirect to complete OAuth and get app cookies
+            eprintln!("  IDX: following success redirect...");
+            self.follow_redirects(success_url, "GET").await?;
+            return Ok(None); // Cookies set, no sessionToken needed
+        }
+
+        // Some flows return a sessionToken
+        if let Some(token) = answer_resp["sessionToken"].as_str() {
+            return Ok(Some(token.to_string()));
+        }
+
+        anyhow::bail!("Okta IDX: unexpected response after password — no success redirect or sessionToken found");
+    }
+
+    /// Classic Okta authn API flow (non-Identity Engine)
+    async fn okta_classic_authn(&self, okta_base: &str, username: &str, password: &str, state_token: &str) -> Result<String> {
+        let authn_url = format!("{}/api/v1/authn", okta_base);
+
+        let authn_body = if state_token.is_empty() {
+            serde_json::json!({"username": username, "password": password})
+        } else {
+            serde_json::json!({"username": username, "password": password, "stateToken": state_token})
+        };
+
+        let start = Instant::now();
+        let resp = self.client.post(&authn_url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .body(authn_body.to_string())
+            .send()
+            .await?;
+        let status = resp.status().as_u16();
+        let body = resp.text().await?;
+        log_http(&self.http_log, "POST", &authn_url, Some(format!("username={}&password=***", username)), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+
+        if status == 401 {
+            let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
+                .and_then(|v| v["errorSummary"].as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+            anyhow::bail!("Okta login failed: {}", err_msg);
+        }
+        if status != 200 {
+            let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
+                .and_then(|v| v["errorSummary"].as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+            anyhow::bail!("Okta login failed: HTTP {} — {}", status, err_msg);
+        }
+
+        let authn_resp: serde_json::Value = serde_json::from_str(&body)?;
+        match authn_resp["status"].as_str().unwrap_or("") {
+            "SUCCESS" => {
+                authn_resp["sessionToken"].as_str()
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| anyhow::anyhow!("Okta: SUCCESS but no sessionToken"))
+            }
+            "MFA_REQUIRED" => {
+                self.okta_handle_mfa(&authn_resp, okta_base).await
+            }
+            other => {
+                anyhow::bail!("Okta: unexpected status '{}'", other);
+            }
+        }
     }
 
     /// Handle Okta MFA challenge — supports push notification and TOTP code
