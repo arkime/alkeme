@@ -898,38 +898,43 @@ impl ArkimeClient {
         eprintln!("Okta login page: {}", auth_url);
         let html_body = resp.text().await?;
 
-        // Step 2: Extract stateToken and config from page
-        let raw_state_token = regex::Regex::new(r"var stateToken = '([^']+)'")
-            .unwrap()
-            .captures(&html_body)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().to_string())
-            .ok_or_else(|| anyhow::anyhow!("Okta login: could not find stateToken in page ({})", auth_url))?;
-        let state_token = decode_js_escapes(&raw_state_token);
-        eprintln!("stateToken length: {} (raw: {}), starts: {}...", state_token.len(), raw_state_token.len(), &state_token[..state_token.len().min(40)]);
-
-        // Extract modelDataBag JSON for baseUrl and labels
+        // Step 2: Extract modelDataBag JSON for config, stateToken, and labels
         let model_data = regex::Regex::new(r"var modelDataBag = '([^']+)'")
             .unwrap()
             .captures(&html_body)
             .and_then(|c| c.get(1))
             .map(|m| decode_js_escapes(m.as_str()));
 
-        let (okta_base_url, username_label, password_label, app_name, brand_name) = if let Some(ref json_str) = model_data {
+        let (state_token, okta_base_url, username_label, password_label, app_name, brand_name) = if let Some(ref json_str) = model_data {
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
+                let token = data["stateToken"].as_str().unwrap_or("").to_string();
                 let base = data["baseUrl"].as_str().unwrap_or("").to_string();
                 let settings = &data["orgLoginPageSettings"];
                 let ulabel = settings["usernameLabel"].as_str().unwrap_or("Username").to_string();
                 let plabel = settings["passwordLabel"].as_str().unwrap_or("Password").to_string();
                 let app = data["appInstanceName"].as_str().unwrap_or("").to_string();
                 let brand = data["brandName"].as_str().unwrap_or("").to_string();
-                (base, ulabel, plabel, app, brand)
+                (token, base, ulabel, plabel, app, brand)
             } else {
-                (String::new(), "Username".to_string(), "Password".to_string(), String::new(), String::new())
+                (String::new(), String::new(), "Username".to_string(), "Password".to_string(), String::new(), String::new())
             }
         } else {
-            (String::new(), "Username".to_string(), "Password".to_string(), String::new(), String::new())
+            (String::new(), String::new(), "Username".to_string(), "Password".to_string(), String::new(), String::new())
         };
+
+        // Fall back to var stateToken if not in modelDataBag
+        let state_token = if !state_token.is_empty() {
+            state_token
+        } else {
+            let raw = regex::Regex::new(r"var stateToken = '([^']+)'")
+                .unwrap()
+                .captures(&html_body)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string())
+                .ok_or_else(|| anyhow::anyhow!("Okta login: could not find stateToken in page ({})", auth_url))?;
+            decode_js_escapes(&raw)
+        };
+        eprintln!("stateToken length: {}, starts: {}...", state_token.len(), &state_token[..state_token.len().min(40)]);
 
         // Determine the Okta base URL
         let okta_base = if !okta_base_url.is_empty() {
