@@ -599,7 +599,7 @@ impl ArkimeClient {
             .await?;
         let first_byte = start.elapsed().as_millis() as u64;
         let status = resp.status().as_u16();
-        log_http(&self.http_log, "POST", &url, Some("username=***&password=***".into()), status, first_byte, start.elapsed().as_millis() as u64, None);
+        log_http(&self.http_log, "POST", &url, Some(format!("username={}&password=***", username)), status, first_byte, start.elapsed().as_millis() as u64, None);
         if resp.status() == reqwest::StatusCode::FOUND {
             if let Some(loc) = resp.headers().get("location").and_then(|v| v.to_str().ok()) {
                 if loc.contains("/auth") {
@@ -832,7 +832,8 @@ impl ArkimeClient {
             .await?;
         let first_byte = start.elapsed().as_millis() as u64;
         let status = resp.status().as_u16();
-        log_http(&self.http_log, "POST", &submit_url, Some("username=***&password=***".into()), status, first_byte, start.elapsed().as_millis() as u64, None);
+        let log_user = self.username.as_deref().unwrap_or("***");
+        log_http(&self.http_log, "POST", &submit_url, Some(format!("username={}&password=***", log_user)), status, first_byte, start.elapsed().as_millis() as u64, None);
 
         // Step 5: Follow post-login redirects (auth system → app callback → app)
         if resp.status().is_redirection() {
@@ -988,7 +989,7 @@ impl ArkimeClient {
         let status = resp.status().as_u16();
         let body = resp.text().await?;
         let last_byte = start.elapsed().as_millis() as u64;
-        log_http(&self.http_log, "POST", &authn_url, Some("username=***&password=***".into()), status, first_byte, last_byte, Some(&body[..body.len().min(200)]));
+        log_http(&self.http_log, "POST", &authn_url, Some(format!("username={}&password=***", username)), status, first_byte, last_byte, Some(&body[..body.len().min(200)]));
 
         if status == 401 {
             let err_msg = serde_json::from_str::<serde_json::Value>(&body)
