@@ -977,13 +977,13 @@ impl ArkimeClient {
             val
         };
 
-        // Step 4: POST to Okta authn API
+        // Step 4: POST to Okta authn API (try without stateToken first, then with)
         let authn_url = format!("{}/api/v1/authn", okta_base);
         eprintln!("Authenticating as '{}' via {}", username, authn_url);
-        let authn_body = serde_json::json!({
+
+        let mut authn_body = serde_json::json!({
             "username": username,
             "password": password,
-            "stateToken": state_token,
         });
         let start = Instant::now();
         let resp = self.client.post(&authn_url)
@@ -993,10 +993,34 @@ impl ArkimeClient {
             .send()
             .await?;
         let first_byte = start.elapsed().as_millis() as u64;
-        let status = resp.status().as_u16();
-        let body = resp.text().await?;
+        let mut status = resp.status().as_u16();
+        let mut body = resp.text().await?;
         let last_byte = start.elapsed().as_millis() as u64;
         log_http(&self.http_log, "POST", &authn_url, Some(format!("username={}&password=***", username)), status, first_byte, last_byte, Some(&body[..body.len().min(200)]));
+
+        // If primary auth fails with "Invalid token", retry with stateToken
+        if status != 200 && !state_token.is_empty() {
+            let err_check = serde_json::from_str::<serde_json::Value>(&body).ok();
+            let err_msg = err_check.as_ref().and_then(|v| v["errorSummary"].as_str()).unwrap_or("");
+            if err_msg.contains("token") || err_msg.contains("stateToken") {
+                eprintln!("Retrying with stateToken...");
+                authn_body = serde_json::json!({
+                    "username": username,
+                    "password": password,
+                    "stateToken": state_token,
+                });
+                let start2 = Instant::now();
+                let resp2 = self.client.post(&authn_url)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .body(authn_body.to_string())
+                    .send()
+                    .await?;
+                status = resp2.status().as_u16();
+                body = resp2.text().await?;
+                log_http(&self.http_log, "POST", &authn_url, Some(format!("username={}&password=***&stateToken=...", username)), status, start2.elapsed().as_millis() as u64, start2.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+            }
+        }
 
         if status == 401 {
             let err_msg = serde_json::from_str::<serde_json::Value>(&body)
