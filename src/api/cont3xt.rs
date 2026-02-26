@@ -163,11 +163,11 @@ impl FetchClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.post(url).header("Authorization", auth_header)
             }
-            AuthMode::Form | AuthMode::Web => self.client.post(url),
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => self.client.post(url),
         };
         req = req.header("Content-Type", "application/json").body(json_body.to_string());
         if let Some(ref cookie) = self.arkime_cookie {
-            if self.auth_mode != AuthMode::Form && self.auth_mode != AuthMode::Web {
+            if self.auth_mode != AuthMode::Form && self.auth_mode != AuthMode::Web && self.auth_mode != AuthMode::Okta {
                 req = req.header("Cookie", cookie.as_str());
             }
             req = req.header(self.cookie_header_name, cookie.as_str());

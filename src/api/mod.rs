@@ -109,6 +109,7 @@ pub enum AuthMode {
     Digest,
     Form,
     Web,
+    Okta,
 }
 
 #[derive(Clone)]
@@ -333,7 +334,7 @@ impl FetchClient {
                 log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
-            AuthMode::Form | AuthMode::Web => {
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => {
                 let mut req = self.client.get(url);
                 if let Some(ref cookie) = self.arkime_cookie {
                     req = req.header("Cookie", cookie.as_str());
@@ -417,7 +418,7 @@ impl FetchClient {
                 log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
-            AuthMode::Form | AuthMode::Web => {
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => {
                 let mut req = self.client.post(url).form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
                     req = req.header(self.cookie_header_name, cookie.as_str());
@@ -476,11 +477,11 @@ impl FetchClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.post(url).header("Authorization", auth_header)
             }
-            AuthMode::Form | AuthMode::Web => self.client.post(url),
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => self.client.post(url),
         };
         req = req.header("Content-Type", "application/json").body(json_body.to_string());
         if let Some(ref cookie) = self.arkime_cookie {
-            if self.auth_mode != AuthMode::Form && self.auth_mode != AuthMode::Web {
+            if self.auth_mode != AuthMode::Form && self.auth_mode != AuthMode::Web && self.auth_mode != AuthMode::Okta {
                 req = req.header("Cookie", cookie.as_str());
             }
             req = req.header(self.cookie_header_name, cookie.as_str());
@@ -511,7 +512,7 @@ impl ArkimeClient {
     pub fn new(base_url: &str, auth_mode: AuthMode, username: Option<String>, password: Option<String>) -> Self {
         let mut builder = Client::builder()
             .danger_accept_invalid_certs(true);
-        if auth_mode == AuthMode::Form || auth_mode == AuthMode::Web {
+        if auth_mode == AuthMode::Form || auth_mode == AuthMode::Web || auth_mode == AuthMode::Okta {
             builder = builder.cookie_store(true).redirect(reqwest::redirect::Policy::none());
         }
         Self {
@@ -558,6 +559,9 @@ impl ArkimeClient {
     pub async fn login(&mut self) -> Result<()> {
         if self.auth_mode == AuthMode::Web {
             return self.web_login().await;
+        }
+        if self.auth_mode == AuthMode::Okta {
+            return self.okta_login().await;
         }
         if self.auth_mode != AuthMode::Form || self.logged_in {
             return Ok(());
@@ -858,6 +862,317 @@ impl ArkimeClient {
         Ok(())
     }
 
+    /// Okta auth: fetch the Okta login page, extract stateToken/baseUrl from JS,
+    /// authenticate via Okta's /api/v1/authn API, then follow session redirect.
+    async fn okta_login(&mut self) -> Result<()> {
+        if self.logged_in {
+            return Ok(());
+        }
+
+        // Step 1: Navigate to app URL, following redirects to Okta login page
+        let (auth_url, resp) = self.follow_redirects(&self.base_url.clone(), "GET").await?;
+        let html_body = resp.text().await?;
+
+        // Step 2: Extract stateToken and config from page
+        let state_token = regex::Regex::new(r"var stateToken = '([^']+)'")
+            .unwrap()
+            .captures(&html_body)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().to_string())
+            .ok_or_else(|| anyhow::anyhow!("Okta login: could not find stateToken in page ({})", auth_url))?;
+
+        // Extract modelDataBag JSON for baseUrl and labels
+        let model_data = regex::Regex::new(r"var modelDataBag = '([^']+)'")
+            .unwrap()
+            .captures(&html_body)
+            .and_then(|c| c.get(1))
+            .map(|m| {
+                // Decode \xNN escapes
+                let raw = m.as_str();
+                let mut decoded = String::new();
+                let mut chars = raw.chars();
+                while let Some(ch) = chars.next() {
+                    if ch == '\\' {
+                        match chars.next() {
+                            Some('x') => {
+                                let hex: String = chars.by_ref().take(2).collect();
+                                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                                    decoded.push(byte as char);
+                                }
+                            }
+                            Some(other) => { decoded.push('\\'); decoded.push(other); }
+                            None => { decoded.push('\\'); }
+                        }
+                    } else {
+                        decoded.push(ch);
+                    }
+                }
+                decoded
+            });
+
+        let (okta_base_url, username_label, password_label, app_name, brand_name) = if let Some(ref json_str) = model_data {
+            if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
+                let base = data["baseUrl"].as_str().unwrap_or("").to_string();
+                let settings = &data["orgLoginPageSettings"];
+                let ulabel = settings["usernameLabel"].as_str().unwrap_or("Username").to_string();
+                let plabel = settings["passwordLabel"].as_str().unwrap_or("Password").to_string();
+                let app = data["appInstanceName"].as_str().unwrap_or("").to_string();
+                let brand = data["brandName"].as_str().unwrap_or("").to_string();
+                (base, ulabel, plabel, app, brand)
+            } else {
+                (String::new(), "Username".to_string(), "Password".to_string(), String::new(), String::new())
+            }
+        } else {
+            (String::new(), "Username".to_string(), "Password".to_string(), String::new(), String::new())
+        };
+
+        // Determine the Okta base URL
+        let okta_base = if !okta_base_url.is_empty() {
+            okta_base_url
+        } else {
+            // Fall back to the auth page URL's origin
+            let parsed = reqwest::Url::parse(&auth_url)?;
+            format!("{}://{}", parsed.scheme(), parsed.host_str().unwrap_or(""))
+        };
+
+        // Display page context
+        if !brand_name.is_empty() || !app_name.is_empty() {
+            eprintln!();
+            if !brand_name.is_empty() {
+                eprintln!("{}", brand_name);
+            }
+            if !app_name.is_empty() {
+                eprintln!("Connecting to {}", app_name);
+            }
+            eprintln!();
+        }
+
+        // Step 3: Prompt for credentials using Okta's labels
+        let username = if let Some(ref u) = self.username {
+            u.clone()
+        } else {
+            eprint!("{}: ", username_label);
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            let val = input.trim().to_string();
+            self.username = Some(val.clone());
+            val
+        };
+
+        let password = if let Some(ref p) = self.password {
+            p.clone()
+        } else {
+            let val = rpassword::prompt_password(format!("{}: ", password_label))?;
+            self.password = Some(val.clone());
+            val
+        };
+
+        // Step 4: POST to Okta authn API
+        let authn_url = format!("{}/api/v1/authn", okta_base);
+        let authn_body = serde_json::json!({
+            "username": username,
+            "password": password,
+            "stateToken": state_token,
+        });
+        let start = Instant::now();
+        let resp = self.client.post(&authn_url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .body(authn_body.to_string())
+            .send()
+            .await?;
+        let first_byte = start.elapsed().as_millis() as u64;
+        let status = resp.status().as_u16();
+        let body = resp.text().await?;
+        let last_byte = start.elapsed().as_millis() as u64;
+        log_http(&self.http_log, "POST", &authn_url, Some("username=***&password=***".into()), status, first_byte, last_byte, Some(&body[..body.len().min(200)]));
+
+        if status == 401 {
+            anyhow::bail!("Okta login failed: invalid credentials");
+        }
+        if status != 200 {
+            anyhow::bail!("Okta login failed: HTTP {} — {}", status, &body[..body.len().min(200)]);
+        }
+
+        let authn_resp: serde_json::Value = serde_json::from_str(&body)?;
+        let authn_status = authn_resp["status"].as_str().unwrap_or("");
+
+        // Step 5: Handle MFA if required
+        let session_token = match authn_status {
+            "SUCCESS" => {
+                authn_resp["sessionToken"].as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Okta login: SUCCESS but no sessionToken"))?
+                    .to_string()
+            }
+            "MFA_REQUIRED" => {
+                self.okta_handle_mfa(&authn_resp, &okta_base).await?
+            }
+            other => {
+                anyhow::bail!("Okta login: unexpected status '{}'. May require additional setup.", other);
+            }
+        };
+
+        // Step 6: Exchange session token for session cookie
+        // Follow the fromURI redirect with the session token
+        let from_uri = {
+            use scraper::{Html, Selector};
+            let doc = Html::parse_document(&html_body);
+            let sel = Selector::parse("input#fromURI").unwrap();
+            doc.select(&sel).next()
+                .and_then(|el| el.value().attr("value"))
+                .map(|v| v.to_string())
+        };
+
+        let redirect_url = if let Some(uri) = from_uri {
+            format!("{}/login/sessionCookieRedirect?checkAccountSetupComplete=true&token={}&redirectUrl={}", okta_base, session_token, urlencoding::encode(&uri))
+        } else {
+            format!("{}/login/sessionCookieRedirect?checkAccountSetupComplete=true&token={}&redirectUrl={}", okta_base, session_token, urlencoding::encode(&self.base_url))
+        };
+
+        // Follow the redirect chain back to the app
+        self.follow_redirects(&redirect_url, "GET").await?;
+
+        // Step 7: Verify session is established
+        let verify_url = format!("{}/api/appversion", self.base_url);
+        let start2 = Instant::now();
+        let resp = self.client.get(&verify_url).send().await?;
+        let first_byte2 = start2.elapsed().as_millis() as u64;
+        let status2 = resp.status().as_u16();
+        if resp.status().is_redirection() || !resp.status().is_success() {
+            log_http(&self.http_log, "GET", &verify_url, None, status2, first_byte2, start2.elapsed().as_millis() as u64, None);
+            anyhow::bail!("Okta login failed: session not established after redirect (HTTP {})", status2);
+        }
+        self.extract_cookie(&resp);
+        log_http(&self.http_log, "GET", &verify_url, None, status2, first_byte2, start2.elapsed().as_millis() as u64, None);
+        self.logged_in = true;
+        Ok(())
+    }
+
+    /// Handle Okta MFA challenge — supports push notification and TOTP code
+    async fn okta_handle_mfa(&self, authn_resp: &serde_json::Value, _okta_base: &str) -> Result<String> {
+        let state_token = authn_resp["stateToken"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("Okta MFA: no stateToken"))?;
+
+        let factors = authn_resp["_embedded"]["factors"].as_array()
+            .ok_or_else(|| anyhow::anyhow!("Okta MFA: no factors found"))?;
+
+        // Display available factors
+        eprintln!("\nMulti-factor authentication required.");
+
+        // Prefer Okta Verify push, then TOTP, then others
+        let push_factor = factors.iter().find(|f| f["factorType"].as_str() == Some("push"));
+        let totp_factor = factors.iter().find(|f| {
+            matches!(f["factorType"].as_str(), Some("token:software:totp") | Some("token:hotp"))
+        });
+
+        if let Some(factor) = push_factor {
+            // Send push notification
+            let verify_url = factor["_links"]["verify"]["href"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("Okta MFA: no verify URL for push factor"))?;
+
+            eprintln!("Sending push notification to Okta Verify...");
+            let body = serde_json::json!({"stateToken": state_token});
+            let start = Instant::now();
+            let resp = self.client.post(verify_url)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .body(body.to_string())
+                .send()
+                .await?;
+            let status = resp.status().as_u16();
+            let resp_body = resp.text().await?;
+            log_http(&self.http_log, "POST", verify_url, None, status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, None);
+
+            let mut poll_resp: serde_json::Value = serde_json::from_str(&resp_body)?;
+
+            // Poll for push approval (up to 60 seconds)
+            for i in 0..30 {
+                let poll_status = poll_resp["status"].as_str().unwrap_or("");
+                match poll_status {
+                    "SUCCESS" => {
+                        return poll_resp["sessionToken"].as_str()
+                            .map(|s| s.to_string())
+                            .ok_or_else(|| anyhow::anyhow!("Okta MFA: SUCCESS but no sessionToken"));
+                    }
+                    "MFA_CHALLENGE" => {
+                        let result = poll_resp["factorResult"].as_str().unwrap_or("");
+                        match result {
+                            "WAITING" => {
+                                if i == 0 { eprintln!("Waiting for approval..."); }
+                                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                                // Poll again
+                                let poll_url = poll_resp["_links"]["next"]["href"].as_str()
+                                    .unwrap_or(verify_url);
+                                let body = serde_json::json!({"stateToken": state_token});
+                                let start = Instant::now();
+                                let resp = self.client.post(poll_url)
+                                    .header("Content-Type", "application/json")
+                                    .header("Accept", "application/json")
+                                    .body(body.to_string())
+                                    .send()
+                                    .await?;
+                                let poll_status_code = resp.status().as_u16();
+                                let resp_body = resp.text().await?;
+                                log_http(&self.http_log, "POST", poll_url, None, poll_status_code, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, None);
+                                poll_resp = serde_json::from_str(&resp_body)?;
+                            }
+                            "REJECTED" => {
+                                anyhow::bail!("Okta MFA: push notification was rejected");
+                            }
+                            "TIMEOUT" => {
+                                anyhow::bail!("Okta MFA: push notification timed out");
+                            }
+                            other => {
+                                anyhow::bail!("Okta MFA: unexpected factorResult '{}'", other);
+                            }
+                        }
+                    }
+                    other => {
+                        anyhow::bail!("Okta MFA: unexpected status '{}' during push", other);
+                    }
+                }
+            }
+            anyhow::bail!("Okta MFA: push notification timed out after 60 seconds");
+
+        } else if let Some(factor) = totp_factor {
+            // Prompt for TOTP code
+            let verify_url = factor["_links"]["verify"]["href"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("Okta MFA: no verify URL for TOTP factor"))?;
+            let provider = factor["provider"].as_str().unwrap_or("authenticator");
+
+            let code = rpassword::prompt_password(format!("Enter code from {}: ", provider))?;
+
+            let body = serde_json::json!({
+                "stateToken": state_token,
+                "passCode": code,
+            });
+            let start = Instant::now();
+            let resp = self.client.post(verify_url)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .body(body.to_string())
+                .send()
+                .await?;
+            let status = resp.status().as_u16();
+            let resp_body = resp.text().await?;
+            log_http(&self.http_log, "POST", verify_url, Some("passCode=***".into()), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, None);
+
+            let mfa_resp: serde_json::Value = serde_json::from_str(&resp_body)?;
+            if mfa_resp["status"].as_str() == Some("SUCCESS") {
+                return mfa_resp["sessionToken"].as_str()
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| anyhow::anyhow!("Okta MFA: SUCCESS but no sessionToken"));
+            }
+            anyhow::bail!("Okta MFA: verification failed ({})", mfa_resp["status"].as_str().unwrap_or("unknown"));
+        } else {
+            // List available factor types for the user
+            let factor_types: Vec<&str> = factors.iter()
+                .filter_map(|f| f["factorType"].as_str())
+                .collect();
+            anyhow::bail!("Okta MFA: no supported factor type. Available: {:?}", factor_types);
+        }
+    }
+
     pub(super) async fn authenticated_get(&self, url: &str) -> Result<String> {
         let start = Instant::now();
         let username = match self.username.as_deref() {
@@ -941,7 +1256,7 @@ impl ArkimeClient {
                 log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
-            AuthMode::Form | AuthMode::Web => {
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => {
                 let resp = self.client.get(url).send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
@@ -1042,7 +1357,7 @@ impl ArkimeClient {
                 log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
-            AuthMode::Form | AuthMode::Web => {
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => {
                 let mut req = self.client.get(url);
                 if let Some(ref cookie) = self.arkime_cookie {
                     req = req.header(self.cookie_header_name, cookie);
@@ -1151,7 +1466,7 @@ impl ArkimeClient {
                 log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
                 Ok(body)
             }
-            AuthMode::Form | AuthMode::Web => {
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => {
                 let mut req = self.client.post(url).form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
                     req = req.header(self.cookie_header_name, cookie);
@@ -1253,7 +1568,7 @@ impl ArkimeClient {
                 log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
                 Ok(bytes)
             }
-            AuthMode::Form | AuthMode::Web => {
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => {
                 let resp = self.client.get(url).send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
@@ -1327,7 +1642,7 @@ impl ArkimeClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.get(&url).header("Authorization", auth_header).send().await?
             }
-            AuthMode::Form | AuthMode::Web => return Ok(()), // already captured during login
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => return Ok(()), // already captured during login
         };
         self.extract_cookie(&resp);
         Ok(())
@@ -1391,7 +1706,7 @@ impl ArkimeClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.post(url).header("Authorization", auth_header)
             }
-            AuthMode::Form | AuthMode::Web => self.client.post(url),
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => self.client.post(url),
         };
         if let Some(ref cookie) = self.arkime_cookie {
             req = req.header(self.cookie_header_name, cookie);
@@ -1454,7 +1769,7 @@ impl ArkimeClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.put(url).header("Authorization", auth_header)
             }
-            AuthMode::Form | AuthMode::Web => self.client.put(url),
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => self.client.put(url),
         };
         if let Some(ref cookie) = self.arkime_cookie {
             req = req.header(self.cookie_header_name, cookie);
@@ -1513,7 +1828,7 @@ impl ArkimeClient {
                 let auth_header = prompt.respond(&context)?.to_header_string();
                 self.client.delete(url).header("Authorization", auth_header)
             }
-            AuthMode::Form | AuthMode::Web => self.client.delete(url),
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => self.client.delete(url),
         };
         if let Some(ref cookie) = self.arkime_cookie {
             req = req.header(self.cookie_header_name, cookie);

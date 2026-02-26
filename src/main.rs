@@ -28,7 +28,7 @@ struct Cli {
     url: String,
 
     /// Authentication mode
-    #[arg(long, value_parser = ["basic", "digest", "form", "web"])]
+    #[arg(long, value_parser = ["basic", "digest", "form", "web", "okta"])]
     auth: Option<String>,
 
     /// Credentials as user:pass (prompts if omitted with --auth)
@@ -53,23 +53,26 @@ async fn main() -> Result<()> {
         Some("digest") => api::AuthMode::Digest,
         Some("form") => api::AuthMode::Form,
         Some("web") => api::AuthMode::Web,
+        Some("okta") => api::AuthMode::Okta,
         _ => api::AuthMode::None,
     };
+
+    let defers_prompts = auth_mode == api::AuthMode::Web || auth_mode == api::AuthMode::Okta;
 
     let (username, password) = if let Some(userpass) = &cli.user {
         if let Some((u, p)) = userpass.split_once(':') {
             (Some(u.to_string()), Some(p.to_string()))
         } else {
-            // Username only (no colon) — prompt for password (unless web auth defers)
-            if auth_mode == api::AuthMode::Web {
+            // Username only (no colon) — prompt for password (unless auth defers to login page)
+            if defers_prompts {
                 (Some(userpass.clone()), None)
             } else {
                 let pass = rpassword::prompt_password(format!("Password for {userpass}: "))?;
                 (Some(userpass.clone()), Some(pass))
             }
         }
-    } else if auth_mode == api::AuthMode::Web {
-        // Web auth will prompt using form labels after fetching the page
+    } else if defers_prompts {
+        // Web/Okta auth will prompt using form labels after fetching the page
         (None, None)
     } else if auth_mode != api::AuthMode::None {
         eprint!("Username: ");
@@ -82,9 +85,9 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
-    // For web auth, login before entering raw mode (needs interactive stdin for prompts)
+    // For web/okta auth, login before entering raw mode (needs interactive stdin for prompts)
     let mut client = api::ArkimeClient::new(&cli.url, auth_mode, username.clone(), password.clone());
-    if auth_mode == api::AuthMode::Web {
+    if defers_prompts {
         client.login().await?;
         client.fetch_cookie().await.ok();
     }
@@ -96,7 +99,7 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Fetch app version to determine mode
-    if auth_mode != api::AuthMode::Web {
+    if !defers_prompts {
         client.login().await?;
         client.fetch_cookie().await.ok();
     }
