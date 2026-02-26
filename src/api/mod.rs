@@ -678,7 +678,19 @@ impl ArkimeClient {
             parsed.join(action)?.to_string()
         };
 
-        // Step 3: Collect all input fields and fill in credentials
+        // Step 3: Build label map from <label for="id"> elements
+        let label_sel = Selector::parse("label").unwrap();
+        let mut label_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for label_el in form.select(&label_sel) {
+            if let Some(for_id) = label_el.value().attr("for") {
+                let text: String = label_el.text().collect::<String>().trim().to_string();
+                if !text.is_empty() {
+                    label_map.insert(for_id.to_string(), text);
+                }
+            }
+        }
+
+        // Step 4: Collect all input fields and fill in credentials
         let mut form_data: Vec<(String, String)> = Vec::new();
         let mut found_user = false;
         let mut found_pass = false;
@@ -687,6 +699,7 @@ impl ArkimeClient {
             let name = input.value().attr("name").unwrap_or("").to_string();
             let input_type = input.value().attr("type").unwrap_or("text").to_lowercase();
             let value = input.value().attr("value").unwrap_or("").to_string();
+            let id = input.value().attr("id").unwrap_or("").to_string();
 
             if name.is_empty() {
                 continue;
@@ -697,16 +710,32 @@ impl ArkimeClient {
                     form_data.push((name, password.to_string()));
                     found_pass = true;
                 }
-                "submit" | "button" | "image" => {}
+                "submit" | "button" | "image" | "checkbox" | "radio" => {
+                    // For checkbox/radio, include if checked
+                    if (input_type == "checkbox" || input_type == "radio")
+                        && input.value().attr("checked").is_some() {
+                        form_data.push((name, value));
+                    }
+                }
                 "hidden" => {
                     form_data.push((name, value));
                 }
                 _ => {
+                    // text, email, tel, number, etc.
                     if !found_user {
                         form_data.push((name, username.to_string()));
                         found_user = true;
                     } else {
-                        form_data.push((name, value));
+                        // Extra field — prompt the user interactively
+                        let prompt_label = label_map.get(&id)
+                            .cloned()
+                            .or_else(|| input.value().attr("placeholder").map(|s| s.to_string()))
+                            .unwrap_or_else(|| name.clone());
+                        eprint!("{}: ", prompt_label);
+                        let mut input_value = String::new();
+                        std::io::stdin().read_line(&mut input_value)?;
+                        let input_value = input_value.trim().to_string();
+                        form_data.push((name, input_value));
                     }
                 }
             }
