@@ -1757,18 +1757,17 @@ impl ArkimeClient {
                         .and_then(|r| r["href"].as_str())
                         .unwrap_or(&format!("{}/idp/idx/challenge", okta_base))
                         .to_string();
-                    let select_accepts = select_rem
-                        .and_then(|r| r["accepts"].as_str())
-                        .map(|s| s.to_string());
-
                     let mut select_body = serde_json::json!({"stateHandle": state_handle});
                     select_body["authenticator"] = serde_json::json!({"id": id});
                     if !effective_method.is_empty() {
                         select_body["authenticator"]["methodType"] = serde_json::Value::String(effective_method.clone());
                     }
 
+                    // Browser always sends Accept: application/json for challenge calls
+                    // (not ion+json) — this determines whether Okta returns
+                    // device-challenge-poll (loopback) vs challenge-poll (push-only)
                     let start = Instant::now();
-                    let resp = idx_post(&select_url, select_body, select_accepts.as_deref())
+                    let resp = idx_post(&select_url, select_body, Some("application/json; okta-version=1.0.0"))
                         .send().await?;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
