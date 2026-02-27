@@ -1843,8 +1843,73 @@ impl ArkimeClient {
                         eprintln!("  IDX: MFA requires Okta Verify loopback (signed_nonce)...");
                         skip_device_poll!(current_resp, state_handle);
                     } else if post_select_rems.contains(&"challenge-poll".to_string()) {
-                        // challenge-poll = push notification — poll until user approves on phone
-                        eprintln!("  IDX: MFA challenge-poll — push notification sent, polling for approval...");
+                        // challenge-poll with signed_nonce — check if contextualData has LOOPBACK challenge
+                        // The local OV agent must receive the challenge to trigger approval
+                        let cd = current_resp.get("currentAuthenticator")
+                            .and_then(|v| v.get("value"))
+                            .and_then(|v| v.get("contextualData"))
+                            .and_then(|v| v.get("challenge"))
+                            .and_then(|v| v.get("value"));
+                        let challenge_method = cd.and_then(|v| v["challengeMethod"].as_str()).unwrap_or("");
+                        if challenge_method == "LOOPBACK" {
+                            let challenge_request = cd.and_then(|v| v["challengeRequest"].as_str()).unwrap_or("");
+                            let https_domain = cd.and_then(|v| v["httpsDomain"].as_str()).unwrap_or("");
+                            let ports = cd.and_then(|v| v["ports"].as_array());
+                            eprintln!("  IDX: MFA challenge-poll has LOOPBACK data, doing loopback challenge...");
+                            eprintln!("  IDX: httpsDomain={}, ports={:?}", https_domain, ports.map(|p| p.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>()));
+                            if !challenge_request.is_empty() {
+                                if let Some(ports_arr) = ports {
+                                    let loopback_client = Client::builder()
+                                        .danger_accept_invalid_certs(true)
+                                        .timeout(std::time::Duration::from_secs(3))
+                                        .build()
+                                        .unwrap();
+                                    let mut loopback_ok = false;
+                                    for port_val in ports_arr {
+                                        let port = port_val.as_str().and_then(|s| s.parse::<u64>().ok())
+                                            .or_else(|| port_val.as_u64())
+                                            .unwrap_or(0);
+                                        if port == 0 { continue; }
+                                        let base = format!("{}:{}", https_domain, port);
+                                        eprintln!("  IDX: MFA loopback probing {}...", base);
+                                        match loopback_client.get(format!("{}/probe", base))
+                                            .header("Origin", &okta_origin)
+                                            .send().await {
+                                            Ok(resp) if resp.status().is_success() => {
+                                                eprintln!("  IDX: MFA loopback probe OK on port {}, sending challenge...", port);
+                                                match loopback_client.post(format!("{}/challenge", base))
+                                                    .header("Content-Type", "application/json")
+                                                    .header("Origin", &okta_origin)
+                                                    .body(serde_json::json!({"challengeRequest": challenge_request}).to_string())
+                                                    .send().await {
+                                                    Ok(resp) => {
+                                                        let cstatus = resp.status();
+                                                        let cbody = resp.text().await.unwrap_or_default();
+                                                        eprintln!("  IDX: MFA loopback challenge response: HTTP {} body={}", cstatus, cbody);
+                                                        if cstatus.is_success() {
+                                                            loopback_ok = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                    Err(e) => eprintln!("  IDX: MFA loopback challenge error: {}", e),
+                                                }
+                                            }
+                                            Ok(resp) => eprintln!("  IDX: MFA loopback probe failed: HTTP {}", resp.status()),
+                                            Err(e) => eprintln!("  IDX: MFA loopback probe failed: {}", e),
+                                        }
+                                    }
+                                    if loopback_ok {
+                                        eprintln!("  IDX: MFA loopback challenge sent — now polling for OV approval...");
+                                    } else {
+                                        eprintln!("  IDX: MFA loopback failed on all ports — polling anyway...");
+                                    }
+                                }
+                            } else {
+                                eprintln!("  IDX: LOOPBACK but empty challengeRequest — polling without loopback...");
+                            }
+                        } else {
+                            eprintln!("  IDX: MFA challenge-poll (no LOOPBACK data, challengeMethod={}) — polling...", challenge_method);
+                        }
                         // Fall through to the challenge-poll handler below
                     } else if post_select_rems.contains(&"authenticator-verification-data".to_string()) {
                         // Need to specify methodType in a second step
