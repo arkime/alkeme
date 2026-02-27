@@ -1709,10 +1709,10 @@ impl ArkimeClient {
                 });
 
                 if let Some((label, id, method)) = selected {
-                    // For Okta Verify, prefer TOTP over push (push requires mobile approval
-                    // which may not arrive; TOTP lets user enter code from the app)
+                    // For Okta Verify, use signed_nonce (FastPass) which completes via
+                    // loopback to local Okta Verify agent — this is what the browser does
                     let effective_method = if method.is_empty() && label.to_lowercase().contains("okta verify") {
-                        "totp".to_string()
+                        "signed_nonce".to_string()
                     } else {
                         method.clone()
                     };
@@ -1730,7 +1730,6 @@ impl ArkimeClient {
                         select_body["authenticator"]["methodType"] = serde_json::Value::String(effective_method.clone());
                     }
 
-                    eprintln!("  IDX: select body: {}", select_body);
                     let start = Instant::now();
                     let resp = idx_post(&select_url, select_body, None)
                         .send().await?;
@@ -1746,7 +1745,20 @@ impl ArkimeClient {
                     current_resp = serde_json::from_str(&body)?;
                     state_handle = current_resp["stateHandle"].as_str()
                         .unwrap_or(&state_handle).to_string();
-                    eprintln!("  IDX: MFA authenticator selected, prompting for code...");
+
+                    // After selecting signed_nonce/Okta Verify, we get device-challenge-poll
+                    // which needs the loopback flow (probe + challenge to local OV agent)
+                    let post_select_rems: Vec<String> = current_resp["remediation"]["value"].as_array()
+                        .map(|arr| arr.iter().filter_map(|r| r["name"].as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default();
+                    eprintln!("  IDX: after MFA select, remediations: {:?}", post_select_rems);
+
+                    if post_select_rems.contains(&"device-challenge-poll".to_string()) {
+                        eprintln!("  IDX: MFA requires Okta Verify loopback (signed_nonce)...");
+                        skip_device_poll!(current_resp, state_handle);
+                    } else {
+                        eprintln!("  IDX: MFA authenticator selected, prompting for code...");
+                    }
                 } else if available_auths.is_empty() && challenge_rem.is_some() {
                     // No select options but challenge is active — try prompting anyway
                     eprintln!("  IDX: no select options, attempting challenge with current authenticator (key={}, type={})", current_auth_key, current_auth_type);
