@@ -902,9 +902,13 @@ impl App {
 
     pub(crate) fn handle_detail_filter_key(&mut self, key: KeyEvent) {
         let is_stats = self.active_tab == Tab::Stats;
+        let is_c3_detail = self.app_mode == crate::app::AppMode::Cont3xt && self.active_tab == Tab::Search;
         match key.code {
             KeyCode::Esc => {
-                if is_stats {
+                if is_c3_detail {
+                    self.c3_detail_filter.clear();
+                    self.c3_detail_scroll = 0;
+                } else if is_stats {
                     if let Some(ref mut detail) = self.vr_stats_detail {
                         detail.filter.clear();
                         detail.scroll = 0;
@@ -921,7 +925,10 @@ impl App {
                 self.input_mode = InputMode::Normal;
             }
             KeyCode::Char(c) => {
-                if is_stats {
+                if is_c3_detail {
+                    self.c3_detail_filter.push(c);
+                    self.c3_detail_scroll = 0;
+                } else if is_stats {
                     if let Some(ref mut detail) = self.vr_stats_detail {
                         detail.filter.push(c);
                         detail.scroll = 0;
@@ -934,7 +941,10 @@ impl App {
                 }
             }
             KeyCode::Backspace => {
-                if is_stats {
+                if is_c3_detail {
+                    self.c3_detail_filter.pop();
+                    self.c3_detail_scroll = 0;
+                } else if is_stats {
                     if let Some(ref mut detail) = self.vr_stats_detail {
                         detail.filter.pop();
                         detail.scroll = 0;

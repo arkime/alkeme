@@ -66,6 +66,10 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
 
     draw_status_bar(f, app, chunks[3]);
 
+    if app.c3_show_card_popup {
+        draw_card_popup(f, app, f.area());
+    }
+
     if app.c3_show_link_popup {
         draw_link_popup(f, app, f.area());
     }
@@ -342,14 +346,61 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
             flatten_json_to_lines(&result.data, "", 0)
         };
         align_table_columns(&mut lines);
+
+        // Apply detail filter
+        if !app.c3_detail_filter.is_empty() {
+            let filter_lower = app.c3_detail_filter.to_lowercase();
+            let len = lines.len();
+
+            // Mark data lines that match the filter
+            let mut keep: Vec<bool> = lines.iter().map(|line| {
+                match line {
+                    JsonLine::KeyValue(k, v) => format!("{k}: {v}").to_lowercase().contains(&filter_lower),
+                    JsonLine::ArrayValue(v) => v.to_lowercase().contains(&filter_lower),
+                    JsonLine::TableRow(cells, _) => cells.join(" ").to_lowercase().contains(&filter_lower),
+                    _ => false,
+                }
+            }).collect();
+
+            // Bottom-up: keep TableHeader only if a following TableRow (before non-TableRow) is kept
+            for i in (0..len).rev() {
+                if matches!(&lines[i], JsonLine::TableHeader(_, _)) {
+                    keep[i] = lines[i+1..].iter().zip(keep[i+1..].iter()).any(|(next, &k)| {
+                        if !matches!(next, JsonLine::TableRow(_, _)) { return false; }
+                        k
+                    });
+                }
+            }
+
+            // Bottom-up: keep Header only if any kept line follows before the next Header
+            for i in (0..len).rev() {
+                if matches!(&lines[i], JsonLine::Header(_, _)) {
+                    keep[i] = lines[i+1..].iter().zip(keep[i+1..].iter()).any(|(next, &k)| {
+                        if matches!(next, JsonLine::Header(_, _)) { return false; }
+                        k
+                    });
+                }
+            }
+
+            let mut filtered = Vec::new();
+            for (i, line) in lines.into_iter().enumerate() {
+                if keep[i] { filtered.push(line); }
+            }
+            lines = filtered;
+        }
+
+        // Show filter bar if filtering
+        let filter_height = if app.input_mode == InputMode::DetailFilter || !app.c3_detail_filter.is_empty() { 1u16 } else { 0 };
+        let content_height = detail_inner.height.saturating_sub(filter_height);
+
         let total_lines = lines.len();
 
         // Clamp scroll
-        let max_scroll = total_lines.saturating_sub(detail_inner.height as usize);
+        let max_scroll = total_lines.saturating_sub(content_height as usize);
         let scroll = (app.c3_detail_scroll as usize).min(max_scroll);
         app.c3_detail_scroll = scroll as u16;
 
-        for (i, line) in lines.iter().skip(scroll).take(detail_inner.height as usize).enumerate() {
+        for (i, line) in lines.iter().skip(scroll).take(content_height as usize).enumerate() {
             let y = detail_inner.y + i as u16;
             if y >= detail_inner.y + detail_inner.height { break; }
 
@@ -396,9 +447,27 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
             f.render_widget(Paragraph::new(Line::from(spans)), Rect::new(detail_inner.x, y, detail_inner.width, 1));
         }
 
+        // Filter bar at bottom of detail pane
+        if filter_height > 0 {
+            let filter_y = detail_inner.y + content_height;
+            let filter_text = format!(" /{}", app.c3_detail_filter);
+            let filter_style = if app.input_mode == InputMode::DetailFilter {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            f.render_widget(
+                Paragraph::new(Span::styled(&filter_text, filter_style)),
+                Rect::new(detail_inner.x, filter_y, detail_inner.width, 1),
+            );
+            if app.input_mode == InputMode::DetailFilter {
+                f.set_cursor_position((detail_inner.x + filter_text.len() as u16, filter_y));
+            }
+        }
+
         // Scrollbar indicator + raw toggle hint
         let hint = if detail_focused { " R:toggle raw " } else { "" };
-        if total_lines > detail_inner.height as usize {
+        if total_lines > content_height as usize {
             let pct = if max_scroll > 0 { scroll * 100 / max_scroll } else { 0 };
             let indicator = format!(" {}/{} ({}%){hint}", scroll + 1, total_lines, pct);
             let x = horiz[1].x + horiz[1].width.saturating_sub(indicator.len() as u16 + 1);
@@ -1128,4 +1197,70 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
             }
         }
     }
+}
+
+fn draw_card_popup(f: &mut Frame, app: &App, area: Rect) {
+    let actual_result_idx = app.c3_tree_order.get(app.c3_selected).copied().unwrap_or(0);
+    let result = match app.c3_results.get(actual_result_idx) {
+        Some(r) => r,
+        None => return,
+    };
+
+    let card = app.c3_integrations.iter()
+        .find(|i| i.name == result.name)
+        .and_then(|i| i.card.as_ref());
+
+    let popup_w = (area.width - 4).min(80);
+    let popup_h = (area.height - 4).min(40);
+    let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+    let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+    let popup_area = Rect::new(x, y, popup_w, popup_h);
+
+    f.render_widget(Clear, popup_area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(format!(" Card: {} ", result.name));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let text = if let Some(card) = card {
+        let mut lines = Vec::new();
+        lines.push(format!("Title: {}", card.title));
+        lines.push(String::new());
+        for (fi, field) in card.fields.iter().enumerate() {
+            lines.push(format!("Field[{}]:", fi));
+            lines.push(format!("  label: {}", field.label));
+            lines.push(format!("  field: {}", field.field));
+            lines.push(format!("  type: {}", field.field_type));
+            if let Some(ref join) = field.join {
+                lines.push(format!("  join: {:?}", join));
+            }
+            if field.defang {
+                lines.push("  defang: true".to_string());
+            }
+            if let Some(ref root) = field.field_root {
+                lines.push(format!("  fieldRoot: {}", root));
+            }
+            if field.filter_empty {
+                lines.push("  filterEmpty: true".to_string());
+            }
+            if !field.fields.is_empty() {
+                lines.push("  sub-fields:".to_string());
+                for sf in &field.fields {
+                    lines.push(format!("    - {} ({}): {}", sf.label, sf.field_type, sf.field));
+                }
+            }
+            lines.push(String::new());
+        }
+        lines.join("\n")
+    } else {
+        "No card definition found for this integration.".to_string()
+    };
+
+    let para = Paragraph::new(text)
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: false })
+        .scroll((app.c3_card_popup_scroll, 0));
+    f.render_widget(para, inner);
 }

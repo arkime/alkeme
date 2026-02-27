@@ -150,7 +150,7 @@ pub struct Cont3xtIntegration {
 }
 
 /// Card display definition for an integration
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Cont3xtCard {
     #[allow(dead_code)]
     pub title: String,
@@ -158,7 +158,7 @@ pub struct Cont3xtCard {
 }
 
 /// A field in a card definition
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CardField {
     pub label: String,
     pub field: String,              // dot-joined path for data traversal

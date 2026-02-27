@@ -133,6 +133,7 @@ pub struct App {
     pub c3_tree_roots: Vec<usize>,    // indices into c3_tree_order where each root indicator starts
     pub c3_detail_scroll: u16,        // scroll in detail pane
     pub c3_detail_hscroll: u16,       // horizontal scroll in detail pane
+    pub c3_detail_filter: String,     // filter string for detail pane
     pub c3_search_total: u64,
     pub c3_search_sent: u64,
     pub c3_search_itype: String,
@@ -142,6 +143,8 @@ pub struct App {
     pub c3_init_indicators: Vec<(String, String)>,
     pub c3_focus: Cont3xtFocus,       // which pane has focus
     pub c3_raw_view: bool,            // show raw JSON instead of card
+    pub c3_show_card_popup: bool,     // show card definition popup
+    pub c3_card_popup_scroll: u16,    // scroll offset for card popup
     pub c3_disabled_integrations: std::collections::HashSet<String>, // user-toggled off
     pub c3_show_integration_popup: bool,
     pub c3_integration_popup_selected: usize,
@@ -352,6 +355,7 @@ impl App {
             c3_tree_roots: Vec::new(),
             c3_detail_scroll: 0,
             c3_detail_hscroll: 0,
+            c3_detail_filter: String::new(),
             c3_search_total: 0,
             c3_search_sent: 0,
             c3_search_itype: String::new(),
@@ -359,6 +363,8 @@ impl App {
             c3_init_indicators: Vec::new(),
             c3_focus: Cont3xtFocus::Results,
             c3_raw_view: false,
+            c3_show_card_popup: false,
+            c3_card_popup_scroll: 0,
             c3_disabled_integrations: std::collections::HashSet::new(),
             c3_show_integration_popup: false,
             c3_integration_popup_selected: 0,

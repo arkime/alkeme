@@ -111,6 +111,50 @@ impl App {
             return;
         }
 
+        // Card definition popup handler
+        if self.c3_show_card_popup {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('C') | KeyCode::Char('q') => {
+                    self.c3_show_card_popup = false;
+                }
+                KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    self.c3_card_popup_scroll = self.c3_card_popup_scroll.saturating_sub(10);
+                }
+                KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    self.c3_card_popup_scroll = self.c3_card_popup_scroll.saturating_add(10);
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.c3_card_popup_scroll = self.c3_card_popup_scroll.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.c3_card_popup_scroll = self.c3_card_popup_scroll.saturating_add(1);
+                }
+                KeyCode::Home => self.c3_card_popup_scroll = 0,
+                KeyCode::End => self.c3_card_popup_scroll = u16::MAX,
+                KeyCode::Char('s') | KeyCode::Char('w') => {
+                    // Write card definition to /tmp file
+                    let actual_idx = self.c3_tree_order.get(self.c3_selected).copied().unwrap_or(0);
+                    if let Some(result) = self.c3_results.get(actual_idx) {
+                        let card = self.c3_integrations.iter()
+                            .find(|i| i.name == result.name)
+                            .and_then(|i| i.card.as_ref());
+                        let text = if let Some(card) = card {
+                            format!("{:#?}", card)
+                        } else {
+                            "No card definition found.".to_string()
+                        };
+                        let path = "/tmp/alkeme-card.txt";
+                        match std::fs::write(path, &text) {
+                            Ok(_) => self.status_msg = format!("Card written to {path}"),
+                            Err(e) => self.status_msg = format!("Error writing card: {e}"),
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // Integration popup handler
         if self.c3_show_integration_popup {
             match self.c3_integration_popup_mode {
@@ -389,6 +433,9 @@ impl App {
             KeyCode::Esc if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail => {
                 self.c3_focus = Cont3xtFocus::Results;
             }
+            KeyCode::Char('/') if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail => {
+                self.input_mode = InputMode::DetailFilter;
+            }
             KeyCode::Char('/') | KeyCode::Char('E') if self.active_tab == Tab::Search => {
                 self.expression_edit = self.expression.clone();
                 self.expression_cursor = self.expression_edit.len();
@@ -402,6 +449,10 @@ impl App {
                 self.c3_raw_view = !self.c3_raw_view;
                 self.c3_detail_scroll = 0;
                 self.c3_detail_hscroll = 0;
+            }
+            KeyCode::Char('C') if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail => {
+                self.c3_show_card_popup = !self.c3_show_card_popup;
+                self.c3_card_popup_scroll = 0;
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) && self.active_tab == Tab::Search => {
                 self.c3_no_cache = true;

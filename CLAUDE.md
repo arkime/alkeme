@@ -160,8 +160,11 @@ src/
 | End | Jump to bottom |
 | Enter | Open detail panel (results); close detail uses Esc |
 | Esc | Return to results from detail; close popups |
-| / or E | Search expression or filter (Enter to apply, Esc to cancel); in session detail, live-filter fields |
+| / or E | Search expression or filter (Enter to apply, Esc to cancel) |
+| / | Filter detail fields (when in detail panel) |
+| E | Edit search indicator (when in detail panel) |
 | R | Toggle raw JSON / card view |
+| C | Card definition popup (detail); s saves to /tmp/alkeme-card.txt |
 | i | Integration filter popup (Space:toggle, a:all, n:none, !:invert, /:filter) |
 | Shift+I | Open views popup (select/create/delete integration views) |
 | r | Re-run search |
@@ -329,8 +332,8 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - For Form auth, reqwest cookie jar handles session cookies; only CSRF token sent via custom header
 
 ### Cont3xt state fields
-- `c3_integrations`, `c3_results`, `c3_selected`, `c3_detail_scroll`, `c3_detail_hscroll`
-- `c3_search_total`, `c3_search_sent`, `c3_search_itype`, `c3_focus`, `c3_raw_view`
+- `c3_integrations`, `c3_results`, `c3_selected`, `c3_detail_scroll`, `c3_detail_hscroll`, `c3_detail_filter`
+- `c3_search_total`, `c3_search_sent`, `c3_search_itype`, `c3_focus`, `c3_raw_view`, `c3_show_card_popup`, `c3_card_popup_scroll`
 - `c3_disabled_integrations`, `show_integration_popup`, `integration_popup_selected`, `integration_popup_filter`, `integration_popup_filtering`
 - `c3_searching`, `pending_c3_search`
 - `c3_tree_order` — result indices in tree display order (navigation uses this, not flat c3_results)
