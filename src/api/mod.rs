@@ -1730,6 +1730,7 @@ impl ArkimeClient {
                         select_body["authenticator"]["methodType"] = serde_json::Value::String(effective_method.clone());
                     }
 
+                    eprintln!("  IDX: select body: {}", select_body);
                     let start = Instant::now();
                     let resp = idx_post(&select_url, select_body, None)
                         .send().await?;
@@ -1737,7 +1738,10 @@ impl ArkimeClient {
                     let body = resp.text().await?;
                     log_http(&self.http_log, "POST", &select_url, None, status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
                     if status != 200 {
-                        anyhow::bail!("IDX MFA select-authenticator failed: HTTP {} — {}", status, &body[..body.len().min(200)]);
+                        let err_detail = serde_json::from_str::<serde_json::Value>(&body).ok()
+                            .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
+                            .unwrap_or_else(|| body[..body.len().min(500)].to_string());
+                        anyhow::bail!("IDX MFA select-authenticator failed: HTTP {} — {}", status, err_detail);
                     }
                     current_resp = serde_json::from_str(&body)?;
                     state_handle = current_resp["stateHandle"].as_str()
