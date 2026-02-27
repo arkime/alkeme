@@ -94,11 +94,18 @@ fn draw_summary_table(f: &mut Frame, app: &mut App, area: Rect) {
         if app.vr_summary_sort == sort { format!("{label} {arrow}") } else { label.to_string() }
     };
 
+    let sort_style = |sort: SummarySort| -> Style {
+        if app.vr_summary_sort == sort {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        }
+    };
     let header = Row::new(vec![
-        Cell::from(sort_indicator(SummarySort::Value, "Value")).style(Style::default().fg(Color::Yellow)),
-        Cell::from(sort_indicator(SummarySort::Sessions, "Sessions")).style(Style::default().fg(Color::Yellow)),
-        Cell::from(sort_indicator(SummarySort::Packets, "Packets")).style(Style::default().fg(Color::Yellow)),
-        Cell::from(sort_indicator(SummarySort::Bytes, "Bytes")).style(Style::default().fg(Color::Yellow)),
+        Cell::from(sort_indicator(SummarySort::Value, "Value")).style(sort_style(SummarySort::Value)),
+        Cell::from(sort_indicator(SummarySort::Sessions, "Sessions")).style(sort_style(SummarySort::Sessions)),
+        Cell::from(sort_indicator(SummarySort::Packets, "Packets")).style(sort_style(SummarySort::Packets)),
+        Cell::from(sort_indicator(SummarySort::Bytes, "Bytes")).style(sort_style(SummarySort::Bytes)),
     ])
     .height(1)
     .bottom_margin(0);

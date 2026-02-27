@@ -115,15 +115,19 @@ impl PlIssue {
 }
 
 impl super::ArkimeClient {
+    fn pl_base(&self) -> &str {
+        self.base_url.strip_suffix("/parliament").unwrap_or(&self.base_url)
+    }
+
     pub async fn pl_get_parliament(&self) -> Result<PlParliament> {
-        let url = format!("{}/parliament/api/parliament", self.base_url);
+        let url = format!("{}/parliament/api/parliament", self.pl_base());
         let body = self.authenticated_get(&url).await?;
         let parliament: PlParliament = serde_json::from_str(&body)?;
         Ok(parliament)
     }
 
     pub async fn pl_get_stats(&self) -> Result<std::collections::HashMap<String, PlClusterStats>> {
-        let url = format!("{}/parliament/api/parliament/stats", self.base_url);
+        let url = format!("{}/parliament/api/parliament/stats", self.pl_base());
         let body = self.authenticated_get(&url).await?;
         let val: Value = serde_json::from_str(&body)?;
         let mut map = std::collections::HashMap::new();
@@ -136,7 +140,7 @@ impl super::ArkimeClient {
     }
 
     pub async fn pl_get_issues(&self) -> Result<Vec<PlIssue>> {
-        let url = format!("{}/parliament/api/issues", self.base_url);
+        let url = format!("{}/parliament/api/issues", self.pl_base());
         let body = self.authenticated_get(&url).await?;
         let val: Value = serde_json::from_str(&body)?;
         let issues: Vec<PlIssue> = if let Some(arr) = val.get("issues") {
@@ -149,7 +153,7 @@ impl super::ArkimeClient {
 
     /// Get issues grouped by cluster id (for dashboard inline display)
     pub async fn pl_get_issues_map(&self) -> Result<std::collections::HashMap<String, Vec<PlIssue>>> {
-        let url = format!("{}/parliament/api/issues?map=true", self.base_url);
+        let url = format!("{}/parliament/api/issues?map=true", self.pl_base());
         let body = self.authenticated_get(&url).await?;
         let val: Value = serde_json::from_str(&body)?;
         let mut map: std::collections::HashMap<String, Vec<PlIssue>> = std::collections::HashMap::new();

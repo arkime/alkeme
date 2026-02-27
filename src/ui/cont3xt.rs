@@ -738,11 +738,12 @@ fn c3_draw_stats(f: &mut Frame, app: &App, area: Rect) {
             if app.c3_stats_sort_desc { " ▼" } else { " ▲" }
         } else { "" };
         let text = format!("{label}{arrow}");
-        if i == 0 {
-            Cell::from(text).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        let style = if i == app.c3_stats_sort_col {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
         } else {
-            Cell::from(text).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        }
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        };
+        Cell::from(text).style(style)
     }).collect();
     let header = Row::new(header_cells).height(1);
 

@@ -427,6 +427,16 @@ impl App {
                             self.c3_detail_scroll = self.c3_detail_scroll.saturating_add(self.visible_rows as u16);
                         }
                     }
+                } else if self.active_tab == Tab::C3Stats {
+                    let data = self.c3_stats_current_data();
+                    let filtered_len = data.iter()
+                        .filter(|item| self.c3_stats_filter.is_empty()
+                            || item.get("name").and_then(|v| v.as_str()).unwrap_or("")
+                                .to_lowercase().contains(&self.c3_stats_filter.to_lowercase()))
+                        .count();
+                    if filtered_len > 0 {
+                        self.c3_stats_selected = (self.c3_stats_selected + self.visible_rows).min(filtered_len - 1);
+                    }
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -441,6 +451,8 @@ impl App {
                             self.c3_detail_scroll = self.c3_detail_scroll.saturating_sub(self.visible_rows as u16);
                         }
                     }
+                } else if self.active_tab == Tab::C3Stats {
+                    self.c3_stats_selected = self.c3_stats_selected.saturating_sub(self.visible_rows);
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {

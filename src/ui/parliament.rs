@@ -290,14 +290,23 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
     let filtered = app.pl_filtered_issues();
     let total = app.pl_issues.len();
 
+    let sort_arrow = if app.pl_issues_sort_desc { "▼" } else { "▲" };
+    let pl_sort_hdr = |sort: PlIssueSort, label: &str| -> Cell {
+        let (text, style) = if app.pl_issues_sort == sort {
+            (format!("{label} {sort_arrow}"), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        } else {
+            (label.to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        };
+        Cell::from(text).style(style)
+    };
     let header = Row::new(vec![
-        Cell::from("Cluster").style(Style::default().add_modifier(Modifier::BOLD)),
-        Cell::from("Severity").style(Style::default().add_modifier(Modifier::BOLD)),
-        Cell::from("Title").style(Style::default().add_modifier(Modifier::BOLD)),
-        Cell::from("Node").style(Style::default().add_modifier(Modifier::BOLD)),
-        Cell::from("Message").style(Style::default().add_modifier(Modifier::BOLD)),
-        Cell::from("First Noticed").style(Style::default().add_modifier(Modifier::BOLD)),
-        Cell::from("Last Noticed").style(Style::default().add_modifier(Modifier::BOLD)),
+        pl_sort_hdr(PlIssueSort::Cluster, "Cluster"),
+        pl_sort_hdr(PlIssueSort::Severity, "Severity"),
+        pl_sort_hdr(PlIssueSort::Title, "Title"),
+        Cell::from("Node").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Cell::from("Message").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        pl_sort_hdr(PlIssueSort::FirstNoticed, "First Noticed"),
+        pl_sort_hdr(PlIssueSort::LastNoticed, "Last Noticed"),
     ]);
 
     let rows: Vec<Row> = filtered.iter().enumerate().map(|(i, issue)| {
@@ -339,7 +348,7 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
     ];
 
     let table = Table::new(rows, widths)
-        .header(header.style(Style::default().fg(Color::Cyan)))
+        .header(header)
         .block(Block::default()
             .borders(Borders::ALL)
             .title(format!(" Issues [{}/{}] ", filtered.len(), total)));
