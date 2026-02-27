@@ -31,6 +31,8 @@ src/
   app/keys_parliament.rs - Parliament key handler
   app/keys_wise.rs     - WISE key handler
   api/mod.rs           - ArkimeClient + FetchClient: HTTP calls (reqwest + digest_auth)
+  api/types.rs         - Shared types (structs, enums, parsing functions)
+  api/auth.rs          - Web + Okta authentication flows
   api/viewer.rs        - Viewer API methods (vr_*)
   api/cont3xt.rs       - Cont3xt API methods (c3_*)
   api/parliament.rs    - Parliament API methods (pl_*)
