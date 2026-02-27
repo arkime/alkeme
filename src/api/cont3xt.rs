@@ -3,6 +3,7 @@ use super::*;
 use anyhow::Result;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A link within a link group
 #[derive(Clone)]
@@ -122,6 +123,8 @@ impl FetchClient {
         json_body: &str,
         results: Arc<Mutex<Vec<Cont3xtResult>>>,
         disabled: std::collections::HashSet<String>,
+        streaming_total: Arc<AtomicU64>,
+        streaming_sent: Arc<AtomicU64>,
     ) -> Result<(u64, String, Vec<(String, String)>)> {
         let start = std::time::Instant::now();
         let post_data = Some(json_body.to_string());
@@ -135,7 +138,7 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 log_http(&self.http_log, "POST", url, post_data.clone(), status, first_byte, first_byte, None);
-                return self.stream_response_lines(resp, results, disabled).await;
+                return self.stream_response_lines(resp, results, disabled, streaming_total, streaming_sent.clone()).await;
             }
         };
         let password = self.password.as_deref().unwrap_or("");
@@ -149,7 +152,7 @@ impl FetchClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     log_http(&self.http_log, "POST", url, post_data.clone(), status, first_byte, first_byte, None);
-                    return self.stream_response_lines(resp, results, disabled).await;
+                    return self.stream_response_lines(resp, results, disabled, streaming_total, streaming_sent.clone()).await;
                 }
                 let www_auth = resp.headers().get("www-authenticate")
                     .and_then(|v| v.to_str().ok())
@@ -176,7 +179,7 @@ impl FetchClient {
         let first_byte = start.elapsed().as_millis() as u64;
         let status = resp.status().as_u16();
         log_http(&self.http_log, "POST", url, post_data, status, first_byte, first_byte, None);
-        self.stream_response_lines(resp, results, disabled).await
+        self.stream_response_lines(resp, results, disabled, streaming_total, streaming_sent.clone()).await
     }
 
     async fn stream_response_lines(
@@ -184,6 +187,8 @@ impl FetchClient {
         resp: reqwest::Response,
         results: Arc<Mutex<Vec<Cont3xtResult>>>,
         disabled: std::collections::HashSet<String>,
+        streaming_total: Arc<AtomicU64>,
+        streaming_sent: Arc<AtomicU64>,
     ) -> Result<(u64, String, Vec<(String, String)>)> {
         use futures_util::StreamExt;
         let mut total = 0u64;
@@ -212,6 +217,7 @@ impl FetchClient {
                 match purpose {
                     "init" => {
                         total = obj.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+                        streaming_total.store(total, Ordering::Relaxed);
                         if let Some(indicators) = obj.get("indicators").and_then(|v| v.as_array()) {
                             for ind in indicators {
                                 let ind_itype = ind.get("itype").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -253,7 +259,16 @@ impl FetchClient {
                             }
                         }
                     }
-                    "data" => {
+                    "data" | "fail" => {
+                        // Update sent/total from every data and fail message
+                        if let Some(s) = obj.get("sent").and_then(|v| v.as_u64()) {
+                            streaming_sent.store(s, Ordering::Relaxed);
+                        }
+                        if let Some(t) = obj.get("total").and_then(|v| v.as_u64()) {
+                            total = t;
+                            streaming_total.store(t, Ordering::Relaxed);
+                        }
+                        if purpose == "fail" { continue; }
                         let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         if disabled.contains(&name) { continue; }
                         let indicator = obj.get("indicator")

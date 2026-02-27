@@ -134,6 +134,7 @@ pub struct App {
     pub c3_detail_scroll: u16,        // scroll in detail pane
     pub c3_detail_hscroll: u16,       // horizontal scroll in detail pane
     pub c3_search_total: u64,
+    pub c3_search_sent: u64,
     pub c3_search_itype: String,
     // indicator parent map: (child_indicator, child_itype) -> [(parent_query, parent_itype), ...]
     pub c3_indicator_parents: HashMap<(String, String), Vec<(String, String)>>,
@@ -352,6 +353,7 @@ impl App {
             c3_detail_scroll: 0,
             c3_detail_hscroll: 0,
             c3_search_total: 0,
+            c3_search_sent: 0,
             c3_search_itype: String::new(),
             c3_indicator_parents: HashMap::new(),
             c3_init_indicators: Vec::new(),

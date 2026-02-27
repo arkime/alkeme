@@ -50,7 +50,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 
 ### Cont3xt Mode
 - **Integration search** — search indicators (IPs, domains, emails, hashes) across all configured integrations
-- **Streaming results** — results appear incrementally as integrations respond; tree hierarchy shows parent-child indicator chains (e.g., URL → DOMAIN → IP)
+- **Streaming results** — results appear incrementally as integrations respond; tree hierarchy shows parent-child indicator chains (e.g., URL → DOMAIN → IP); progress gauge shows sent/total count during search
 - **Card-based rendering** — integration results displayed using server-defined card templates with proper field types (string, date, url, table, array, JSON, DNS records)
 - **Table alignment** — card tables have properly aligned columns with horizontal scroll support
 - **Raw JSON toggle** — press `R` to switch between card view and raw JSON

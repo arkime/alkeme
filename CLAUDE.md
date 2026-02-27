@@ -293,10 +293,12 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ### Integration search
 - `POST /api/integration/search` with JSON body `{"query":"..."}` — streaming response
-- Response is a JSON array, one object per line: `{"purpose":"init",...}`, `{"purpose":"data","name":"IntName","data":{...}}`, `{"purpose":"finish",...}`
+- Response is a JSON array, one object per line: `{"purpose":"init",...}`, `{"purpose":"data","name":"IntName","data":{...},"sent":N,"total":N}`, `{"purpose":"fail","name":"IntName","sent":N,"total":N}`, `{"purpose":"finish",...}`
 - `FetchClient::fetch_post_json_streaming()` uses `reqwest::Response::bytes_stream()` via `futures_util::StreamExt`
 - Parsed results pushed into `Arc<Mutex<Vec<Cont3xtResult>>>`, polled by main event loop every 100ms
 - `c3_searching` flag tracks active search; results appear incrementally in the UI
+- Progress gauge (`LineGauge`) shown between search bar and results while searching; uses `sent`/`total` from streaming `data`/`fail` messages via `Arc<AtomicU64>` shared with the streaming task
+- `c3_search_sent` and `c3_search_total` track progress; both update from every `data` and `fail` message (total can change as sub-indicators are discovered)
 
 ### Integration list
 - `GET /api/integration` returns `{"success":true,"integrations":{"Name":{doable,order,card,...},...}}`
@@ -328,7 +330,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ### Cont3xt state fields
 - `c3_integrations`, `c3_results`, `c3_selected`, `c3_detail_scroll`, `c3_detail_hscroll`
-- `c3_search_total`, `c3_search_itype`, `c3_focus`, `c3_raw_view`
+- `c3_search_total`, `c3_search_sent`, `c3_search_itype`, `c3_focus`, `c3_raw_view`
 - `c3_disabled_integrations`, `show_integration_popup`, `integration_popup_selected`, `integration_popup_filter`, `integration_popup_filtering`
 - `c3_searching`, `pending_c3_search`
 - `c3_tree_order` — result indices in tree display order (navigation uses this, not flat c3_results)

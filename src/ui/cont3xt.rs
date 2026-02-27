@@ -18,7 +18,28 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
     match app.active_tab {
         Tab::Search => {
             draw_cont3xt_search_bar(f, app, chunks[1]);
-            draw_cont3xt_results(f, app, chunks[2]);
+            if app.c3_searching {
+                let gauge_area = Rect::new(chunks[2].x, chunks[2].y, chunks[2].width, 1);
+                let results_area = Rect::new(chunks[2].x, chunks[2].y + 1, chunks[2].width, chunks[2].height.saturating_sub(1));
+                let sent = app.c3_search_sent;
+                let total = app.c3_search_total;
+                let ratio = if total > 0 { (sent as f64 / total as f64).min(1.0) } else { 0.0 };
+                let label = if total > 0 {
+                    format!(" {}/{} ", sent, total)
+                } else {
+                    " Searching... ".to_string()
+                };
+                let gauge = LineGauge::default()
+                    .filled_style(Style::default().fg(Color::Cyan).bg(Color::DarkGray))
+                    .unfilled_style(Style::default().fg(Color::DarkGray))
+                    .label(Span::styled(label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
+                    .line_set(symbols::line::THICK)
+                    .ratio(ratio);
+                f.render_widget(gauge, gauge_area);
+                draw_cont3xt_results(f, app, results_area);
+            } else {
+                draw_cont3xt_results(f, app, chunks[2]);
+            }
         }
         Tab::C3Stats => {
             // Merge search bar and content area for stats

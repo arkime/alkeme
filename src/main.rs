@@ -185,6 +185,10 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
     let mut c3_search_handle: Option<tokio::task::JoinHandle<Result<(u64, String, Vec<(String, String)>), anyhow::Error>>> = None;
     let c3_streaming_results: std::sync::Arc<std::sync::Mutex<Vec<crate::api::Cont3xtResult>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let c3_streaming_total: std::sync::Arc<std::sync::atomic::AtomicU64> =
+        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let c3_streaming_sent: std::sync::Arc<std::sync::atomic::AtomicU64> =
+        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let mut c3_stream_consumed: usize = 0;
 
     loop {
@@ -305,23 +309,36 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 }
                 let json_body = body.to_string();
                 let shared = c3_streaming_results.clone();
+                let stotal = c3_streaming_total.clone();
+                let ssent = c3_streaming_sent.clone();
                 let disabled = app.c3_disabled_integrations.clone();
                 // Clear shared results for new search
                 if let Ok(mut vec) = shared.lock() { vec.clear(); }
+                stotal.store(0, std::sync::atomic::Ordering::Relaxed);
+                ssent.store(0, std::sync::atomic::Ordering::Relaxed);
                 app.c3_results.clear();
                 app.c3_indicator_parents.clear();
                 app.c3_init_indicators.clear();
+                app.c3_search_total = 0;
+                app.c3_search_sent = 0;
                 app.c3_selected = 0;
                 app.c3_detail_scroll = 0;
                 c3_stream_consumed = 0;
                 c3_search_handle = Some(tokio::spawn(async move {
-                    client.fetch_post_json_streaming(&url, &json_body, shared, disabled).await
+                    client.fetch_post_json_streaming(&url, &json_body, shared, disabled, stotal, ssent).await
                 }));
                 continue;
             }
 
             // Poll for streaming results and copy into app
             if app.c3_searching {
+                // Update sent/total from streaming atomics
+                let live_total = c3_streaming_total.load(std::sync::atomic::Ordering::Relaxed);
+                let live_sent = c3_streaming_sent.load(std::sync::atomic::Ordering::Relaxed);
+                if live_total > 0 {
+                    app.c3_search_total = live_total;
+                }
+                app.c3_search_sent = live_sent;
                 if let Ok(vec) = c3_streaming_results.lock() {
                     if vec.len() > c3_stream_consumed {
                         for item in &vec[c3_stream_consumed..] {
@@ -375,8 +392,8 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                             app.c3_init_indicators = init_indicators;
                             app.c3_focus = app::Cont3xtFocus::Results;
                             app.status_msg = format!(
-                                "Search complete: {} integrations returned data (type: {})",
-                                count, app.c3_search_itype
+                                "Search complete: {} integrations returned data",
+                                count
                             );
                         }
                         Ok(Err(e)) => {
