@@ -1750,13 +1750,13 @@ impl ArkimeClient {
                     } else {
                         method.clone()
                     };
-                    eprintln!("  IDX: selecting MFA authenticator: {} (method={})", label, effective_method);
                     let select_rem = current_resp["remediation"]["value"].as_array()
                         .and_then(|rems| rems.iter().find(|r| r["name"].as_str() == Some("select-authenticator-authenticate")));
                     let select_url = select_rem
                         .and_then(|r| r["href"].as_str())
                         .unwrap_or(&format!("{}/idp/idx/challenge", okta_base))
                         .to_string();
+                    eprintln!("  IDX: selecting MFA authenticator: {} (method={}) → {}", label, effective_method, select_url);
                     let mut select_body = serde_json::json!({"stateHandle": state_handle});
                     select_body["authenticator"] = serde_json::json!({"id": id});
                     if !effective_method.is_empty() {
