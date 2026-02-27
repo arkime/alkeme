@@ -598,6 +598,10 @@ impl ArkimeClient {
         self.auth_mode
     }
 
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     pub fn username(&self) -> Option<String> {
         self.username.clone()
     }

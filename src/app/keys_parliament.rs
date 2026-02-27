@@ -58,7 +58,7 @@ impl App {
                 if let Some(cluster) = self.pl_selected_cluster_ref() {
                     if !cluster.url.is_empty() && cluster.cluster_type != "disabled" {
                         // Switch to viewer mode with this cluster's URL
-                        let url = cluster.url.clone();
+                        let url = self.pl_resolve_url(&cluster.url.clone());
                         self.pl_switch_to_viewer(&url).await;
                     } else {
                         // Show detail overlay for this cluster
@@ -179,6 +179,20 @@ impl App {
             self.pl_selected_group = gi;
             self.pl_selected_cluster = ci;
         }
+    }
+
+    fn pl_resolve_url(&self, url: &str) -> String {
+        if url.starts_with('/') {
+            if let Ok(parsed) = reqwest::Url::parse(self.client.base_url()) {
+                let host = parsed.host_str().unwrap_or("");
+                return if let Some(port) = parsed.port() {
+                    format!("{}://{}:{}{}", parsed.scheme(), host, port, url)
+                } else {
+                    format!("{}://{}{}", parsed.scheme(), host, url)
+                };
+            }
+        }
+        url.to_string()
     }
 
     async fn pl_switch_to_viewer(&mut self, url: &str) {
