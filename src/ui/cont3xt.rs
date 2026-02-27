@@ -72,13 +72,28 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
         String::new()
     };
 
+    let integrations_label = if let Some(ref name) = app.c3_active_view_name {
+        format!("[view: {name}] ")
+    } else if app.c3_disabled_integrations.is_empty() {
+        String::new()
+    } else {
+        "[custom] ".to_string()
+    };
+
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let expr_scroll = if app.expression_cursor > inner_width {
+        (app.expression_cursor - inner_width) as u16
+    } else {
+        0
+    };
     let expr_widget = Paragraph::new(Span::styled(expr_display.as_str(), expr_style))
-        .block(Block::default().borders(Borders::ALL).title(format!(" Search (/) {itype_label}")));
+        .scroll((0, expr_scroll))
+        .block(Block::default().borders(Borders::ALL).title(format!(" Search (/) {itype_label}{integrations_label}")));
     f.render_widget(expr_widget, area);
 
     if app.input_mode == InputMode::Expression {
         f.set_cursor_position((
-            area.x + app.expression_cursor as u16 + 1,
+            area.x + (app.expression_cursor as u16 - expr_scroll) + 1,
             area.y + 1,
         ));
     }
@@ -95,7 +110,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     }
     if app.c3_results.is_empty() {
         let block = Block::default().borders(Borders::ALL).title(" Results ");
-        let text = if app.show_loading {
+        let text = if app.c3_searching {
             "  Searching...".to_string()
         } else {
             format!("  No results for: {}", app.expression)

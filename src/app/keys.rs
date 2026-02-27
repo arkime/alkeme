@@ -8,13 +8,65 @@ impl App {
             return;
         }
         if self.show_debug {
+            let total = self.http_log.lock().unwrap().len();
             match key.code {
-                KeyCode::Esc | KeyCode::Char('D') | KeyCode::Char('q') => self.show_debug = false,
-                KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => self.debug_scroll = self.debug_scroll.saturating_sub(10),
-                KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => self.debug_scroll += 10,
-                KeyCode::Up | KeyCode::Char('k') => self.debug_scroll = self.debug_scroll.saturating_sub(1),
-                KeyCode::Down | KeyCode::Char('j') => self.debug_scroll += 1,
-                KeyCode::Home => self.debug_scroll = 0,
+                KeyCode::Esc | KeyCode::Char('D') | KeyCode::Char('q') => {
+                    if self.debug_expanded {
+                        self.debug_expanded = false;
+                    } else {
+                        self.show_debug = false;
+                    }
+                }
+                KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    if self.debug_expanded {
+                        self.debug_scroll = self.debug_scroll.saturating_sub(10);
+                    } else {
+                        self.debug_selected = self.debug_selected.saturating_sub(10);
+                    }
+                }
+                KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    if self.debug_expanded {
+                        self.debug_scroll += 10;
+                    } else if total > 0 {
+                        self.debug_selected = (self.debug_selected + 10).min(total - 1);
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if self.debug_expanded {
+                        self.debug_scroll = self.debug_scroll.saturating_sub(1);
+                    } else {
+                        self.debug_selected = self.debug_selected.saturating_sub(1);
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if self.debug_expanded {
+                        self.debug_scroll += 1;
+                    } else if total > 0 {
+                        self.debug_selected = (self.debug_selected + 1).min(total - 1);
+                    }
+                }
+                KeyCode::Home => {
+                    if self.debug_expanded {
+                        self.debug_scroll = 0;
+                    } else {
+                        self.debug_selected = 0;
+                    }
+                }
+                KeyCode::End => {
+                    if self.debug_expanded {
+                        // scroll handled by render
+                    } else if total > 0 {
+                        self.debug_selected = total - 1;
+                    }
+                }
+                KeyCode::Enter => {
+                    if self.debug_expanded {
+                        self.debug_expanded = false;
+                    } else {
+                        self.debug_expanded = true;
+                        self.debug_scroll = 0;
+                    }
+                }
                 _ => {}
             }
             return;
@@ -61,7 +113,8 @@ impl App {
         }
         if key.code == KeyCode::Char('D') {
             self.show_debug = true;
-            self.debug_scroll = 0;
+            self.debug_selected = 0;
+            self.debug_expanded = false;
             return;
         }
         // Ctrl+P: return to Parliament from Viewer, Cont3xt, or WISE mode
@@ -170,12 +223,39 @@ impl App {
                 self.input_mode = InputMode::Normal;
             }
             KeyCode::Left => {
-                if self.expression_cursor > 0 {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    // Jump to start of previous word
+                    let mut pos = self.expression_cursor;
+                    let bytes = edit.as_bytes();
+                    // Skip whitespace/punctuation going left
+                    while pos > 0 && !bytes[pos - 1].is_ascii_alphanumeric() {
+                        pos -= 1;
+                    }
+                    // Skip word chars
+                    while pos > 0 && bytes[pos - 1].is_ascii_alphanumeric() {
+                        pos -= 1;
+                    }
+                    self.expression_cursor = pos;
+                } else if self.expression_cursor > 0 {
                     self.expression_cursor -= 1;
                 }
             }
             KeyCode::Right => {
-                if self.expression_cursor < edit.len() {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    // Jump to end of next word
+                    let mut pos = self.expression_cursor;
+                    let bytes = edit.as_bytes();
+                    let len = bytes.len();
+                    // Skip whitespace/punctuation going right
+                    while pos < len && !bytes[pos].is_ascii_alphanumeric() {
+                        pos += 1;
+                    }
+                    // Skip word chars
+                    while pos < len && bytes[pos].is_ascii_alphanumeric() {
+                        pos += 1;
+                    }
+                    self.expression_cursor = pos;
+                } else if self.expression_cursor < edit.len() {
                     self.expression_cursor += 1;
                 }
             }

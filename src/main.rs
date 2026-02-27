@@ -291,12 +291,19 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 let query = app.expression.clone();
                 let url = app.client.cont3xt_search_url();
                 let client = app.client.clone_for_fetch();
-                let json_body = if app.c3_no_cache {
+                let mut body = serde_json::json!({"query": query});
+                if app.c3_no_cache {
                     app.c3_no_cache = false;
-                    serde_json::json!({"query": query, "skipCache": 1}).to_string()
-                } else {
-                    serde_json::json!({"query": query}).to_string()
-                };
+                    body["skipCache"] = serde_json::json!(1);
+                }
+                if let Some(ref view_id) = app.c3_active_view_id {
+                    body["viewId"] = serde_json::json!(view_id);
+                }
+                if !app.c3_disabled_integrations.is_empty() {
+                    let enabled: Vec<String> = app.c3_enabled_integration_names();
+                    body["doIntegrations"] = serde_json::json!(enabled);
+                }
+                let json_body = body.to_string();
                 let shared = c3_streaming_results.clone();
                 let disabled = app.c3_disabled_integrations.clone();
                 // Clear shared results for new search
@@ -379,7 +386,6 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                             app.status_msg = format!("Search error: {e}");
                         }
                     }
-                    app.show_loading = false;
                     app.c3_searching = false;
                     continue;
                 }

@@ -298,14 +298,21 @@ fn draw_toolbar(f: &mut Frame, app: &App, area: Rect) {
     } else {
         Style::default().fg(Color::White)
     };
+    let inner_width = toolbar_chunks[1].width.saturating_sub(2) as usize;
+    let expr_scroll = if app.expression_cursor > inner_width {
+        (app.expression_cursor - inner_width) as u16
+    } else {
+        0
+    };
     let expr_widget = Paragraph::new(Span::styled(expr_display.as_str(), expr_style))
+        .scroll((0, expr_scroll))
         .block(Block::default().borders(Borders::ALL).title(" Expression (/) "));
     f.render_widget(expr_widget, toolbar_chunks[1]);
 
     // Show cursor in expression field when editing
     if app.input_mode == InputMode::Expression {
         f.set_cursor_position((
-            toolbar_chunks[1].x + app.expression_cursor as u16 + 1,
+            toolbar_chunks[1].x + (app.expression_cursor as u16 - expr_scroll) + 1,
             toolbar_chunks[1].y + 1,
         ));
     }

@@ -88,6 +88,8 @@ pub struct App {
     pub status_msg: String,
     pub show_debug: bool,
     pub debug_scroll: usize,
+    pub debug_selected: usize,
+    pub debug_expanded: bool,
     pub http_log: HttpLog,
     // Stats tab state
     pub vr_stats_tab: StatsTab,
@@ -147,6 +149,8 @@ pub struct App {
     pub c3_views: Vec<Cont3xtView>,
     pub c3_view_selected: usize,
     pub c3_view_save_name: String,
+    pub c3_active_view_id: Option<String>,
+    pub c3_active_view_name: Option<String>,
     pub c3_searching: bool,           // streaming search in progress
     pub c3_pending_search: bool,
     pub c3_no_cache: bool,
@@ -300,6 +304,8 @@ impl App {
             status_msg: String::new(),
             show_debug: false,
             debug_scroll: 0,
+            debug_selected: 0,
+            debug_expanded: false,
             http_log,
             // Stats tab state
             vr_stats_tab: StatsTab::Capture,
@@ -357,6 +363,8 @@ impl App {
             c3_views: Vec::new(),
             c3_view_selected: 0,
             c3_view_save_name: String::new(),
+            c3_active_view_id: None,
+            c3_active_view_name: None,
             c3_searching: false,
             c3_pending_search: false,
             c3_no_cache: false,
@@ -792,7 +800,6 @@ impl App {
         if self.expression.is_empty() {
             return;
         }
-        self.show_loading = true;
         self.c3_pending_search = true;
     }
 

@@ -33,13 +33,20 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
     } else {
         Style::default().fg(Color::White)
     };
+    let inner_width_stats = toolbar_chunks[1].width.saturating_sub(2) as usize;
+    let filter_scroll = if app.input_mode == InputMode::Expression && app.expression_cursor > inner_width_stats {
+        (app.expression_cursor - inner_width_stats) as u16
+    } else {
+        0
+    };
     let filter_widget = Paragraph::new(Span::styled(filter_display.as_str(), filter_style))
+        .scroll((0, filter_scroll))
         .block(Block::default().borders(Borders::ALL).title(" Filter (/) "));
     f.render_widget(filter_widget, toolbar_chunks[1]);
 
     if app.input_mode == InputMode::Expression {
         f.set_cursor_position((
-            toolbar_chunks[1].x + app.expression_cursor as u16 + 1,
+            toolbar_chunks[1].x + (app.expression_cursor as u16 - filter_scroll) + 1,
             toolbar_chunks[1].y + 1,
         ));
     }

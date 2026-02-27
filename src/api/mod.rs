@@ -36,7 +36,7 @@ pub(crate) fn log_http(log: &HttpLog, method: &str, url: &str, post_data: Option
     if let Ok(mut entries) = log.lock() {
         let resp = if status >= 300 {
             response_body.map(|b| {
-                let truncated = if b.len() > 200 { &b[..200] } else { b };
+                let truncated = if b.len() > 4096 { &b[..4096] } else { b };
                 truncated.to_string()
             })
         } else {

@@ -113,59 +113,6 @@ pub(super) fn draw_debug(f: &mut Frame, app: &App, area: Rect) {
     let entries = app.http_log.lock().unwrap();
     let total = entries.len();
 
-    let mut lines: Vec<Line> = Vec::new();
-
-    // Header line
-    lines.push(Line::from(vec![
-        Span::styled(format!(" {:<23}", "Timestamp"), Style::default().fg(Color::Yellow)),
-        Span::styled(format!(" {:<6}", "Method"), Style::default().fg(Color::Yellow)),
-        Span::styled(format!(" {:>4}", "Code"), Style::default().fg(Color::Yellow)),
-        Span::styled(format!(" {:>6}", "First"), Style::default().fg(Color::Yellow)),
-        Span::styled(format!(" {:>6}", "Last"), Style::default().fg(Color::Yellow)),
-        Span::styled("  URL", Style::default().fg(Color::Yellow)),
-    ]));
-    lines.push(Line::from(""));
-
-    // Newest first
-    let visible_height = area.height.saturating_sub(6) as usize; // borders + header + hints
-    let scroll = app.debug_scroll.min(total.saturating_sub(1));
-    let start = total.saturating_sub(scroll + visible_height);
-    let end = total.saturating_sub(scroll);
-
-    for entry in entries[start..end].iter().rev() {
-        let ts = entry.timestamp.format("%Y/%m/%d %H:%M:%S%.3f").to_string();
-        let status_color = if entry.status >= 400 { Color::Red }
-            else if entry.status >= 300 { Color::Yellow }
-            else { Color::Green };
-
-        lines.push(Line::from(vec![
-            Span::raw(format!(" {:<23}", ts)),
-            Span::styled(format!(" {:<6}", entry.method), Style::default().fg(Color::Cyan)),
-            Span::styled(format!(" {:>4}", entry.status), Style::default().fg(status_color)),
-            Span::raw(format!(" {:>5}ms", entry.first_byte_ms)),
-            Span::raw(format!(" {:>5}ms", entry.last_byte_ms)),
-            Span::raw(format!("  {}", entry.url)),
-        ]));
-
-        if let Some(ref data) = entry.post_data {
-            let truncated = if data.len() > 120 { &data[..120] } else { data.as_str() };
-            lines.push(Line::from(vec![
-                Span::raw("                          "),
-                Span::styled(format!("↳ {}", truncated), Style::default().fg(Color::DarkGray)),
-            ]));
-        }
-
-        if let Some(ref resp) = entry.response_body {
-            let truncated = if resp.len() > 120 { &resp[..120] } else { resp.as_str() };
-            lines.push(Line::from(vec![
-                Span::raw("                          "),
-                Span::styled(format!("← {}", truncated), Style::default().fg(Color::Red)),
-            ]));
-        }
-    }
-
-    drop(entries);
-
     let popup_width = area.width.saturating_sub(4).min(140);
     let popup_height = area.height.saturating_sub(4);
     let popup_area = Rect::new(
@@ -176,17 +123,190 @@ pub(super) fn draw_debug(f: &mut Frame, app: &App, area: Rect) {
     );
 
     f.render_widget(Clear, popup_area);
-    let title = format!(" HTTP Debug Log ({} requests) ", total);
-    let block = Block::default()
-        .title(title)
-        .title_bottom(Line::from(" Esc:close  ↑↓:scroll  Home:top ").centered())
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Magenta));
-    let inner = block.inner(popup_area);
-    f.render_widget(block, popup_area);
 
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
-    f.render_widget(paragraph, inner);
+    if app.debug_expanded && total > 0 {
+        // Expanded detail view for selected entry
+        let selected = app.debug_selected.min(total.saturating_sub(1));
+        // Entries displayed newest-first, so index 0 = last entry
+        let entry_idx = total - 1 - selected;
+        let ts = entries[entry_idx].timestamp.format("%Y/%m/%d %H:%M:%S%.3f").to_string();
+        let method = entries[entry_idx].method.clone();
+        let status = entries[entry_idx].status;
+        let first_byte_ms = entries[entry_idx].first_byte_ms;
+        let last_byte_ms = entries[entry_idx].last_byte_ms;
+        let url = entries[entry_idx].url.clone();
+        let post_data = entries[entry_idx].post_data.clone();
+        let response_body = entries[entry_idx].response_body.clone();
+        drop(entries);
+
+        let mut lines: Vec<Line> = Vec::new();
+        let label = |l: &str| Span::styled(format!(" {l:>12}: "), Style::default().fg(Color::Yellow));
+
+        lines.push(Line::from(vec![label("Timestamp"), Span::raw(ts)]));
+        lines.push(Line::from(vec![
+            label("Method"),
+            Span::styled(method, Style::default().fg(Color::Cyan)),
+        ]));
+        let status_color = if status >= 400 { Color::Red }
+            else if status >= 300 { Color::Yellow }
+            else { Color::Green };
+        lines.push(Line::from(vec![
+            label("Status"),
+            Span::styled(status.to_string(), Style::default().fg(status_color)),
+        ]));
+        lines.push(Line::from(vec![label("First byte"), Span::raw(format!("{first_byte_ms}ms"))]));
+        lines.push(Line::from(vec![label("Last byte"), Span::raw(format!("{last_byte_ms}ms"))]));
+        lines.push(Line::from(vec![label("URL"), Span::raw(url)]));
+
+        if let Some(ref data) = post_data {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(" Post Data:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
+            // Try pretty-printing JSON
+            if data.starts_with('{') || data.starts_with('[') {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
+                    if let Ok(pretty) = serde_json::to_string_pretty(&parsed) {
+                        for line in pretty.lines() {
+                            lines.push(Line::from(format!("   {line}")));
+                        }
+                    } else {
+                        lines.push(Line::from(format!("   {data}")));
+                    }
+                } else {
+                    lines.push(Line::from(format!("   {data}")));
+                }
+            } else {
+                for line in data.lines() {
+                    lines.push(Line::from(format!("   {line}")));
+                }
+            }
+        }
+
+        if let Some(ref resp) = response_body {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(" Response Body:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
+            if resp.starts_with('{') || resp.starts_with('[') {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(resp) {
+                    if let Ok(pretty) = serde_json::to_string_pretty(&parsed) {
+                        for line in pretty.lines() {
+                            lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(Color::Red))));
+                        }
+                    } else {
+                        for line in resp.lines() {
+                            lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(Color::Red))));
+                        }
+                    }
+                } else {
+                    for line in resp.lines() {
+                        lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(Color::Red))));
+                    }
+                }
+            } else {
+                for line in resp.lines() {
+                    lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(Color::Red))));
+                }
+            }
+        }
+
+        let title = format!(" Request Detail [{}/{}] ", selected + 1, total);
+        let block = Block::default()
+            .title(title)
+            .title_bottom(Line::from(" Esc/Enter:back  ↑↓:scroll  Home:top ").centered())
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Magenta));
+        let inner = block.inner(popup_area);
+        f.render_widget(block, popup_area);
+
+        let scroll = (app.debug_scroll as u16).min(lines.len().saturating_sub(1) as u16);
+        let paragraph = Paragraph::new(lines)
+            .scroll((scroll, 0))
+            .wrap(Wrap { trim: false });
+        f.render_widget(paragraph, inner);
+    } else {
+        // List view with selection
+        let mut lines: Vec<Line> = Vec::new();
+
+        // Header line
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {:<23}", "Timestamp"), Style::default().fg(Color::Yellow)),
+            Span::styled(format!(" {:<6}", "Method"), Style::default().fg(Color::Yellow)),
+            Span::styled(format!(" {:>4}", "Code"), Style::default().fg(Color::Yellow)),
+            Span::styled(format!(" {:>6}", "First"), Style::default().fg(Color::Yellow)),
+            Span::styled(format!(" {:>6}", "Last"), Style::default().fg(Color::Yellow)),
+            Span::styled("  URL", Style::default().fg(Color::Yellow)),
+        ]));
+        lines.push(Line::from(""));
+
+        let visible_height = popup_height.saturating_sub(6) as usize;
+        let selected = app.debug_selected.min(total.saturating_sub(1));
+
+        // Calculate scroll window to keep selected visible
+        // We display newest first: display index 0 = entries[total-1]
+        let scroll_start = if selected >= visible_height {
+            selected - visible_height + 1
+        } else {
+            0
+        };
+        let display_start = scroll_start;
+        let display_end = (scroll_start + visible_height).min(total);
+
+        for display_idx in display_start..display_end {
+            let entry_idx = total - 1 - display_idx;
+            let entry = &entries[entry_idx];
+            let is_selected = display_idx == selected;
+
+            let ts = entry.timestamp.format("%Y/%m/%d %H:%M:%S%.3f").to_string();
+            let status_color = if entry.status >= 400 { Color::Red }
+                else if entry.status >= 300 { Color::Yellow }
+                else { Color::Green };
+
+            let row_style = if is_selected {
+                Style::default().bg(Color::DarkGray)
+            } else {
+                Style::default()
+            };
+
+            let marker = if is_selected { "►" } else { " " };
+
+            lines.push(Line::from(vec![
+                Span::styled(format!("{marker}{:<23}", ts), row_style),
+                Span::styled(format!(" {:<6}", entry.method), row_style.fg(Color::Cyan)),
+                Span::styled(format!(" {:>4}", entry.status), row_style.fg(status_color)),
+                Span::styled(format!(" {:>5}ms", entry.first_byte_ms), row_style),
+                Span::styled(format!(" {:>5}ms", entry.last_byte_ms), row_style),
+                Span::styled(format!("  {}", entry.url), row_style),
+            ]));
+
+            if let Some(ref data) = entry.post_data {
+                let truncated = if data.len() > 120 { &data[..120] } else { data.as_str() };
+                lines.push(Line::from(vec![
+                    Span::raw("                          "),
+                    Span::styled(format!("↳ {truncated}"), Style::default().fg(Color::DarkGray)),
+                ]));
+            }
+
+            if let Some(ref resp) = entry.response_body {
+                let truncated = if resp.len() > 120 { &resp[..120] } else { resp.as_str() };
+                lines.push(Line::from(vec![
+                    Span::raw("                          "),
+                    Span::styled(format!("← {truncated}"), Style::default().fg(Color::Red)),
+                ]));
+            }
+        }
+
+        drop(entries);
+
+        let title = format!(" HTTP Debug Log ({total} requests) ");
+        let block = Block::default()
+            .title(title)
+            .title_bottom(Line::from(" Esc:close  ↑↓:select  Enter:expand  Home/End:jump ").centered())
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Magenta));
+        let inner = block.inner(popup_area);
+        f.render_widget(block, popup_area);
+
+        let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+        f.render_widget(paragraph, inner);
+    }
 }
 
 pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
@@ -357,7 +477,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("s"), Span::raw("Next sort column")]),
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
             Line::from(vec![key("r"), Span::raw("Refresh stats")]),
-            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else if app.c3_show_link_popup {
@@ -391,10 +511,11 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Tab (in results)"), Span::raw("Toggle results / detail focus")]),
             Line::from(vec![key("R"), Span::raw("Toggle raw JSON / card view")]),
             Line::from(vec![key("i"), Span::raw("Integrations popup (v:views inside)")]),
+            Line::from(vec![key("I (Shift+i)"), Span::raw("Views popup (select integration views)")]),
             Line::from(vec![key("l"), Span::raw("Link groups popup")]),
             Line::from(vec![key("r"), Span::raw("Re-run search")]),
             Line::from(vec![key("Ctrl+r"), Span::raw("Re-run search (no cache)")]),
-            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
         ].into_iter().chain(
             if app.pl_saved_client.is_some() {
                 vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
@@ -416,7 +537,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("c"), Span::raw("Open Cont3xt (if configured)")]),
             Line::from(vec![key("w"), Span::raw("Open WISE (if configured)")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
-            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else if app.app_mode == AppMode::Parliament && app.active_tab == Tab::Issues {
@@ -434,7 +555,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("s"), Span::raw("Next sort column")]),
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
             Line::from(vec![key("r"), Span::raw("Refresh issues")]),
-            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else if app.app_mode == AppMode::Wise && app.active_tab == Tab::WsStats {
@@ -451,7 +572,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("1 / 2"), Span::raw("Sources / Types sub-tab")]),
             Line::from(vec![key("/ / E"), Span::raw("Filter stats")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
-            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else if app.app_mode == AppMode::Wise && app.active_tab == Tab::WsQuery {
@@ -468,7 +589,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("t"), Span::raw("Cycle type")]),
             Line::from(vec![key("/ / E"), Span::raw("Edit query value")]),
             Line::from(vec![key("Enter"), Span::raw("Run query")]),
-            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else {

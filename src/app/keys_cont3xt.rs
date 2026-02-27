@@ -204,6 +204,8 @@ impl App {
                                 if let Some(view) = self.c3_views.get(view_idx) {
                                     let integrations = view.integrations.clone();
                                     let name = view.name.clone();
+                                    self.c3_active_view_id = Some(view.id.clone());
+                                    self.c3_active_view_name = Some(name.clone());
                                     self.c3_apply_view(&integrations);
                                     self.status_msg = format!("Loaded view: {name}");
                                     self.c3_show_integration_popup = false;
@@ -284,6 +286,8 @@ impl App {
                                 } else {
                                     self.c3_disabled_integrations.insert(name);
                                 }
+                                self.c3_active_view_id = None;
+                                self.c3_active_view_name = None;
                             }
                         }
                         KeyCode::Char('/') => {
@@ -291,11 +295,15 @@ impl App {
                         }
                         KeyCode::Char('a') => {
                             self.c3_disabled_integrations.clear();
+                            self.c3_active_view_id = None;
+                            self.c3_active_view_name = None;
                         }
                         KeyCode::Char('n') => {
                             for int in &self.c3_integrations {
                                 self.c3_disabled_integrations.insert(int.name.clone());
                             }
+                            self.c3_active_view_id = None;
+                            self.c3_active_view_name = None;
                         }
                         KeyCode::Char('!') => {
                             let all_names: Vec<String> = self.c3_integrations.iter().map(|i| i.name.clone()).collect();
@@ -306,6 +314,8 @@ impl App {
                                     self.c3_disabled_integrations.insert(name);
                                 }
                             }
+                            self.c3_active_view_id = None;
+                            self.c3_active_view_name = None;
                         }
                         KeyCode::Char('v') => {
                             // Switch to views mode, re-fetch views
@@ -401,6 +411,14 @@ impl App {
                 self.c3_integration_popup_selected = 0;
                 self.c3_integration_popup_filter.clear();
                 self.c3_integration_popup_mode = IntegrationPopupMode::Integrations;
+            }
+            KeyCode::Char('I') if self.active_tab == Tab::Search => {
+                self.c3_show_integration_popup = true;
+                self.c3_view_selected = 0;
+                self.c3_integration_popup_mode = IntegrationPopupMode::Views;
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(self.c3_fetch_views())
+                });
             }
             KeyCode::Char('l') if self.active_tab == Tab::Search => {
                 if self.c3_results.is_empty() {

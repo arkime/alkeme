@@ -308,13 +308,20 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
         ])
         .split(chunks[0]);
 
+    let inner_width = filter_chunks[0].width.saturating_sub(2) as usize;
+    let filter_scroll = if app.input_mode == InputMode::Expression && app.expression_cursor > inner_width {
+        (app.expression_cursor - inner_width) as u16
+    } else {
+        0
+    };
     let filter_widget = Paragraph::new(Span::styled(filter_display.as_str(), filter_style))
+        .scroll((0, filter_scroll))
         .block(Block::default().borders(Borders::ALL).title(" Filter (/) "));
     f.render_widget(filter_widget, filter_chunks[0]);
 
     if app.input_mode == InputMode::Expression {
         f.set_cursor_position((
-            filter_chunks[0].x + app.expression_cursor as u16 + 1,
+            filter_chunks[0].x + (app.expression_cursor as u16 - filter_scroll) + 1,
             filter_chunks[0].y + 1,
         ));
     }
