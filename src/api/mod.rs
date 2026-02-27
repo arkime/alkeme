@@ -1706,7 +1706,14 @@ impl ArkimeClient {
                 });
 
                 if let Some((label, id, method)) = selected {
-                    eprintln!("  IDX: selecting MFA authenticator: {} (method={})", label, method);
+                    // For Okta Verify, prefer TOTP over push (push requires mobile approval
+                    // which may not arrive; TOTP lets user enter code from the app)
+                    let effective_method = if method.is_empty() && label.to_lowercase().contains("okta verify") {
+                        "totp".to_string()
+                    } else {
+                        method.clone()
+                    };
+                    eprintln!("  IDX: selecting MFA authenticator: {} (method={})", label, effective_method);
                     let select_rem = current_resp["remediation"]["value"].as_array()
                         .and_then(|rems| rems.iter().find(|r| r["name"].as_str() == Some("select-authenticator-authenticate")));
                     let select_url = select_rem
@@ -1716,8 +1723,8 @@ impl ArkimeClient {
 
                     let mut select_body = serde_json::json!({"stateHandle": state_handle});
                     select_body["authenticator"] = serde_json::json!({"id": id});
-                    if !method.is_empty() {
-                        select_body["authenticator"]["methodType"] = serde_json::Value::String(method.clone());
+                    if !effective_method.is_empty() {
+                        select_body["authenticator"]["methodType"] = serde_json::Value::String(effective_method.clone());
                     }
 
                     let start = Instant::now();
@@ -1743,82 +1750,136 @@ impl ArkimeClient {
                 }
             }
 
-            // Now submit the MFA code
-            let mfa_challenge = current_resp["remediation"]["value"].as_array()
-                .and_then(|rems| rems.iter().find(|r| {
-                    let name = r["name"].as_str().unwrap_or("");
-                    name == "challenge-authenticator" || name == "answer"
-                }).cloned());
+            // Check for challenge-poll (Okta Verify push notification — poll until user approves)
+            let has_challenge_poll = current_resp["remediation"]["value"].as_array()
+                .map(|arr| arr.iter().any(|r| r["name"].as_str() == Some("challenge-poll")))
+                .unwrap_or(false);
 
-            if let Some(mfa_rem) = mfa_challenge {
-                let mfa_url = mfa_rem["href"].as_str()
-                    .unwrap_or(&format!("{}/idp/idx/challenge/answer", okta_base))
+            if has_challenge_poll {
+                let poll_rem = current_resp["remediation"]["value"].as_array()
+                    .and_then(|rems| rems.iter().find(|r| r["name"].as_str() == Some("challenge-poll")).cloned())
+                    .unwrap();
+                let poll_url = poll_rem["href"].as_str()
+                    .unwrap_or(&format!("{}/idp/idx/challenge/poll", okta_base))
                     .to_string();
-                let mfa_accepts = mfa_rem["accepts"].as_str().map(|s| s.to_string());
 
-                // Build body with immutable fields
-                let mut mfa_body = serde_json::json!({});
-                if let Some(fields) = mfa_rem["value"].as_array() {
-                    for field in fields {
-                        let name = field["name"].as_str().unwrap_or("");
-                        if field["mutable"].as_bool().unwrap_or(true) == false {
-                            if let Some(val) = field.get("value") {
-                                mfa_body[name] = val.clone();
+                eprintln!("  IDX: Okta Verify push sent — approve on your device...");
+                let poll_start = Instant::now();
+                let max_poll_secs = 60;
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    let elapsed = poll_start.elapsed().as_secs();
+                    if elapsed > max_poll_secs {
+                        anyhow::bail!("Okta Verify push timed out after {}s. Try again.", max_poll_secs);
+                    }
+
+                    let start = Instant::now();
+                    let resp = idx_post(&poll_url, serde_json::json!({"stateHandle": state_handle}), None)
+                        .send().await?;
+                    let status = resp.status().as_u16();
+                    let body = resp.text().await?;
+                    log_http(&self.http_log, "POST", &poll_url, None, status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+
+                    if status != 200 {
+                        anyhow::bail!("Okta Verify poll failed: HTTP {}", status);
+                    }
+                    let poll_resp: serde_json::Value = serde_json::from_str(&body)?;
+                    let rem_names: Vec<&str> = poll_resp["remediation"]["value"].as_array()
+                        .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
+                        .unwrap_or_default();
+                    eprint!("\r  IDX: waiting for Okta Verify approval... ({}s)  ", elapsed);
+
+                    // Still polling — continue
+                    if rem_names.contains(&"challenge-poll") && !poll_resp.get("successWithInteractionCode").is_some() {
+                        continue;
+                    }
+
+                    // Done — either success or moved to next step
+                    eprintln!();
+                    eprintln!("  IDX: Okta Verify approved! Remediations: {:?}", rem_names);
+                    current_resp = poll_resp;
+                    let _ = current_resp["stateHandle"].as_str()
+                        .map(|s| state_handle = s.to_string());
+                    break;
+                }
+            } else {
+                // Not a push — check for challenge-authenticator (OTP code entry)
+                let mfa_challenge = current_resp["remediation"]["value"].as_array()
+                    .and_then(|rems| rems.iter().find(|r| {
+                        let name = r["name"].as_str().unwrap_or("");
+                        name == "challenge-authenticator" || name == "answer"
+                    }).cloned());
+
+                if let Some(mfa_rem) = mfa_challenge {
+                    let mfa_url = mfa_rem["href"].as_str()
+                        .unwrap_or(&format!("{}/idp/idx/challenge/answer", okta_base))
+                        .to_string();
+                    let mfa_accepts = mfa_rem["accepts"].as_str().map(|s| s.to_string());
+
+                    // Build body with immutable fields
+                    let mut mfa_body = serde_json::json!({});
+                    if let Some(fields) = mfa_rem["value"].as_array() {
+                        for field in fields {
+                            let name = field["name"].as_str().unwrap_or("");
+                            if field["mutable"].as_bool().unwrap_or(true) == false {
+                                if let Some(val) = field.get("value") {
+                                    mfa_body[name] = val.clone();
+                                }
                             }
                         }
                     }
+
+                    // Determine prompt text from current authenticator
+                    let auth_label = current_resp["currentAuthenticatorEnrollment"]["value"]["displayName"]
+                        .as_str()
+                        .or_else(|| current_resp["currentAuthenticatorEnrollment"]["value"]["profile"]["email"].as_str())
+                        .or_else(|| current_resp["currentAuthenticatorEnrollment"]["value"]["profile"]["phoneNumber"].as_str())
+                        .or_else(|| current_resp["currentAuthenticator"]["value"]["displayName"].as_str())
+                        .unwrap_or("your authenticator");
+
+                    let code = rpassword::prompt_password(format!("Enter verification code from {}: ", auth_label))?;
+                    mfa_body["credentials"] = serde_json::json!({"passcode": code});
+
+                    eprintln!("  IDX: submitting MFA code → {}", mfa_url);
+                    let start = Instant::now();
+                    let resp = idx_post(&mfa_url, mfa_body, mfa_accepts.as_deref())
+                        .send().await?;
+                    let status = resp.status().as_u16();
+                    let body = resp.text().await?;
+                    log_http(&self.http_log, "POST", &mfa_url, Some("credentials=***".into()), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
+
+                    if status == 401 || status == 403 {
+                        let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
+                            .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
+                            .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+                        anyhow::bail!("Okta MFA failed: {}", err_msg);
+                    }
+                    if status != 200 {
+                        let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
+                            .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
+                            .unwrap_or_else(|| body[..body.len().min(200)].to_string());
+                        anyhow::bail!("Okta MFA failed: HTTP {} — {}", status, err_msg);
+                    }
+
+                    current_resp = serde_json::from_str(&body)?;
+                    let _ = current_resp["stateHandle"].as_str()
+                        .map(|s| state_handle = s.to_string());
+                    eprintln!("  IDX: MFA code accepted!");
+                } else {
+                    // No challenge remediation found after MFA selection
+                    let rems: Vec<&str> = current_resp["remediation"]["value"].as_array()
+                        .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
+                        .unwrap_or_default();
+                    anyhow::bail!("Okta MFA: no challenge remediation found after authenticator selection. Remediations: {:?}", rems);
                 }
+            }
 
-                // Determine prompt text from current authenticator
-                let auth_label = current_resp["currentAuthenticatorEnrollment"]["value"]["displayName"]
-                    .as_str()
-                    .or_else(|| current_resp["currentAuthenticatorEnrollment"]["value"]["profile"]["email"].as_str())
-                    .or_else(|| current_resp["currentAuthenticatorEnrollment"]["value"]["profile"]["phoneNumber"].as_str())
-                    .or_else(|| current_resp["currentAuthenticator"]["value"]["displayName"].as_str())
-                    .unwrap_or("your authenticator");
-
-                let code = rpassword::prompt_password(format!("Enter verification code from {}: ", auth_label))?;
-                mfa_body["credentials"] = serde_json::json!({"passcode": code});
-
-                eprintln!("  IDX: submitting MFA code → {}", mfa_url);
-                let start = Instant::now();
-                let resp = idx_post(&mfa_url, mfa_body, mfa_accepts.as_deref())
-                    .send().await?;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                log_http(&self.http_log, "POST", &mfa_url, Some("credentials=***".into()), status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body[..body.len().min(200)]));
-
-                if status == 401 || status == 403 {
-                    let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
-                        .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
-                        .unwrap_or_else(|| body[..body.len().min(200)].to_string());
-                    anyhow::bail!("Okta MFA failed: {}", err_msg);
-                }
-                if status != 200 {
-                    let err_msg = serde_json::from_str::<serde_json::Value>(&body).ok()
-                        .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
-                        .unwrap_or_else(|| body[..body.len().min(200)].to_string());
-                    anyhow::bail!("Okta MFA failed: HTTP {} — {}", status, err_msg);
-                }
-
-                current_resp = serde_json::from_str(&body)?;
-                state_handle = current_resp["stateHandle"].as_str()
-                    .unwrap_or(&state_handle).to_string();
-                eprintln!("  IDX: MFA code accepted!");
-
-                // Check if there's another round of MFA or if we're done
-                let post_mfa_rems: Vec<String> = current_resp["remediation"]["value"].as_array()
-                    .map(|arr| arr.iter().filter_map(|r| r["name"].as_str().map(|s| s.to_string())).collect())
-                    .unwrap_or_default();
-                if !post_mfa_rems.is_empty() {
-                    eprintln!("  IDX: post-MFA remediations: {:?}", post_mfa_rems);
-                }
-            } else {
-                // No challenge remediation found after MFA selection
-                let rems: Vec<&str> = current_resp["remediation"]["value"].as_array()
-                    .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
-                    .unwrap_or_default();
-                anyhow::bail!("Okta MFA: no challenge remediation found after authenticator selection. Remediations: {:?}", rems);
+            // Check if there's another round of MFA or if we're done
+            let post_mfa_rems: Vec<String> = current_resp["remediation"]["value"].as_array()
+                .map(|arr| arr.iter().filter_map(|r| r["name"].as_str().map(|s| s.to_string())).collect())
+                .unwrap_or_default();
+            if !post_mfa_rems.is_empty() && !current_resp.get("successWithInteractionCode").is_some() {
+                eprintln!("  IDX: post-MFA remediations: {:?}", post_mfa_rems);
             }
         }
 
