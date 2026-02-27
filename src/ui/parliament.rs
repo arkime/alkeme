@@ -107,9 +107,48 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
         .borders(Borders::ALL)
         .title(" Dashboard (↑/↓ navigate, Enter=open cluster, i=detail, r=refresh) ");
 
+    // Auto-scroll to keep selected cluster visible
+    let content_height = area.height.saturating_sub(2) as u16; // borders
+    app.visible_rows = content_height as usize;
+    // Calculate line index of selected cluster
+    let mut selected_line: u16 = 0;
+    let mut found = false;
+    let mut line_count: u16 = 0;
+    for (gi, group) in app.pl_groups.iter().enumerate() {
+        line_count += 1; // group header
+        if !group.description.is_empty() {
+            line_count += 1;
+        }
+        for (ci, _cluster) in group.clusters.iter().enumerate() {
+            if app.pl_cluster_list.iter().position(|&(g, c)| g == gi && c == ci)
+                .map(|idx| idx == nav_idx)
+                .unwrap_or(false) && !found
+            {
+                selected_line = line_count;
+                found = true;
+            }
+            line_count += 1; // cluster line
+            let cluster_id = _cluster.id.as_deref().unwrap_or("");
+            if let Some(issues) = app.pl_issues_map.get(cluster_id) {
+                line_count += issues.len().min(3) as u16;
+                if issues.len() > 3 {
+                    line_count += 1;
+                }
+            }
+        }
+        line_count += 1; // spacer
+    }
+    if found && content_height > 0 {
+        if selected_line < app.pl_dashboard_scroll {
+            app.pl_dashboard_scroll = selected_line;
+        } else if selected_line >= app.pl_dashboard_scroll + content_height {
+            app.pl_dashboard_scroll = selected_line - content_height + 1;
+        }
+    }
+
     let paragraph = Paragraph::new(lines)
         .block(block)
-        .scroll((0, 0));
+        .scroll((app.pl_dashboard_scroll, 0));
 
     f.render_widget(paragraph, area);
 }
@@ -244,6 +283,8 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
         ])
         .split(area);
 
+    app.visible_rows = chunks[1].height.saturating_sub(3) as usize;
+
     // Filter bar
     let filter_display = if app.input_mode == InputMode::Expression {
         &app.pl_issues_filter_edit
@@ -309,13 +350,8 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
         pl_sort_hdr(PlIssueSort::LastNoticed, "Last Noticed"),
     ]);
 
-    let rows: Vec<Row> = filtered.iter().enumerate().map(|(i, issue)| {
+    let rows: Vec<Row> = filtered.iter().map(|issue| {
         let severity_color = if issue.severity == "red" { Color::Red } else { Color::Yellow };
-        let style = if i == app.pl_issues_selected {
-            Style::default().bg(Color::DarkGray)
-        } else {
-            Style::default()
-        };
 
         let mut ack_prefix = String::new();
         if issue.acknowledged.is_some() {
@@ -334,7 +370,7 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
             Cell::from(issue.message.clone()),
             Cell::from(format_epoch_ms_full(issue.first_noticed)),
             Cell::from(format_epoch_ms_full(issue.last_noticed)),
-        ]).style(style)
+        ])
     }).collect();
 
     let widths = [
@@ -349,11 +385,12 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
 
     let table = Table::new(rows, widths)
         .header(header)
+        .row_highlight_style(Style::default().bg(Color::DarkGray))
         .block(Block::default()
             .borders(Borders::ALL)
             .title(format!(" Issues [{}/{}] ", filtered.len(), total)));
 
-    f.render_widget(table, chunks[1]);
+    f.render_stateful_widget(table, chunks[1], &mut app.pl_issues_table_state);
 }
 
 fn draw_cluster_detail(f: &mut Frame, app: &App, area: Rect) {

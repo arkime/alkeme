@@ -11,6 +11,8 @@ cargo run -- URL --auth digest --user admin:admin              # digest auth
 cargo run -- URL --auth basic --user admin:admin               # basic auth
 cargo run -- URL --auth form --user admin:admin                # form auth (cookie-based)
 cargo run -- URL --auth web --user admin:admin                 # web auth (HTML form parsing)
+cargo run -- URL --auth okta --user admin:admin                # okta auth (Identity Engine + classic)
+cargo run -- URL --auth okta                                   # okta auth (prompts with Okta's labels)
 cargo run -- URL --auth digest                                 # prompts for both user+pass
 cargo run -- URL --auth digest --user admin                    # prompts for password only
 cargo run -- URL --app cont3xt --auth form --user admin:admin  # force cont3xt mode
@@ -76,7 +78,7 @@ src/
 - `GraphSize` — Enum: `Off` | `Small` (10 rows) | `Large` (20 rows). Three-state graph toggle.
 - `ArkimeClient` — Wraps `reqwest::Client` + `base_url` + auth. All API calls return `Result<T>`.
 - `ArkimeField` — Deserialized field definition with `dbField`, `type`, `exp` (expression name), `friendlyName`, `regex` (Option), `noFacet` (Option). `is_visible()` returns false for fields with regex or noFacet="true".
-- `AuthMode` — Enum: `None` | `Basic` | `Digest` | `Form` | `Web`.
+- `AuthMode` — Enum: `None` | `Basic` | `Digest` | `Form` | `Web` | `Okta`.
 - `GraphData` — Deserialized histogram data from `facets=1` API response.
 - `TableState` — ratatui widget state for session/stats list scrolling.
 - `DetailActionMenu` — Popup for adding a field/value to expression from session detail. Options: AND/AND NOT/OR/OR NOT. Stores `field` (exp name for expressions), `display` (friendlyName for UI), `value`, `selected` index, `values` (for array value picker), and `value_selected`.
@@ -346,18 +348,19 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - State fields use `pl_` prefix; API methods use `pl_` prefix
 - Dashboard shows groups as titled sections with clusters listed below
 - Each cluster shows: type icon (⊘ disabled, ⌂ multiviewer, 🔕noAlerts), health indicator (●green/●yellow/●red), title, stats (bps, drops/sec, sessions, nodes, ES info), issue count
-- Navigation: ↑/↓ selects cluster via `pl_cluster_list` flat index (group_idx, cluster_idx pairs)
+- Navigation: ↑/↓ selects cluster via `pl_cluster_list` flat index (group_idx, cluster_idx pairs); dashboard auto-scrolls to keep selected cluster visible (`pl_dashboard_scroll`)
 - `i` opens detail overlay with full stats and issues for selected cluster
 - `Enter` on a cluster with a URL switches to Viewer mode: creates new `ArkimeClient` with cluster URL, calls `login()`/`fetch_cookie()`, switches `app_mode` to Viewer, loads fields+sessions. Parliament client saved in `pl_saved_client`.
 - `c` on Dashboard switches to Cont3xt mode using `cont3xtUrl` from parliament settings (if configured). Saves parliament client for return.
 - `Ctrl+P` in Viewer or Cont3xt mode (when `pl_saved_client` is Some) restores the parliament client and switches back to Parliament Dashboard
-- Issues tab: filterable, sortable table of all cluster issues with severity color coding
+- Issues tab: filterable, sortable table of all cluster issues with severity color coding; uses `TableState` (`pl_issues_table_state`) for automatic scroll tracking
 - Filter uses expression handler (`/` or `E`), stored in `pl_issues_filter`
-- Sort cycles through: Cluster, Title, Severity, FirstNoticed, LastNoticed via `PlIssueSort`
+- Sort cycles through: Cluster, Title, Severity, FirstNoticed, LastNoticed via `PlIssueSort`; active sort column shown in Cyan with ▲/▼ arrow, other sortable columns in Yellow
 - Auto-refresh: every 30 seconds (dashboard stats + issues), same pattern as viewer Stats tab
 
 ### Parliament API endpoints
 
+- Parliament API methods use `pl_base()` which strips trailing `/parliament` from `base_url` to avoid double-path issues (e.g., user provides `http://host/parliament`, endpoints use `/parliament/api/...`)
 - `GET /parliament/api/parliament` — returns `{groups: [{title, description, clusters: [{id, title, description, url, type}]}], settings: {general: {cont3xtUrl, ...}}}`
 - `GET /parliament/api/parliament/stats` — returns `{results: {clusterId: {status, deltaBPS, deltaTDPS, monitoring, arkimeNodes, dataNodes, totalNodes, esVersion, healthError, statsError}}}`
 - `GET /parliament/api/issues` — returns `{issues: [...], recordsFiltered}`. Query params: `map=true` returns `{results: {clusterId: [issues]}}`
@@ -470,6 +473,42 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - User info comes from `result.user` in the `/api/appversion` response, stored as `serde_json::Value` in `App.user`
 - `removeEnabled` controls whether "Remove Tags" appears in action menus
 - `App::remove_enabled()` helper checks `user["removeEnabled"]`
+
+## Okta authentication
+
+- `AuthMode::Okta` — dedicated auth flow for Okta SSO, selected via `--auth okta`
+- Like Web auth, Okta defers login to before entering raw mode (needs interactive stdin for prompts)
+- Uses `reqwest` cookie store with redirect policy `none` (manual redirect following) and browser-like user agent
+- `okta_login()` orchestrates the full flow:
+  1. Navigate to app URL, follow redirects to Okta login page
+  2. Extract `modelDataBag` JSON from page JavaScript (contains stateToken, baseUrl, org settings, labels)
+  3. Fall back to `var stateToken = '...'` regex if modelDataBag not found
+  4. Display brand name and app name from Okta page context
+  5. Prompt for credentials using Okta's configured labels (e.g., "Email" instead of "Username")
+  6. Extract `fromURI` (OAuth2 authorize URL) from hidden form input
+  7. Authenticate via IDX API (Identity Engine) or classic authn API
+  8. Exchange session token for session cookie via `/login/sessionCookieRedirect`
+  9. Verify session established via `/api/appversion`
+- `okta_idx_login()` — Identity Engine flow (modern Okta orgs):
+  - POST `/idp/idx/introspect` with page's stateToken
+  - POST `/idp/idx/identify` with username
+  - POST `/idp/idx/challenge/answer` with password
+  - Handles `select-authenticator-authenticate` remediation (navigates challenge flow)
+  - Handles Okta Verify push: sends challenge, polls for approval (up to 60s)
+  - Handles email magic link: shows OTP code, polls for verification
+  - Handles TOTP (authenticator app): prompts for code
+  - On success, follows `/idp/idx/challenge/answer` → success redirect chain
+  - Returns `None` if cookies set directly (no sessionToken), or `Some(token)` for classic redirect
+- `okta_classic_authn()` — Classic Okta flow (older orgs):
+  - POST `/api/v1/authn` with username, password, and stateToken
+  - Handles `SUCCESS` → returns sessionToken
+  - Handles `MFA_REQUIRED` → delegates to `okta_handle_mfa()`
+- `okta_handle_mfa()` — Classic MFA handling:
+  - Prefers Okta Verify push, then TOTP, then fails with available factor list
+  - Push: sends verify request, polls every 2s for up to 60s (WAITING/REJECTED/TIMEOUT)
+  - TOTP: prompts for code from authenticator app
+- IDX flow falls back to classic authn on protocol/setup errors (not auth failures)
+- `decode_js_escapes()` — decodes `\xNN`, `\uNNNN`, `\n`, `\r`, `\t`, `\"`, `\\`, `\/` in Okta page JS strings
 
 ## Expression input
 

@@ -121,29 +121,37 @@ impl App {
                 let filtered = self.pl_filtered_issues();
                 if !filtered.is_empty() {
                     self.pl_issues_selected = self.pl_issues_selected.saturating_sub(self.visible_rows);
+                    self.pl_issues_table_state.select(Some(self.pl_issues_selected));
                 }
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 let filtered = self.pl_filtered_issues();
                 let max = filtered.len().saturating_sub(1);
                 self.pl_issues_selected = (self.pl_issues_selected + self.visible_rows).min(max);
+                self.pl_issues_table_state.select(Some(self.pl_issues_selected));
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 let filtered = self.pl_filtered_issues();
                 if !filtered.is_empty() && self.pl_issues_selected > 0 {
                     self.pl_issues_selected -= 1;
+                    self.pl_issues_table_state.select(Some(self.pl_issues_selected));
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 let filtered = self.pl_filtered_issues();
                 if !filtered.is_empty() && self.pl_issues_selected < filtered.len() - 1 {
                     self.pl_issues_selected += 1;
+                    self.pl_issues_table_state.select(Some(self.pl_issues_selected));
                 }
             }
-            KeyCode::Home => self.pl_issues_selected = 0,
+            KeyCode::Home => {
+                self.pl_issues_selected = 0;
+                self.pl_issues_table_state.select(Some(0));
+            }
             KeyCode::End => {
                 let filtered = self.pl_filtered_issues();
                 self.pl_issues_selected = filtered.len().saturating_sub(1);
+                self.pl_issues_table_state.select(Some(self.pl_issues_selected));
             }
             _ => {}
         }
