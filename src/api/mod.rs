@@ -1789,11 +1789,15 @@ impl ArkimeClient {
                         .unwrap_or_default();
                     eprintln!("  IDX: after MFA select, remediations: {:?}", post_select_rems);
 
-                    if post_select_rems.contains(&"device-challenge-poll".to_string())
-                        || post_select_rems.contains(&"challenge-poll".to_string())
-                    {
+                    if post_select_rems.contains(&"device-challenge-poll".to_string()) {
+                        // device-challenge-poll has loopback data — use skip_device_poll
                         eprintln!("  IDX: MFA requires Okta Verify loopback (signed_nonce)...");
                         skip_device_poll!(current_resp, state_handle);
+                    } else if post_select_rems.contains(&"challenge-poll".to_string()) {
+                        // challenge-poll = push/auto-verify — poll until OV confirms
+                        // (desktop OV agent on port 8769 may auto-handle this)
+                        eprintln!("  IDX: MFA challenge-poll — polling for Okta Verify approval...");
+                        // Fall through to the challenge-poll handler below
                     } else {
                         eprintln!("  IDX: MFA authenticator selected, prompting for code...");
                     }
@@ -1820,9 +1824,9 @@ impl ArkimeClient {
                     .unwrap_or(&format!("{}/idp/idx/challenge/poll", okta_base))
                     .to_string();
 
-                eprintln!("  IDX: Okta Verify push sent — approve on your device...");
+                eprintln!("  IDX: polling {} — check Okta Verify on your device...", poll_url);
                 let poll_start = Instant::now();
-                let max_poll_secs = 60;
+                let max_poll_secs = 30;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     let elapsed = poll_start.elapsed().as_secs();
@@ -1844,7 +1848,7 @@ impl ArkimeClient {
                     let rem_names: Vec<&str> = poll_resp["remediation"]["value"].as_array()
                         .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
                         .unwrap_or_default();
-                    eprint!("\r  IDX: waiting for Okta Verify approval... ({}s)  ", elapsed);
+                    eprintln!("  IDX: poll ({}s): {:?} success={}", elapsed, rem_names, poll_resp.get("successWithInteractionCode").is_some());
 
                     // Still polling — continue
                     if rem_names.contains(&"challenge-poll") && !poll_resp.get("successWithInteractionCode").is_some() {
