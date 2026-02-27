@@ -97,7 +97,7 @@ src/
 - `LayoutPopupMode` — Enum: `List` | `SaveInput` | `ConfirmDelete`. Controls layout popup state.
 - `ArkimeView` — Server view: `id`, `name`, `expression`, `user`, `shared` (bool). Fetched from `/api/views`.
 - `ViewPopupMode` — Enum: `List` | `SaveInput` | `ConfirmDelete`. Controls view popup state.
-- `HttpLogEntry` — Records HTTP request: timestamp, method, url, post_data, status, first_byte_ms, last_byte_ms, response_body (Option, first 200 chars for non-200). Stored in `HttpLog` (`Arc<Mutex<Vec<HttpLogEntry>>>`), shared between `ArkimeClient` and `FetchClient`.
+- `HttpLogEntry` — Records HTTP request: timestamp, method, url, post_data, status, first_byte_ms, last_byte_ms, response_body (Option, first 4096 chars for non-200). Stored in `HttpLog` (`Arc<Mutex<Vec<HttpLogEntry>>>`), shared between `ArkimeClient` and `FetchClient`.
 - `Cont3xtFocus` — Enum: `Results` | `Detail`. Controls which pane has focus in cont3xt search.
 - `Cont3xtIntegration` — Integration definition from `/api/integration`: name, doable, order, card (Option<Cont3xtCard>).
 - `Cont3xtCard` — Card display definition: title, fields (Vec<CardField>).
@@ -121,7 +121,7 @@ src/
 | j / k / ↑ / ↓ | Navigate sessions/stats |
 | Shift+↑ / Shift+↓ | Page up/down in list, detail, or packets |
 | ← / → | Previous/next page (sessions); jump to top/bottom (detail/stats detail/arkime/packets); in expression input, move cursor |
-| Shift+← / Shift+→ | First/last page |
+| Shift+← / Shift+→ | First/last page; word jump in expression input |
 | Home / End | First page; in expression input, cursor to start/end |
 | PgUp / PgDn | Page up/down in detail, stats detail, or packets view |
 | Enter | Open session/stats detail; in detail or summary, open expression menu |
@@ -140,7 +140,7 @@ src/
 | p | View packet hex dump (session list or detail) |
 | c | Columns & layouts menu |
 | v | Views (select/create/delete views) |
-| D | HTTP debug log overlay |
+| D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
 | h / ? | Show context-sensitive help overlay |
 | q | Quit |
 
@@ -148,20 +148,23 @@ src/
 
 | Key | Action |
 |---|---|
-| Tab / Shift+Tab | Switch tabs; toggle results/detail focus (in Search) |
+| Tab / Shift+Tab | Switch tabs |
 | j / k / ↑ / ↓ | Navigate results list or scroll detail |
-| Shift+↑ / Shift+↓ | Page up/down |
+| Shift+↑ / Shift+↓ | Page up/down; jump to next/prev indicator (results) |
 | PgUp / PgDn | Page up/down (detail) |
-| ← / → | Scroll detail left/right |
-| Shift+← / Shift+→ | Fast scroll detail left/right |
+| ← / → | Jump to top/bottom (results); scroll detail left/right |
+| Shift+← / Shift+→ | Fast scroll detail left/right; word jump in expression |
 | Home | Jump to top, reset horizontal scroll |
 | End | Jump to bottom |
+| Enter | Open detail panel (results); close detail uses Esc |
+| Esc | Return to results from detail; close popups |
 | / or E | Search expression or filter (Enter to apply, Esc to cancel); in session detail, live-filter fields |
 | R | Toggle raw JSON / card view |
 | i | Integration filter popup (Space:toggle, a:all, n:none, !:invert, /:filter) |
+| Shift+I | Open views popup (select/create/delete integration views) |
 | r | Re-run search |
 | l | Link groups for selected indicator (Enter opens in browser, / filter) |
-| D | HTTP debug log overlay |
+| D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
 | h / ? | Show help |
 | q | Quit |
 
@@ -182,7 +185,7 @@ src/
 | s | Next sort column (Issues) |
 | S | Toggle sort direction (Issues) |
 | r | Refresh |
-| D | HTTP debug log overlay |
+| D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
 | h / ? | Show help |
 | q | Quit |
 
@@ -307,9 +310,13 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - `R` toggles between card view and raw JSON; `flatten_json_to_lines()` renders raw
 
 ### Integration popup
-- `i` key opens popup; `/` enters filter mode for type-to-search
+- `i` key opens popup in Integrations mode; `Shift+I` opens directly in Views mode
+- In Integrations mode: `/` enters filter mode for type-to-search
 - Space/Enter toggles individual integrations; `a` enables all, `n` disables all, `!` inverts
-- `c3_disabled_integrations: HashSet<String>` filters results during streaming search
+- Manually toggling integrations clears the active view (sets label to "custom")
+- `c3_disabled_integrations: HashSet<String>` filters results during streaming search; sent as `doIntegrations` to the search API
+- In Views mode: lists saved integration views; selecting a view applies its integration settings
+- `IntegrationPopupMode` — Enum: `Integrations` | `Views` | `SaveInput` | `ConfirmDelete`
 
 ### Cookie handling
 - Cont3xt uses `CONT3XT-COOKIE` (not `ARKIME-COOKIE`)
@@ -323,7 +330,10 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - `c3_disabled_integrations`, `show_integration_popup`, `integration_popup_selected`, `integration_popup_filter`, `integration_popup_filtering`
 - `c3_searching`, `pending_c3_search`
 - `c3_tree_order` — result indices in tree display order (navigation uses this, not flat c3_results)
+- `c3_tree_roots` — indices into `c3_tree_order` where each root indicator starts (for Shift+Up/Down jumping)
 - `c3_indicator_parents` — HashMap<(indicator, itype), Vec<(parent_query, parent_itype)>> for tree nesting
+- `c3_active_view_id`, `c3_active_view_name` — active integration view ID/name (shown in search bar label)
+- `c3_stats_table_state` — TableState for auto-scrolling stats table
 - `c3_link_groups`, `c3_show_link_popup`, `c3_link_popup_selected`, `c3_link_popup_filter`, `c3_link_popup_filtering`, `c3_link_flat`
 
 ### Results tree hierarchy
@@ -333,7 +343,9 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Children appear under all their parents (multi-parent support for shared IPs, etc.)
 - Parent indicators without results are injected into the tree (e.g., URL with no integrations)
 - `c3_tree_order` stores result indices in display order; `c3_selected` indexes into this
+- `c3_tree_roots` stores indices into `c3_tree_order` where each root indicator starts — enables Shift+Up/Down to jump between indicators
 - All navigation and lookups go through `c3_tree_order`: `c3_results[c3_tree_order[c3_selected]]`
+- Enter switches focus to detail panel; Esc returns to results; Tab always switches tabs
 
 ### Link groups
 - `l` key opens link groups popup filtered by the selected indicator's itype
@@ -464,8 +476,9 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 ## Context-sensitive help
 
 - `h` or `?` shows help overlay tailored to the current view
-- 9 contexts: Sessions list, Session detail, Packets view, Stats list, Stats detail, Arkime summary, Column editor, Layouts, Views
-- Help renders last in draw order (on top of all overlays including packets)
+- Help popup: 64 chars wide (capped at terminal width), with text wrapping enabled
+- Viewer contexts: Sessions list, Session detail, Packets view, Stats list, Stats detail, Arkime summary, Column editor, Layouts, Views
+- Cont3xt contexts: separate help for Results panel and Detail panel (different key behaviors)
 - Uses `macro_rules! hdr` for section headers to avoid closure lifetime issues
 
 ## User API
@@ -515,6 +528,9 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Expression and stats filter inputs support full cursor movement (Left/Right/Home/End/Delete)
 - `expression_cursor` tracks cursor position within the edit string
 - Characters insert at cursor position; Backspace deletes before cursor; Delete deletes at cursor
+- Horizontal scrolling: when cursor exceeds input box width, text scrolls so cursor remains visible
+- Shift+Left/Right: word-at-a-time jumping (skips non-alphanumeric chars then alphanumeric chars)
+- All expression inputs (viewer, cont3xt, stats, parliament issues) support horizontal scrolling
 
 ## Date field handling
 

@@ -8,6 +8,16 @@ This project was entirely created by Claude — code, architecture, documentatio
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
+## Table of Contents
+
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Keybindings](#keybindings)
+- [License](#license)
+
 ## Screenshots
 
 ### Sessions Tab
@@ -44,8 +54,10 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Card-based rendering** — integration results displayed using server-defined card templates with proper field types (string, date, url, table, array, JSON, DNS records)
 - **Table alignment** — card tables have properly aligned columns with horizontal scroll support
 - **Raw JSON toggle** — press `R` to switch between card view and raw JSON
-- **Integration filter** — press `i` to toggle integrations on/off with bulk actions (all/none/invert)
+- **Integration filter** — press `i` to toggle integrations on/off with bulk actions (all/none/invert); disabled integrations sent as `doIntegrations` to the search API
+- **Views** — press `Shift+I` to select a saved integration view; loading a view applies its integration settings; manually toggling integrations clears the active view; search bar shows "all", view name, or "custom"
 - **Link groups** — press `l` to browse applicable link groups for the selected indicator; Enter opens the link URL in your browser
+- **Indicator navigation** — `Shift+↑`/`Shift+↓` jumps between top-level indicators in the results tree
 
 ### Parliament Mode
 - **Cluster dashboard** — groups displayed with clusters showing health status (●green/●yellow/●red), bytes/sec, drops/sec, active sessions, node counts, ES info, and inline issues
@@ -66,7 +78,9 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Authentication** — supports no-auth, HTTP Basic, HTTP Digest, form-based (cookie), web (HTML form parsing with redirect support), and Okta SSO (Identity Engine + classic, with MFA push/TOTP) authentication
 - **Credential prompting** — prompts for username/password if not provided; `--user username` (no colon) prompts for password only
 - **User permissions** — respects `removeEnabled` from the Arkime user profile
-- **HTTP debug log** — press `D` to view all HTTP requests with timing, status, and response bodies for errors
+- **HTTP debug log** — press `D` to view all HTTP requests with timing, status, and response bodies; select entries with ↑/↓ and press Enter to expand full request/response details with pretty-printed JSON
+- **Expression input** — full cursor support with horizontal scrolling when text exceeds box width; `Shift+←`/`Shift+→` for word-at-a-time jumping
+- **Sort column indicators** — active sort column highlighted in Cyan with ▲/▼ arrow; other sortable columns shown in Yellow
 - **Keyboard-driven** — fully navigable with keyboard shortcuts
 
 ## Requirements
@@ -153,7 +167,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `j` / `k` / `↑` / `↓` | Navigate sessions |
 | `Shift+↑` / `Shift+↓` | Page up / down in list or detail |
 | `←` / `→` | Previous / next page (sessions); jump to top / bottom (detail/stats/arkime); move cursor (expression) |
-| `Shift+←` / `Shift+→` | First / last page |
+| `Shift+←` / `Shift+→` | First / last page; word jump in expression input |
 | `Home` / `End` | First page; in expression input, move cursor to start / end |
 | `PgUp` / `PgDn` | Page up / down in detail or packet view |
 | `Enter` | Open session detail; in detail or summary, add field to expression |
@@ -180,20 +194,23 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 
 | Key | Action |
 |---|---|
-| `Tab` / `Shift+Tab` | Switch tabs; toggle results / detail focus (in Search) |
+| `Tab` / `Shift+Tab` | Switch tabs |
 | `j` / `k` / `↑` / `↓` | Navigate results list or scroll detail |
-| `Shift+↑` / `Shift+↓` | Page up / down |
+| `Shift+↑` / `Shift+↓` | Page up / down; jump to next/prev indicator (results) |
 | `PgUp` / `PgDn` | Page up / down (detail) |
-| `←` / `→` | Scroll detail left / right |
-| `Shift+←` / `Shift+→` | Fast scroll detail left / right |
+| `←` / `→` | Jump to top / bottom (results); scroll detail left / right |
+| `Shift+←` / `Shift+→` | Fast scroll detail left / right; word jump in expression |
 | `Home` | Jump to top, reset horizontal scroll |
 | `End` | Jump to bottom |
+| `Enter` | Open detail panel (results); close detail panel uses `Esc` |
+| `Esc` | Return to results from detail; close popups |
 | `/` or `E` | Edit search indicator |
 | `R` | Toggle raw JSON / card view |
 | `i` | Integration filter (toggle on/off, `a`:all, `n`:none, `!`:invert, `/`:filter) |
+| `Shift+I` | Open views popup (select/create/delete integration views) |
 | `l` | Link groups for selected indicator (Enter opens in browser) |
 | `r` | Re-run search |
-| `D` | HTTP debug log |
+| `D` | HTTP debug log (↑/↓ navigate, Enter expand, Esc collapse) |
 | `h` / `?` | Show help |
 | `q` | Quit |
 
