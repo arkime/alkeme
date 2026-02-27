@@ -1625,6 +1625,9 @@ impl ArkimeClient {
             }
 
             current_resp = serde_json::from_str(&body)?;
+            if let Some(sh) = current_resp["stateHandle"].as_str() {
+                state_handle = sh.to_string();
+            }
         } // close if !already_done
 
         // Check if we need MFA
