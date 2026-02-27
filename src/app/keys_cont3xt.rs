@@ -350,6 +350,7 @@ impl App {
                 KeyCode::Char(c) => {
                     self.c3_stats_filter.push(c);
                     self.c3_stats_selected = 0;
+                    self.c3_stats_table_state.select(Some(self.c3_stats_selected));
                 }
                 _ => {}
             }
@@ -465,6 +466,7 @@ impl App {
                         .count();
                     if filtered_len > 0 {
                         self.c3_stats_selected = (self.c3_stats_selected + self.visible_rows).min(filtered_len - 1);
+                        self.c3_stats_table_state.select(Some(self.c3_stats_selected));
                     }
                 }
             }
@@ -487,6 +489,7 @@ impl App {
                     }
                 } else if self.active_tab == Tab::C3Stats {
                     self.c3_stats_selected = self.c3_stats_selected.saturating_sub(self.visible_rows);
+                    self.c3_stats_table_state.select(Some(self.c3_stats_selected));
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -512,6 +515,7 @@ impl App {
                         .count();
                     if filtered_len > 0 {
                         self.c3_stats_selected = (self.c3_stats_selected + 1).min(filtered_len - 1);
+                        self.c3_stats_table_state.select(Some(self.c3_stats_selected));
                     }
                 }
             }
@@ -529,6 +533,7 @@ impl App {
                     }
                 } else if self.active_tab == Tab::C3Stats {
                     self.c3_stats_selected = self.c3_stats_selected.saturating_sub(1);
+                    self.c3_stats_table_state.select(Some(self.c3_stats_selected));
                 }
             }
             KeyCode::PageDown => {
@@ -597,12 +602,14 @@ impl App {
                 if self.c3_stats_tab != C3StatsTab::Integrations {
                     self.c3_stats_tab = C3StatsTab::Integrations;
                     self.c3_stats_selected = 0;
+                    self.c3_stats_table_state.select(Some(self.c3_stats_selected));
                 }
             }
             KeyCode::Char('2') if self.active_tab == Tab::C3Stats => {
                 if self.c3_stats_tab != C3StatsTab::ITypes {
                     self.c3_stats_tab = C3StatsTab::ITypes;
                     self.c3_stats_selected = 0;
+                    self.c3_stats_table_state.select(Some(self.c3_stats_selected));
                 }
             }
             KeyCode::Char('s') if self.active_tab == Tab::C3Stats => {

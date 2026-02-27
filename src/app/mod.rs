@@ -167,6 +167,7 @@ pub struct App {
     pub c3_stats_data: Vec<serde_json::Value>,       // integration stats
     pub c3_itype_stats_data: Vec<serde_json::Value>, // itype stats
     pub c3_stats_selected: usize,
+    pub c3_stats_table_state: ratatui::widgets::TableState,
     pub c3_stats_filter: String,
     pub c3_stats_filtering: bool,
     pub c3_stats_sort_col: usize,
@@ -380,6 +381,7 @@ impl App {
             c3_stats_data: Vec::new(),
             c3_itype_stats_data: Vec::new(),
             c3_stats_selected: 0,
+            c3_stats_table_state: ratatui::widgets::TableState::default(),
             c3_stats_filter: String::new(),
             c3_stats_filtering: false,
             c3_stats_sort_col: 0,

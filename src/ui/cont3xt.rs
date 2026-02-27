@@ -707,7 +707,7 @@ fn render_card_lines(card: &Cont3xtCard, data: &serde_json::Value, _indicator: &
     lines
 }
 
-fn c3_draw_stats(f: &mut Frame, app: &App, area: Rect) {
+fn c3_draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -770,7 +770,7 @@ fn c3_draw_stats(f: &mut Frame, app: &App, area: Rect) {
     let header = Row::new(header_cells).height(1);
 
     // Build rows
-    let rows: Vec<Row> = filtered.iter().enumerate().map(|(i, item)| {
+    let rows: Vec<Row> = filtered.iter().map(|item| {
         let cells: Vec<Cell> = columns.iter().map(|&(field, _, _)| {
             let val = item.get(field);
             let text = match field {
@@ -793,12 +793,7 @@ fn c3_draw_stats(f: &mut Frame, app: &App, area: Rect) {
             }
         }).collect();
 
-        let style = if i == app.c3_stats_selected {
-            Style::default().fg(Color::Black).bg(Color::Cyan)
-        } else {
-            Style::default()
-        };
-        Row::new(cells).style(style)
+        Row::new(cells)
     }).collect();
 
     let widths: Vec<Constraint> = columns.iter().map(|&(_, _, w)| Constraint::Length(w)).collect();
@@ -815,8 +810,9 @@ fn c3_draw_stats(f: &mut Frame, app: &App, area: Rect) {
     let table = Table::new(rows, widths)
         .header(header)
         .block(Block::default().borders(Borders::ALL).title(title))
-        .row_highlight_style(Style::default());
-    f.render_widget(table, chunks[1]);
+        .row_highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan));
+    app.c3_stats_table_state.select(Some(app.c3_stats_selected));
+    f.render_stateful_widget(table, chunks[1], &mut app.c3_stats_table_state);
 }
 
 fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
