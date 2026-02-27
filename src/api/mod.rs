@@ -1861,9 +1861,12 @@ impl ArkimeClient {
                                 if let Some(ports_arr) = ports {
                                     let loopback_client = Client::builder()
                                         .danger_accept_invalid_certs(true)
-                                        .timeout(std::time::Duration::from_secs(3))
+                                        .pool_max_idle_per_host(0)
                                         .build()
                                         .unwrap();
+                                    // Separate short timeout for probe, long timeout for challenge
+                                    let probe_timeout = std::time::Duration::from_secs(3);
+                                    let challenge_timeout = std::time::Duration::from_secs(300);
                                     let mut loopback_ok = false;
                                     for port_val in ports_arr {
                                         let port = port_val.as_str().and_then(|s| s.parse::<u64>().ok())
@@ -1874,12 +1877,14 @@ impl ArkimeClient {
                                         eprintln!("  IDX: MFA loopback probing {}...", base);
                                         match loopback_client.get(format!("{}/probe", base))
                                             .header("Origin", &okta_origin)
+                                            .timeout(probe_timeout)
                                             .send().await {
                                             Ok(resp) if resp.status().is_success() => {
                                                 eprintln!("  IDX: MFA loopback probe OK on port {}, sending challenge...", port);
                                                 match loopback_client.post(format!("{}/challenge", base))
                                                     .header("Content-Type", "application/json")
                                                     .header("Origin", &okta_origin)
+                                                    .timeout(challenge_timeout)
                                                     .body(serde_json::json!({"challengeRequest": challenge_request}).to_string())
                                                     .send().await {
                                                     Ok(resp) => {
@@ -1891,7 +1896,7 @@ impl ArkimeClient {
                                                             break;
                                                         }
                                                     }
-                                                    Err(e) => eprintln!("  IDX: MFA loopback challenge error: {}", e),
+                                                    Err(e) => eprintln!("  IDX: MFA loopback challenge error: {:?}", e),
                                                 }
                                             }
                                             Ok(resp) => eprintln!("  IDX: MFA loopback probe failed: HTTP {}", resp.status()),
@@ -2028,7 +2033,7 @@ impl ArkimeClient {
                     eprintln!("  IDX: poll #{} ({}s): remediations={:?} success={}", poll_count, elapsed, rem_names, has_success);
 
                     // Debug: on first poll, dump more details
-                    if poll_count == 1 {
+                    if poll_count <= 2 {
                         if let Some(obj) = poll_resp.as_object() {
                             eprintln!("  IDX: poll response keys: {:?}", obj.keys().collect::<Vec<_>>());
                         }
@@ -2049,14 +2054,49 @@ impl ArkimeClient {
                         }
                     }
 
-                    // Still polling — continue
-                    if rem_names.contains(&"challenge-poll") && !poll_resp.get("successWithInteractionCode").is_some() {
+                    // Still polling — continue if challenge-poll or if empty remediations without success
+                    let has_swic = poll_resp.get("successWithInteractionCode").is_some();
+                    if has_swic {
+                        eprintln!();
+                        eprintln!("  IDX: Okta Verify approved — got successWithInteractionCode!");
+                        current_resp = poll_resp;
+                        if let Some(obj) = current_resp.as_object() {
+                            eprintln!("  IDX: approved poll response keys: {:?}", obj.keys().collect::<Vec<_>>());
+                        }
+                        let _ = current_resp["stateHandle"].as_str()
+                            .map(|s| state_handle = s.to_string());
+                        break;
+                    }
+                    if rem_names.contains(&"challenge-poll") {
+                        continue;
+                    }
+                    if rem_names.is_empty() {
+                        // Empty remediations without successWithInteractionCode — keep polling
+                        // Update stateHandle from this response for next poll
+                        if let Some(sh) = poll_resp["stateHandle"].as_str() {
+                            state_handle = sh.to_string();
+                        }
+                        // Dump full response for debugging
+                        if let Some(obj) = poll_resp.as_object() {
+                            eprintln!("  IDX: empty remediations — response keys: {:?}", obj.keys().collect::<Vec<_>>());
+                        }
+                        eprintln!("  IDX: empty remediations without success — continuing poll...");
                         continue;
                     }
 
-                    // Done — either success or moved to next step
+                    // Non-challenge-poll, non-empty remediations — moved to next step
                     eprintln!();
                     eprintln!("  IDX: Okta Verify approved! Remediations: {:?}", rem_names);
+                    // Debug: dump poll response keys and check for success
+                    if let Some(obj) = poll_resp.as_object() {
+                        eprintln!("  IDX: approved poll response keys: {:?}", obj.keys().collect::<Vec<_>>());
+                    }
+                    if let Some(swic) = poll_resp.get("successWithInteractionCode") {
+                        eprintln!("  IDX: successWithInteractionCode: {}", swic);
+                    } else {
+                        eprintln!("  IDX: no successWithInteractionCode — dumping full poll response:");
+                        eprintln!("  {}", poll_resp);
+                    }
                     current_resp = poll_resp;
                     let _ = current_resp["stateHandle"].as_str()
                         .map(|s| state_handle = s.to_string());
