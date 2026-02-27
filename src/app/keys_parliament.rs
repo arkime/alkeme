@@ -214,14 +214,7 @@ impl App {
     }
 
     pub(crate) async fn pl_return_to_parliament(&mut self) {
-        if let Some(mut saved) = self.pl_saved_client.take() {
-            // Re-login in case form auth session expired while away
-            saved.logged_in = false;
-            if let Err(e) = saved.login().await {
-                self.status_msg = format!("Failed to re-auth to Parliament: {e}");
-                self.pl_saved_client = Some(saved);
-                return;
-            }
+        if let Some(saved) = self.pl_saved_client.take() {
             self.http_log = saved.http_log();
             self.client = saved;
             self.app_mode = AppMode::Parliament;
