@@ -1739,10 +1739,10 @@ impl ArkimeClient {
                 });
 
                 if let Some((label, id, method)) = selected {
-                    // For Okta Verify, use "push" to send a push notification to the phone.
-                    // "signed_nonce" requires a local desktop OV agent (FastPass) which CLI can't use.
+                    // For Okta Verify, use signed_nonce — this is the only method enrolled
+                    // and matches what the browser sends to /idx/challenge.
                     let effective_method = if method.is_empty() && label.to_lowercase().contains("okta verify") {
-                        "push".to_string()
+                        "signed_nonce".to_string()
                     } else {
                         method.clone()
                     };
