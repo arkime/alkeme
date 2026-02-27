@@ -1206,7 +1206,10 @@ impl ArkimeClient {
         macro_rules! skip_device_poll {
             ($current_resp:expr, $state_handle:expr) => {{
                 let has_dp = $current_resp["remediation"]["value"].as_array()
-                    .map(|rems| rems.iter().any(|r| r["name"].as_str() == Some("device-challenge-poll")))
+                    .map(|rems| rems.iter().any(|r| {
+                        let n = r["name"].as_str().unwrap_or("");
+                        n == "device-challenge-poll" || n == "challenge-poll"
+                    }))
                     .unwrap_or(false);
                 if has_dp {
                     // Dump authenticatorChallenge structure
@@ -1235,7 +1238,16 @@ impl ArkimeClient {
 
                     // Try Okta Verify loopback challenge if the local agent is running
                     let mut loopback_done = false;
-                    if let Some(ac) = $current_resp.get("authenticatorChallenge").and_then(|v| v.get("value")) {
+                    // authenticatorChallenge can be at top level or nested under currentAuthenticatorEnrollment
+                    let ac_opt = $current_resp.get("authenticatorChallenge").and_then(|v| v.get("value"))
+                        .or_else(|| $current_resp.get("currentAuthenticatorEnrollment")
+                            .and_then(|v| v.get("value"))
+                            .and_then(|v| v.get("contextualData")));
+                    if !ac_opt.is_some() {
+                        eprintln!("  IDX: no authenticatorChallenge found, dumping top-level keys: {:?}",
+                            $current_resp.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+                    }
+                    if let Some(ac) = ac_opt {
                         let challenge_request = ac.get("challengeRequest").and_then(|v| v.as_str());
                         let ports = ac.get("ports").and_then(|v| v.as_array());
                         // Use httpsDomain (e.g. "https://orgid.authenticatorlocalprod.com"), fall back to domain
@@ -1296,7 +1308,10 @@ impl ArkimeClient {
                         // Loopback succeeded — poll until Okta acknowledges
                         eprintln!("  IDX: polling after loopback challenge...");
                         let poll_url = $current_resp["remediation"]["value"].as_array()
-                            .and_then(|rems| rems.iter().find(|r| r["name"].as_str() == Some("device-challenge-poll")))
+                            .and_then(|rems| rems.iter().find(|r| {
+                                let n = r["name"].as_str().unwrap_or("");
+                                n == "device-challenge-poll" || n == "challenge-poll"
+                            }))
                             .and_then(|r| r["href"].as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_else(|| format!("{}/idp/idx/authenticators/poll", okta_base));
@@ -1316,7 +1331,8 @@ impl ArkimeClient {
                                 .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
                                 .unwrap_or_default();
                             eprintln!("  IDX: poll {} ({:.1}s): {:?}", attempt, poll_start.elapsed().as_secs_f32(), rem_names);
-                            let only_device_poll = rem_names.len() == 1 && rem_names[0] == "device-challenge-poll";
+                            let only_device_poll = rem_names.len() == 1
+                                && (rem_names[0] == "device-challenge-poll" || rem_names[0] == "challenge-poll");
                             if !only_device_poll {
                                 $state_handle = poll_resp["stateHandle"].as_str()
                                     .unwrap_or(&$state_handle).to_string();
@@ -1756,7 +1772,9 @@ impl ArkimeClient {
                         .unwrap_or_default();
                     eprintln!("  IDX: after MFA select, remediations: {:?}", post_select_rems);
 
-                    if post_select_rems.contains(&"device-challenge-poll".to_string()) {
+                    if post_select_rems.contains(&"device-challenge-poll".to_string())
+                        || post_select_rems.contains(&"challenge-poll".to_string())
+                    {
                         eprintln!("  IDX: MFA requires Okta Verify loopback (signed_nonce)...");
                         skip_device_poll!(current_resp, state_handle);
                     } else {
