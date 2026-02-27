@@ -223,7 +223,7 @@ impl App {
             app_mode,
             user: Value::Null,
             active_tab,
-            time_range: TimeRange::All,
+            time_range: TimeRange::Hours1,
             expression: String::new(),
             expression_edit: String::new(),
             expression_cursor: 0,
