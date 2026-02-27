@@ -1270,12 +1270,15 @@ impl ArkimeClient {
                                             .header("Origin", &okta_origin)
                                             .body(serde_json::json!({"challengeRequest": challenge}).to_string())
                                             .send().await {
-                                            Ok(resp) if resp.status().is_success() => {
-                                                eprintln!("  IDX: Okta Verify challenge sent successfully!");
-                                                loopback_done = true;
-                                                break;
+                                            Ok(resp) => {
+                                                let cstatus = resp.status();
+                                                let cbody = resp.text().await.unwrap_or_default();
+                                                eprintln!("  IDX: challenge response: HTTP {} body={}", cstatus, &cbody[..cbody.len().min(300)]);
+                                                if cstatus.is_success() {
+                                                    loopback_done = true;
+                                                    break;
+                                                }
                                             }
-                                            Ok(resp) => eprintln!("  IDX: challenge failed: HTTP {}", resp.status()),
                                             Err(e) => eprintln!("  IDX: challenge error: {}", e),
                                         }
                                     }
