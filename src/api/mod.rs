@@ -1742,6 +1742,9 @@ impl ArkimeClient {
                         .and_then(|r| r["href"].as_str())
                         .unwrap_or(&format!("{}/idp/idx/challenge", okta_base))
                         .to_string();
+                    let select_accepts = select_rem
+                        .and_then(|r| r["accepts"].as_str())
+                        .map(|s| s.to_string());
 
                     let mut select_body = serde_json::json!({"stateHandle": state_handle});
                     select_body["authenticator"] = serde_json::json!({"id": id});
@@ -1750,7 +1753,7 @@ impl ArkimeClient {
                     }
 
                     let start = Instant::now();
-                    let resp = idx_post(&select_url, select_body, None)
+                    let resp = idx_post(&select_url, select_body, select_accepts.as_deref())
                         .send().await?;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
