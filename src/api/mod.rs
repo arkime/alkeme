@@ -1246,6 +1246,21 @@ impl ArkimeClient {
                     if !ac_opt.is_some() {
                         eprintln!("  IDX: no authenticatorChallenge found, dumping top-level keys: {:?}",
                             $current_resp.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+                        // Dump currentAuthenticator structure
+                        if let Some(ca) = $current_resp.get("currentAuthenticator") {
+                            let ca_str = ca.to_string();
+                            eprintln!("  IDX: currentAuthenticator: {}", &ca_str[..ca_str.len().min(500)]);
+                        }
+                        // Dump challenge-poll remediation structure
+                        if let Some(rems) = $current_resp["remediation"]["value"].as_array() {
+                            for rem in rems {
+                                let name = rem["name"].as_str().unwrap_or("");
+                                if name == "challenge-poll" || name == "device-challenge-poll" {
+                                    let rem_str = rem.to_string();
+                                    eprintln!("  IDX: {} remediation: {}", name, &rem_str[..rem_str.len().min(800)]);
+                                }
+                            }
+                        }
                     }
                     if let Some(ac) = ac_opt {
                         let challenge_request = ac.get("challengeRequest").and_then(|v| v.as_str());
