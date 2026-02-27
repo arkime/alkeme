@@ -934,7 +934,6 @@ impl ArkimeClient {
 
         // Step 1: Navigate to app URL, following redirects to Okta login page
         let (auth_url, resp) = self.follow_redirects(&self.base_url.clone(), "GET").await?;
-        eprintln!("Okta login page: {}", auth_url);
         let html_body = resp.text().await?;
 
         // Step 2: Extract modelDataBag JSON for config, stateToken, and labels
@@ -942,31 +941,7 @@ impl ArkimeClient {
             .unwrap()
             .captures(&html_body)
             .and_then(|c| c.get(1))
-            .map(|m| {
-                let raw = m.as_str();
-                eprintln!("  modelDataBag raw capture: {} chars", raw.len());
-                // The JSON uses \x22 for " and \x3A for :
-                // stateToken\x22\x3A\x22VALUE\x22
-                // Find the raw stateToken value between the \x22 delimiters
-                if let Some(idx) = raw.find("stateToken\\x22\\x3A\\x22") {
-                    let val_start = idx + "stateToken\\x22\\x3A\\x22".len();
-                    // Find the closing \x22
-                    if let Some(end_offset) = raw[val_start..].find("\\x22") {
-                        let raw_token = &raw[val_start..val_start + end_offset];
-                        eprintln!("  stateToken raw in modelDataBag: {} chars", raw_token.len());
-                        eprintln!("  stateToken raw starts: {}...", &raw_token);
-                        eprintln!("  stateToken raw ends: ...{}", &raw_token[raw_token.len().saturating_sub(60)..]);
-                        // Check if the raw token contains any \x sequences
-                        let esc_count = raw_token.matches("\\x").count();
-                        if esc_count > 0 {
-                            eprintln!("  stateToken contains {} \\x escape sequences!", esc_count);
-                        }
-                    } else {
-                        eprintln!("  stateToken: no closing \\x22 found!");
-                    }
-                }
-                decode_js_escapes(raw)
-            });
+            .map(|m| decode_js_escapes(m.as_str()));
 
         let (state_token, okta_base_url, username_label, password_label, app_name, brand_name) = if let Some(ref json_str) = model_data {
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
@@ -985,15 +960,9 @@ impl ArkimeClient {
             (String::new(), String::new(), "Username".to_string(), "Password".to_string(), String::new(), String::new())
         };
 
-        // Debug: show what modelDataBag contained
-        eprintln!("  modelDataBag found: {}, stateToken from it: len={}", model_data.is_some(), state_token.len());
-        if !state_token.is_empty() {
-            eprintln!("  modelDataBag stateToken starts: {}...", &state_token);
-        }
-
         // Fall back to var stateToken if not in modelDataBag
-        let (state_token, token_source) = if !state_token.is_empty() {
-            (state_token, "modelDataBag")
+        let state_token = if !state_token.is_empty() {
+            state_token
         } else {
             let raw = regex::Regex::new(r"var stateToken = '([^']+)'")
                 .unwrap()
@@ -1001,13 +970,8 @@ impl ArkimeClient {
                 .and_then(|c| c.get(1))
                 .map(|m| m.as_str().to_string())
                 .ok_or_else(|| anyhow::anyhow!("Okta login: could not find stateToken in page ({})", auth_url))?;
-            (decode_js_escapes(&raw), "var stateToken")
+            decode_js_escapes(&raw)
         };
-        let is_jwt = state_token.starts_with("eyJ");
-        let is_v1 = state_token.starts_with("00");
-        eprintln!("stateToken (from {}): length={}, jwt={}, v1={}, starts: {}...",
-            token_source, state_token.len(), is_jwt, is_v1, &state_token);
-
         // Determine the Okta base URL
         let okta_base = if !okta_base_url.is_empty() {
             okta_base_url
@@ -1118,7 +1082,7 @@ impl ArkimeClient {
 
     /// Okta IDX API flow (Identity Engine) — returns None if cookies are set directly,
     /// or Some(sessionToken) if a classic redirect is needed.
-    async fn okta_idx_login(&self, okta_base: &str, from_uri: &str, page_state_token: &str, username: &str, password: &str) -> Result<Option<String>> {
+    async fn okta_idx_login(&self, okta_base: &str, _from_uri: &str, page_state_token: &str, username: &str, password: &str) -> Result<Option<String>> {
         // The Okta Sign-In Widget on Identity Engine uses the page's stateToken
         // directly with /idp/idx/introspect (no interact call needed).
 
@@ -1136,7 +1100,6 @@ impl ArkimeClient {
 
         // Step 1: POST /idp/idx/introspect with the page's stateToken
         let introspect_url = format!("{}/idp/idx/introspect", okta_base);
-        eprintln!("  IDX: introspect with page stateToken (len={})...", page_state_token.len());
         let start = Instant::now();
         let resp = self.client.post(&introspect_url)
             .header("Content-Type", "application/ion+json; okta-version=1.0.0")
@@ -1158,45 +1121,6 @@ impl ArkimeClient {
             .ok_or_else(|| anyhow::anyhow!("IDX: no stateHandle in introspect response"))?
             .to_string();
 
-        // Debug: show available remediations and response structure
-        if let Some(rems) = introspect_resp["remediation"]["value"].as_array() {
-            let names: Vec<&str> = rems.iter().filter_map(|r| r["name"].as_str()).collect();
-            eprintln!("  IDX: available remediations: {:?}", names);
-        }
-        // Show top-level keys
-        if let Some(obj) = introspect_resp.as_object() {
-            let keys: Vec<&String> = obj.keys().collect();
-            eprintln!("  IDX: introspect response keys: {:?}", keys);
-        }
-        // Show authenticator enrollments
-        if let Some(enrollments) = introspect_resp["authenticatorEnrollments"]["value"].as_array() {
-            let enrolled: Vec<(&str, &str)> = enrollments.iter().map(|e| {
-                (e["type"].as_str().unwrap_or("?"), e["key"].as_str().unwrap_or("?"))
-            }).collect();
-            eprintln!("  IDX: authenticator enrollments: {:?}", enrolled);
-        }
-        // Show currentAuthenticator
-        if let Some(key) = introspect_resp["currentAuthenticator"]["value"]["key"].as_str() {
-            eprintln!("  IDX: currentAuthenticator: {}", key);
-        }
-        // Show device-challenge-poll remediation details
-        if let Some(rems) = introspect_resp["remediation"]["value"].as_array() {
-            for rem in rems {
-                if rem["name"].as_str() == Some("device-challenge-poll") {
-                    let href = rem["href"].as_str().unwrap_or("?");
-                    eprintln!("  IDX: device-challenge-poll href: {}", href);
-                    if let Some(fields) = rem["value"].as_array() {
-                        for f in fields {
-                            eprintln!("    field: {} (mutable={}, value={})",
-                                f["name"].as_str().unwrap_or("?"),
-                                f["mutable"].as_bool().unwrap_or(true),
-                                f.get("value").map(|v| v.to_string()).unwrap_or("none".into()));
-                        }
-                    }
-                }
-            }
-        }
-
         // Step 2: Check what remediations are available
         let mut current_resp = introspect_resp.clone();
         let mut state_handle = state_handle;
@@ -1212,26 +1136,6 @@ impl ArkimeClient {
                     }))
                     .unwrap_or(false);
                 if has_dp {
-                    // Dump authenticatorChallenge structure
-                    if let Some(ac) = $current_resp.get("authenticatorChallenge") {
-                        if let Some(obj) = ac.get("value").and_then(|v| v.as_object()) {
-                            let keys: Vec<&String> = obj.keys().collect();
-                            eprintln!("  IDX: authenticatorChallenge keys: {:?}", keys);
-                            for (k, v) in obj {
-                                match v {
-                                    serde_json::Value::String(s) => {
-                                        eprintln!("    {}: {:?}", k, s);
-                                    }
-                                    serde_json::Value::Number(n) => eprintln!("    {}: {}", k, n),
-                                    serde_json::Value::Array(a) => eprintln!("    {}: (array, {} items)", k, a.len()),
-                                    _ => eprintln!("    {}: {}", k, v),
-                                }
-                            }
-                        } else {
-                            eprintln!("  IDX: authenticatorChallenge: {}", ac);
-                        }
-                    }
-
                     // Try Okta Verify loopback challenge if the local agent is running
                     let mut loopback_done = false;
                     // authenticatorChallenge can be at top level or nested under currentAuthenticatorEnrollment
@@ -1239,25 +1143,6 @@ impl ArkimeClient {
                         .or_else(|| $current_resp.get("currentAuthenticatorEnrollment")
                             .and_then(|v| v.get("value"))
                             .and_then(|v| v.get("contextualData")));
-                    if !ac_opt.is_some() {
-                        eprintln!("  IDX: no authenticatorChallenge found, dumping top-level keys: {:?}",
-                            $current_resp.as_object().map(|o| o.keys().collect::<Vec<_>>()));
-                        // Dump currentAuthenticator structure
-                        if let Some(ca) = $current_resp.get("currentAuthenticator") {
-                            let ca_str = ca.to_string();
-                            eprintln!("  IDX: currentAuthenticator: {}", &ca_str);
-                        }
-                        // Dump challenge-poll remediation structure
-                        if let Some(rems) = $current_resp["remediation"]["value"].as_array() {
-                            for rem in rems {
-                                let name = rem["name"].as_str().unwrap_or("");
-                                if name == "challenge-poll" || name == "device-challenge-poll" {
-                                    let rem_str = rem.to_string();
-                                    eprintln!("  IDX: {} remediation: {}", name, &rem_str);
-                                }
-                            }
-                        }
-                    }
                     if let Some(ac) = ac_opt {
                         let challenge_request = ac.get("challengeRequest").and_then(|v| v.as_str());
                         let ports = ac.get("ports").and_then(|v| v.as_array());
@@ -1266,8 +1151,6 @@ impl ArkimeClient {
                             .unwrap_or_else(|| ac.get("domain").and_then(|v| v.as_str()).unwrap_or(""));
 
                         if let (Some(challenge), Some(ports_arr)) = (challenge_request, ports) {
-                            eprintln!("  IDX: attempting Okta Verify loopback (httpsDomain={}, ports={})...",
-                                https_domain, serde_json::to_string(ports_arr).unwrap_or_default());
                             let loopback_client = Client::builder()
                                 .danger_accept_invalid_certs(true)
                                 .timeout(std::time::Duration::from_secs(3))
@@ -1280,44 +1163,32 @@ impl ArkimeClient {
                                     .or_else(|| port_val.get("port").and_then(|p| p.as_u64()))
                                     .unwrap_or(0);
                                 if port == 0 { continue; }
-                                // httpsDomain already has protocol+host, just append port
                                 let base = format!("{}:{}", https_domain, port);
-                                eprintln!("  IDX: probing {}...", base);
                                 match loopback_client.get(format!("{}/probe", base))
                                     .header("Origin", &okta_origin)
                                     .send().await {
                                     Ok(resp) if resp.status().is_success() => {
-                                        eprintln!("  IDX: probe succeeded on port {}, sending challenge...", port);
                                         match loopback_client.post(format!("{}/challenge", base))
                                             .header("Content-Type", "application/json")
                                             .header("Origin", &okta_origin)
                                             .body(serde_json::json!({"challengeRequest": challenge}).to_string())
                                             .send().await {
                                             Ok(resp) => {
-                                                let cstatus = resp.status();
-                                                let cbody = resp.text().await.unwrap_or_default();
-                                                eprintln!("  IDX: challenge response: HTTP {} body={}", cstatus, &cbody);
-                                                if cstatus.is_success() {
+                                                if resp.status().is_success() {
                                                     loopback_done = true;
                                                     break;
                                                 }
                                             }
-                                            Err(e) => eprintln!("  IDX: challenge error: {}", e),
+                                            Err(_) => {}
                                         }
                                     }
-                                    Ok(resp) => eprintln!("  IDX: probe failed: HTTP {}", resp.status()),
-                                    Err(_) => eprintln!("  IDX: probe failed (no agent on port {})", port),
+                                    _ => {}
                                 }
-                            }
-                            if !loopback_done {
-                                eprintln!("  IDX: Okta Verify not reachable on any port — FastPass unavailable");
                             }
                         }
                     }
 
                     if loopback_done {
-                        // Loopback succeeded — poll until Okta acknowledges
-                        eprintln!("  IDX: polling after loopback challenge...");
                         let poll_url = $current_resp["remediation"]["value"].as_array()
                             .and_then(|rems| rems.iter().find(|r| {
                                 let n = r["name"].as_str().unwrap_or("");
@@ -1327,9 +1198,9 @@ impl ArkimeClient {
                             .map(|s| s.to_string())
                             .unwrap_or_else(|| format!("{}/idp/idx/authenticators/poll", okta_base));
                         let poll_start = Instant::now();
-                        let mut attempt = 0u32;
+                        let mut _attempt = 0u32;
                         while poll_start.elapsed().as_secs() < 15 {
-                            attempt += 1;
+                            _attempt += 1;
                             let start = Instant::now();
                             let resp = idx_post(&poll_url, serde_json::json!({"stateHandle": $state_handle}), None)
                                 .send().await?;
@@ -1341,7 +1212,6 @@ impl ArkimeClient {
                             let rem_names: Vec<&str> = poll_resp["remediation"]["value"].as_array()
                                 .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
                                 .unwrap_or_default();
-                            eprintln!("  IDX: poll {} ({:.1}s): {:?}", attempt, poll_start.elapsed().as_secs_f32(), rem_names);
                             let only_device_poll = rem_names.len() == 1
                                 && (rem_names[0] == "device-challenge-poll" || rem_names[0] == "challenge-poll");
                             if !only_device_poll {
@@ -1362,32 +1232,20 @@ impl ArkimeClient {
                             .and_then(|h| h.as_str())
                             .map(|s| s.to_string());
                         if let Some(cancel_url) = auth_cancel_url {
-                            eprintln!("  IDX: canceling device challenge via authenticator cancel...");
-                            eprintln!("  IDX: cancel URL: {}", cancel_url);
                             let start = Instant::now();
                             let resp = idx_post(&cancel_url, serde_json::json!({"stateHandle": $state_handle}), None)
                                 .send().await?;
                             let status = resp.status().as_u16();
                             let body = resp.text().await?;
                             log_http(&self.http_log, "POST", &cancel_url, None, status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body));
-                            eprintln!("  IDX: authenticator cancel: HTTP {}", status);
                             if status == 200 {
                                 let cancel_resp: serde_json::Value = serde_json::from_str(&body)?;
-                                let rem_names: Vec<&str> = cancel_resp["remediation"]["value"].as_array()
-                                    .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
-                                    .unwrap_or_default();
-                                eprintln!("  IDX: after authenticator cancel, remediations: {:?}", rem_names);
-                                if let Some(obj) = cancel_resp.as_object() {
-                                    eprintln!("  IDX: after authenticator cancel, keys: {:?}", obj.keys().collect::<Vec<_>>());
-                                }
                                 $state_handle = cancel_resp["stateHandle"].as_str()
                                     .unwrap_or(&$state_handle).to_string();
                                 $current_resp = cancel_resp;
                             }
                         } else {
-                            // No authenticator cancel available — try flow-level cancel as last resort
                             let cancel_url = format!("{}/idp/idx/cancel", okta_base);
-                            eprintln!("  IDX: no authenticator cancel, using flow cancel...");
                             let start = Instant::now();
                             let resp = idx_post(&cancel_url, serde_json::json!({"stateHandle": $state_handle}), None)
                                 .send().await?;
@@ -1396,10 +1254,6 @@ impl ArkimeClient {
                             log_http(&self.http_log, "POST", &cancel_url, None, status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body));
                             if status == 200 {
                                 let cancel_resp: serde_json::Value = serde_json::from_str(&body)?;
-                                let rem_names: Vec<&str> = cancel_resp["remediation"]["value"].as_array()
-                                    .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
-                                    .unwrap_or_default();
-                                eprintln!("  IDX: after flow cancel, remediations: {:?}", rem_names);
                                 $state_handle = cancel_resp["stateHandle"].as_str()
                                     .unwrap_or(&$state_handle).to_string();
                                 $current_resp = cancel_resp;
@@ -1451,8 +1305,6 @@ impl ArkimeClient {
             identify_body["identifier"] = serde_json::Value::String(username.to_string());
             identify_body["credentials"] = serde_json::json!({"passcode": password});
 
-            eprintln!("  IDX: identify → {}", identify_url);
-            eprintln!("  IDX: identify body keys: {:?}", identify_body.as_object().map(|o| o.keys().collect::<Vec<_>>()));
             let start = Instant::now();
             let resp = idx_post(&identify_url, identify_body.clone(), identify_accepts.as_deref())
                 .send()
@@ -1465,20 +1317,6 @@ impl ArkimeClient {
                 .map_err(|_| anyhow::anyhow!("Okta IDX identify failed: HTTP {} — {}", status, &body))?;
 
             if status == 401 {
-                let has_user = identify_resp["user"]["value"]["identifier"].as_str();
-                let auth_key = identify_resp["currentAuthenticator"]["value"]["key"].as_str();
-                let rems: Vec<&str> = identify_resp["remediation"]["value"].as_array()
-                    .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
-                    .unwrap_or_default();
-                eprintln!("  IDX identify 401: user={:?}, currentAuth={:?}, remediations={:?}", has_user, auth_key, rems);
-                if let Some(msgs) = identify_resp["messages"]["value"].as_array() {
-                    for msg in msgs {
-                        let cls = msg["class"].as_str().unwrap_or("?");
-                        let text = msg["message"].as_str().unwrap_or("?");
-                        let i18n = msg["i18n"]["key"].as_str().unwrap_or("");
-                        eprintln!("  IDX message [{}]: {} (i18n: {})", cls, text, i18n);
-                    }
-                }
                 let err_msg = identify_resp["messages"]["value"][0]["message"].as_str()
                     .unwrap_or("Authentication failed");
                 anyhow::bail!("Okta login failed: {}", err_msg);
@@ -1495,39 +1333,13 @@ impl ArkimeClient {
                 .to_string();
             current_resp = identify_resp;
         } else if has_challenge {
-            eprintln!("  IDX: skipping identify (user already known from stateToken)");
+            // User already known from stateToken — skip identify
         } else {
             anyhow::bail!("Okta IDX: unexpected remediations after introspect — no identify or challenge found");
         }
 
-        if let Some(rems) = current_resp["remediation"]["value"].as_array() {
-            let rem_names: Vec<&str> = rems.iter().filter_map(|r| r["name"].as_str()).collect();
-            eprintln!("  IDX: after identify, remediations: {:?}", rem_names);
-        }
-        // Dump enrollments and authenticator after identify too
-        if let Some(enrollments) = current_resp["authenticatorEnrollments"]["value"].as_array() {
-            let enrolled: Vec<(&str, &str)> = enrollments.iter().map(|e| {
-                (e["type"].as_str().unwrap_or("?"), e["key"].as_str().unwrap_or("?"))
-            }).collect();
-            eprintln!("  IDX: after identify enrollments: {:?}", enrolled);
-        }
-        if let Some(key) = current_resp["currentAuthenticator"]["value"]["key"].as_str() {
-            eprintln!("  IDX: after identify currentAuthenticator: {}", key);
-        }
-        // Show all top-level keys
-        if let Some(obj) = current_resp.as_object() {
-            let keys: Vec<&String> = obj.keys().collect();
-            eprintln!("  IDX: after identify response keys: {:?}", keys);
-        }
-
-        // Skip device-challenge-poll again if it appears after identify (MFA step)
-        // DON'T cancel — instead poll and check for alternative authenticators
+        // Skip device-challenge-poll if it appears after identify (MFA step)
         skip_device_poll!(current_resp, state_handle);
-
-        if let Some(rems) = current_resp["remediation"]["value"].as_array() {
-            let rem_names: Vec<&str> = rems.iter().filter_map(|r| r["name"].as_str()).collect();
-            eprintln!("  IDX: after skipping FastPass, remediations: {:?}", rem_names);
-        }
 
         // Check if already succeeded (some orgs complete after identify alone)
         let already_done = current_resp["successWithInteractionCode"]["href"].as_str().is_some()
@@ -1566,8 +1378,6 @@ impl ArkimeClient {
                         let default_select_url = format!("{}/idp/idx/challenge", okta_base);
                         let select_url = select_auth["href"].as_str()
                             .unwrap_or(&default_select_url);
-                        eprintln!("  IDX: selecting password authenticator...");
-
                         let mut select_body = serde_json::json!({"stateHandle": state_handle});
                         if let Some(id) = auth_id {
                             select_body["authenticator"] = serde_json::json!({"id": id});
@@ -1632,7 +1442,6 @@ impl ArkimeClient {
             };
             challenge_body["credentials"] = serde_json::json!({"passcode": password});
 
-            eprintln!("  IDX: submitting password → {}", challenge_url);
             let start = Instant::now();
             let resp = idx_post(&challenge_url, challenge_body, challenge_accepts.as_deref())
                 .send()
@@ -1668,8 +1477,6 @@ impl ArkimeClient {
         if mfa_remediations.contains(&"select-authenticator-authenticate".to_string())
             || mfa_remediations.contains(&"challenge-authenticator".to_string())
         {
-            eprintln!("  IDX: MFA required. Remediations: {:?}", mfa_remediations);
-
             // Check what authenticator is currently selected (if any)
             let current_auth_key = current_resp["currentAuthenticatorEnrollment"]["value"]["key"]
                 .as_str()
@@ -1679,7 +1486,6 @@ impl ArkimeClient {
                 .as_str()
                 .or_else(|| current_resp["currentAuthenticator"]["value"]["type"].as_str())
                 .unwrap_or("");
-            eprintln!("  IDX: currentAuthenticator key={}, type={}", current_auth_key, current_auth_type);
 
             // Gather available authenticators from select-authenticator-authenticate options
             let mut available_auths: Vec<(String, String, String)> = Vec::new(); // (label, id, method_type)
@@ -1700,7 +1506,6 @@ impl ArkimeClient {
                                 .and_then(|vals| vals.iter().find(|v| v["name"].as_str() == Some("methodType")))
                                 .and_then(|v| v["value"].as_str())
                                 .unwrap_or("").to_string();
-                            eprintln!("    MFA option: {} (id={}, method={})", label, id, method);
                             available_auths.push((label, id, method));
                         }
                     }
@@ -1752,15 +1557,11 @@ impl ArkimeClient {
                         .and_then(|r| r["href"].as_str())
                         .unwrap_or(&format!("{}/idp/idx/challenge", okta_base))
                         .to_string();
-                    eprintln!("  IDX: selecting MFA authenticator: {} (method={}) → {}", label, effective_method, select_url);
                     let mut select_body = serde_json::json!({"stateHandle": state_handle});
                     select_body["authenticator"] = serde_json::json!({"id": id});
                     if !effective_method.is_empty() {
                         select_body["authenticator"]["methodType"] = serde_json::Value::String(effective_method.clone());
                     }
-                    // Debug: show the request body (without stateHandle for brevity)
-                    eprintln!("  IDX: challenge request body: authenticator={}", select_body["authenticator"]);
-                    eprintln!("  IDX: challenge request Accept: application/json; okta-version=1.0.0");
 
                     // Browser always sends Accept: application/json for challenge calls
                     // (not ion+json) — this determines whether Okta returns
@@ -1770,8 +1571,6 @@ impl ArkimeClient {
                         .send().await?;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
-                    eprintln!("  IDX: challenge response: HTTP {} body_len={}", status, body.len());
-                    eprintln!("  IDX: challenge response preview: {}", &body);
                     log_http(&self.http_log, "POST", &select_url, None, status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body));
                     if status != 200 {
                         let err_detail = serde_json::from_str::<serde_json::Value>(&body).ok()
@@ -1783,64 +1582,13 @@ impl ArkimeClient {
                     state_handle = current_resp["stateHandle"].as_str()
                         .unwrap_or(&state_handle).to_string();
 
-                    // Debug: dump full response structure after MFA select
-                    if let Some(obj) = current_resp.as_object() {
-                        eprintln!("  IDX: after MFA select, top-level keys: {:?}", obj.keys().collect::<Vec<_>>());
-                    }
-                    // Show currentAuthenticator details
-                    if let Some(ca) = current_resp.get("currentAuthenticator").and_then(|v| v.get("value")) {
-                        eprintln!("  IDX: currentAuthenticator: key={}, type={}, methodType={}",
-                            ca["key"].as_str().unwrap_or("?"),
-                            ca["type"].as_str().unwrap_or("?"),
-                            ca["methods"].as_array()
-                                .and_then(|m| m.first())
-                                .and_then(|m| m["type"].as_str())
-                                .unwrap_or("?"));
-                    }
-                    // Show currentAuthenticatorEnrollment details
-                    if let Some(cae) = current_resp.get("currentAuthenticatorEnrollment").and_then(|v| v.get("value")) {
-                        eprintln!("  IDX: currentAuthenticatorEnrollment: key={}, type={}, displayName={}",
-                            cae["key"].as_str().unwrap_or("?"),
-                            cae["type"].as_str().unwrap_or("?"),
-                            cae["displayName"].as_str().unwrap_or("?"));
-                        if let Some(cd) = cae.get("contextualData") {
-                            let cd_keys: Vec<&String> = cd.as_object().map(|o| o.keys().collect()).unwrap_or_default();
-                            eprintln!("  IDX: contextualData keys: {:?}", cd_keys);
-                        }
-                        if let Some(methods) = cae["methods"].as_array() {
-                            for m in methods {
-                                eprintln!("  IDX: enrollment method: type={}", m["type"].as_str().unwrap_or("?"));
-                            }
-                        }
-                    }
-                    // Show authenticatorChallenge if present
-                    if let Some(ac) = current_resp.get("authenticatorChallenge") {
-                        let ac_str = serde_json::to_string(ac).unwrap_or_default();
-                        eprintln!("  IDX: authenticatorChallenge: {}", &ac_str);
-                    }
-
                     // After selecting push/Okta Verify, we get challenge-poll (push notification)
                     // or device-challenge-poll (loopback to local OV agent)
                     let post_select_rems: Vec<String> = current_resp["remediation"]["value"].as_array()
                         .map(|arr| arr.iter().filter_map(|r| r["name"].as_str().map(|s| s.to_string())).collect())
                         .unwrap_or_default();
-                    eprintln!("  IDX: after MFA select, remediations: {:?}", post_select_rems);
-                    // Dump each remediation's href
-                    if let Some(rems) = current_resp["remediation"]["value"].as_array() {
-                        for rem in rems {
-                            let name = rem["name"].as_str().unwrap_or("?");
-                            let href = rem["href"].as_str().unwrap_or("?");
-                            eprintln!("  IDX:   remediation: {} → {}", name, href);
-                            // Show refresh interval if present
-                            if let Some(refresh) = rem.get("refresh") {
-                                eprintln!("  IDX:   refresh: {}", refresh);
-                            }
-                        }
-                    }
 
                     if post_select_rems.contains(&"device-challenge-poll".to_string()) {
-                        // device-challenge-poll has loopback data — use skip_device_poll
-                        eprintln!("  IDX: MFA requires Okta Verify loopback (signed_nonce)...");
                         skip_device_poll!(current_resp, state_handle);
                     } else if post_select_rems.contains(&"challenge-poll".to_string()) {
                         // challenge-poll with signed_nonce — check if contextualData has LOOPBACK challenge
@@ -1855,8 +1603,6 @@ impl ArkimeClient {
                             let challenge_request = cd.and_then(|v| v["challengeRequest"].as_str()).unwrap_or("");
                             let https_domain = cd.and_then(|v| v["httpsDomain"].as_str()).unwrap_or("");
                             let ports = cd.and_then(|v| v["ports"].as_array());
-                            eprintln!("  IDX: MFA challenge-poll has LOOPBACK data, doing loopback challenge...");
-                            eprintln!("  IDX: httpsDomain={}, ports={:?}", https_domain, ports.map(|p| p.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>()));
                             if !challenge_request.is_empty() {
                                 if let Some(ports_arr) = ports {
                                     let loopback_client = Client::builder()
@@ -1874,13 +1620,11 @@ impl ArkimeClient {
                                             .unwrap_or(0);
                                         if port == 0 { continue; }
                                         let base = format!("{}:{}", https_domain, port);
-                                        eprintln!("  IDX: MFA loopback probing {}...", base);
                                         match loopback_client.get(format!("{}/probe", base))
                                             .header("Origin", &okta_origin)
                                             .timeout(probe_timeout)
                                             .send().await {
                                             Ok(resp) if resp.status().is_success() => {
-                                                eprintln!("  IDX: MFA loopback probe OK on port {}, sending challenge...", port);
                                                 match loopback_client.post(format!("{}/challenge", base))
                                                     .header("Content-Type", "application/json")
                                                     .header("Origin", &okta_origin)
@@ -1888,64 +1632,30 @@ impl ArkimeClient {
                                                     .body(serde_json::json!({"challengeRequest": challenge_request}).to_string())
                                                     .send().await {
                                                     Ok(resp) => {
-                                                        let cstatus = resp.status();
-                                                        let cbody = resp.text().await.unwrap_or_default();
-                                                        eprintln!("  IDX: MFA loopback challenge response: HTTP {} body={}", cstatus, cbody);
-                                                        if cstatus.is_success() {
+                                                        if resp.status().is_success() {
                                                             loopback_ok = true;
                                                             break;
                                                         }
                                                     }
-                                                    Err(e) => eprintln!("  IDX: MFA loopback challenge error: {:?}", e),
+                                                    Err(_) => {}
                                                 }
                                             }
-                                            Ok(resp) => eprintln!("  IDX: MFA loopback probe failed: HTTP {}", resp.status()),
-                                            Err(e) => eprintln!("  IDX: MFA loopback probe failed: {}", e),
+                                            _ => {}
                                         }
                                     }
-                                    if loopback_ok {
-                                        eprintln!("  IDX: MFA loopback challenge sent — now polling for OV approval...");
-                                    } else {
-                                        eprintln!("  IDX: MFA loopback failed on all ports — polling anyway...");
-                                    }
+                                    let _ = loopback_ok;
                                 }
-                            } else {
-                                eprintln!("  IDX: LOOPBACK but empty challengeRequest — polling without loopback...");
                             }
-                        } else {
-                            eprintln!("  IDX: MFA challenge-poll (no LOOPBACK data, challengeMethod={}) — polling...", challenge_method);
                         }
                         // Fall through to the challenge-poll handler below
                     } else if post_select_rems.contains(&"authenticator-verification-data".to_string()) {
                         // Need to specify methodType in a second step
-                        eprintln!("  IDX: authenticator-verification-data step required, selecting push...");
                         let avd_rem = current_resp["remediation"]["value"].as_array()
                             .and_then(|rems| rems.iter().find(|r| r["name"].as_str() == Some("authenticator-verification-data")));
                         let avd_url = avd_rem
                             .and_then(|r| r["href"].as_str())
                             .unwrap_or(&format!("{}/idp/idx/challenge", okta_base))
                             .to_string();
-                        // Show available methodType options
-                        if let Some(avd) = avd_rem {
-                            if let Some(vals) = avd["value"].as_array() {
-                                for v in vals {
-                                    if v["name"].as_str() == Some("authenticator") {
-                                        if let Some(form_vals) = v["form"]["value"].as_array() {
-                                            for fv in form_vals {
-                                                if fv["name"].as_str() == Some("methodType") {
-                                                    if let Some(opts) = fv["options"].as_array() {
-                                                        let opt_labels: Vec<&str> = opts.iter()
-                                                            .filter_map(|o| o["label"].as_str().or_else(|| o["value"].as_str()))
-                                                            .collect();
-                                                        eprintln!("  IDX: available methodTypes: {:?}", opt_labels);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                         let avd_body = serde_json::json!({
                             "stateHandle": state_handle,
                             "authenticator": {"id": id, "methodType": "push"}
@@ -1956,7 +1666,6 @@ impl ArkimeClient {
                         let status = resp.status().as_u16();
                         let body = resp.text().await?;
                         log_http(&self.http_log, "POST", &avd_url, None, status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body));
-                        eprintln!("  IDX: authenticator-verification-data response: HTTP {}", status);
                         if status != 200 {
                             let err_detail = serde_json::from_str::<serde_json::Value>(&body).ok()
                                 .and_then(|v| v["messages"]["value"][0]["message"].as_str().map(|s| s.to_string()))
@@ -1966,17 +1675,11 @@ impl ArkimeClient {
                         current_resp = serde_json::from_str(&body)?;
                         state_handle = current_resp["stateHandle"].as_str()
                             .unwrap_or(&state_handle).to_string();
-                        let avd_rems: Vec<String> = current_resp["remediation"]["value"].as_array()
-                            .map(|arr| arr.iter().filter_map(|r| r["name"].as_str().map(|s| s.to_string())).collect())
-                            .unwrap_or_default();
-                        eprintln!("  IDX: after authenticator-verification-data, remediations: {:?}", avd_rems);
-                        // Should now have challenge-poll
                     } else {
-                        eprintln!("  IDX: MFA authenticator selected, prompting for code...");
+                        // MFA authenticator selected, will prompt for code
                     }
                 } else if available_auths.is_empty() && challenge_rem.is_some() {
                     // No select options but challenge is active — try prompting anyway
-                    eprintln!("  IDX: no select options, attempting challenge with current authenticator (key={}, type={})", current_auth_key, current_auth_type);
                 } else {
                     let auth_names: Vec<&str> = available_auths.iter().map(|(l, _, _)| l.as_str()).collect();
                     anyhow::bail!("Okta MFA required but no supported authenticator found. Available: {:?}. \
@@ -2000,7 +1703,7 @@ impl ArkimeClient {
                 let refresh_ms = poll_rem.get("refresh")
                     .and_then(|r| r.as_u64())
                     .unwrap_or(4000);
-                eprintln!("  IDX: polling {} (refresh={}ms) — check Okta Verify on your device...", poll_url, refresh_ms);
+                eprintln!("  Okta Verify: check your device to approve the sign-in request...");
 
                 let poll_start = Instant::now();
                 let max_poll_secs = 60;
@@ -2022,81 +1725,31 @@ impl ArkimeClient {
                     log_http(&self.http_log, "POST", &poll_url, None, status, start.elapsed().as_millis() as u64, start.elapsed().as_millis() as u64, Some(&body));
 
                     if status != 200 {
-                        eprintln!("  IDX: poll failed: HTTP {} body={}", status, &body);
+                        eprintln!("  Okta Verify poll failed: HTTP {}", status);
                         anyhow::bail!("Okta Verify poll failed: HTTP {}", status);
                     }
                     let poll_resp: serde_json::Value = serde_json::from_str(&body)?;
                     let rem_names: Vec<&str> = poll_resp["remediation"]["value"].as_array()
                         .map(|arr| arr.iter().filter_map(|r| r["name"].as_str()).collect())
                         .unwrap_or_default();
-                    let has_success = poll_resp.get("successWithInteractionCode").is_some();
-                    eprintln!("  IDX: poll #{} ({}s): remediations={:?} success={}", poll_count, elapsed, rem_names, has_success);
-
-                    // Debug: on first poll, dump more details
-                    if poll_count <= 2 {
-                        if let Some(obj) = poll_resp.as_object() {
-                            eprintln!("  IDX: poll response keys: {:?}", obj.keys().collect::<Vec<_>>());
-                        }
-                        if let Some(cae) = poll_resp.get("currentAuthenticatorEnrollment").and_then(|v| v.get("value")) {
-                            eprintln!("  IDX: poll currentAuthenticatorEnrollment: key={}, methodType={}",
-                                cae["key"].as_str().unwrap_or("?"),
-                                cae["methods"].as_array()
-                                    .and_then(|m| m.first())
-                                    .and_then(|m| m["type"].as_str())
-                                    .unwrap_or("?"));
-                        }
-                        // Show refresh from poll response remediation
-                        if let Some(pr) = poll_resp["remediation"]["value"].as_array()
-                            .and_then(|rems| rems.iter().find(|r| r["name"].as_str() == Some("challenge-poll"))) {
-                            if let Some(refresh) = pr.get("refresh") {
-                                eprintln!("  IDX: poll remediation refresh: {}", refresh);
-                            }
-                        }
-                    }
-
-                    // Still polling — continue if challenge-poll or if empty remediations without success
-                    let has_swic = poll_resp.get("successWithInteractionCode").is_some();
-                    if has_swic {
-                        eprintln!();
-                        eprintln!("  IDX: Okta Verify approved — got successWithInteractionCode!");
+                    // Check for success — Okta IDX returns "successWithInteractionCode" (OIDC)
+                    // or "success" (some signed_nonce flows)
+                    let has_success = poll_resp.get("successWithInteractionCode").is_some()
+                        || poll_resp.get("success").is_some();
+                    if has_success {
                         current_resp = poll_resp;
-                        if let Some(obj) = current_resp.as_object() {
-                            eprintln!("  IDX: approved poll response keys: {:?}", obj.keys().collect::<Vec<_>>());
-                        }
                         let _ = current_resp["stateHandle"].as_str()
                             .map(|s| state_handle = s.to_string());
                         break;
                     }
-                    if rem_names.contains(&"challenge-poll") {
-                        continue;
-                    }
-                    if rem_names.is_empty() {
-                        // Empty remediations without successWithInteractionCode — keep polling
-                        // Update stateHandle from this response for next poll
+                    if rem_names.contains(&"challenge-poll") || rem_names.is_empty() {
+                        // Still waiting — update stateHandle and keep polling
                         if let Some(sh) = poll_resp["stateHandle"].as_str() {
                             state_handle = sh.to_string();
                         }
-                        // Dump full response for debugging
-                        if let Some(obj) = poll_resp.as_object() {
-                            eprintln!("  IDX: empty remediations — response keys: {:?}", obj.keys().collect::<Vec<_>>());
-                        }
-                        eprintln!("  IDX: empty remediations without success — continuing poll...");
                         continue;
                     }
 
-                    // Non-challenge-poll, non-empty remediations — moved to next step
-                    eprintln!();
-                    eprintln!("  IDX: Okta Verify approved! Remediations: {:?}", rem_names);
-                    // Debug: dump poll response keys and check for success
-                    if let Some(obj) = poll_resp.as_object() {
-                        eprintln!("  IDX: approved poll response keys: {:?}", obj.keys().collect::<Vec<_>>());
-                    }
-                    if let Some(swic) = poll_resp.get("successWithInteractionCode") {
-                        eprintln!("  IDX: successWithInteractionCode: {}", swic);
-                    } else {
-                        eprintln!("  IDX: no successWithInteractionCode — dumping full poll response:");
-                        eprintln!("  {}", poll_resp);
-                    }
                     current_resp = poll_resp;
                     let _ = current_resp["stateHandle"].as_str()
                         .map(|s| state_handle = s.to_string());
@@ -2140,7 +1793,6 @@ impl ArkimeClient {
                     let code = rpassword::prompt_password(format!("Enter verification code from {}: ", auth_label))?;
                     mfa_body["credentials"] = serde_json::json!({"passcode": code});
 
-                    eprintln!("  IDX: submitting MFA code → {}", mfa_url);
                     let start = Instant::now();
                     let resp = idx_post(&mfa_url, mfa_body, mfa_accepts.as_deref())
                         .send().await?;
@@ -2164,7 +1816,6 @@ impl ArkimeClient {
                     current_resp = serde_json::from_str(&body)?;
                     let _ = current_resp["stateHandle"].as_str()
                         .map(|s| state_handle = s.to_string());
-                    eprintln!("  IDX: MFA code accepted!");
                 } else {
                     // No challenge remediation found after MFA selection
                     let rems: Vec<&str> = current_resp["remediation"]["value"].as_array()
@@ -2178,18 +1829,18 @@ impl ArkimeClient {
             let post_mfa_rems: Vec<String> = current_resp["remediation"]["value"].as_array()
                 .map(|arr| arr.iter().filter_map(|r| r["name"].as_str().map(|s| s.to_string())).collect())
                 .unwrap_or_default();
-            if !post_mfa_rems.is_empty() && !current_resp.get("successWithInteractionCode").is_some() {
-                eprintln!("  IDX: post-MFA remediations: {:?}", post_mfa_rems);
+            if !post_mfa_rems.is_empty() && !current_resp.get("successWithInteractionCode").is_some()
+                && !current_resp.get("success").is_some() {
             }
         }
 
         // Check for success
-        // successWithInteractionCode means IDX flow completed — Okta session should be established
-        if current_resp["successWithInteractionCode"]["href"].as_str().is_some() {
-            eprintln!("  IDX: authentication succeeded, following authorize redirect...");
-            // Re-visit the original authorize URL — Okta session cookies should
-            // cause it to redirect back to the app with ?code=XXX
-            self.follow_redirects(from_uri, "GET").await?;
+        // Okta IDX returns "successWithInteractionCode" (OIDC) or "success" (some signed_nonce flows)
+        let success_href = current_resp["successWithInteractionCode"]["href"].as_str()
+            .or_else(|| current_resp["success"]["href"].as_str());
+        if let Some(href) = success_href {
+            // Follow the success href directly — it establishes the session
+            self.follow_redirects(href, "GET").await?;
             return Ok(None);
         }
 
