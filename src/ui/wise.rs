@@ -31,8 +31,8 @@ pub fn draw_wise(f: &mut Frame, app: &mut App) {
         Tab::WsStats => draw_ws_stats(f, app, chunks[1]),
         Tab::WsQuery => draw_ws_query(f, app, chunks[1]),
         _ => {
-            let block = Block::default().borders(Borders::ALL).title("Settings");
-            f.render_widget(block, chunks[1]);
+            arkime::draw_under_construction(f, app, chunks[1]);
+            arkime::draw_owl(f, app, chunks[1]);
         }
     }
 

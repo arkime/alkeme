@@ -1,5 +1,14 @@
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+
+fn deserialize_f64_or_string<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<f64, D::Error> {
+    let v: serde_json::Value = Deserialize::deserialize(d)?;
+    match v {
+        serde_json::Value::Number(n) => Ok(n.as_f64().unwrap_or(0.0)),
+        serde_json::Value::String(s) => Ok(s.parse::<f64>().unwrap_or(0.0)),
+        _ => Ok(0.0),
+    }
+}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct WsSourceStats {
@@ -16,7 +25,7 @@ pub struct WsSourceStats {
     pub direct_hit: u64,
     #[serde(rename = "requestDropped", default)]
     pub request_dropped: u64,
-    #[serde(rename = "recentAverageMS", default)]
+    #[serde(rename = "recentAverageMS", default, deserialize_with = "deserialize_f64_or_string")]
     pub recent_avg_ms: f64,
     #[serde(default)]
     pub items: u64,
@@ -91,6 +100,7 @@ impl super::ArkimeClient {
     }
 
     pub async fn ws_query(&self, source: &str, type_name: &str, value: &str) -> Result<Vec<WsQueryResult>> {
+        let value = value.trim();
         let url = if source.is_empty() || source == "any" {
             format!("{}/{}/{}", self.base_url, urlencoding::encode(type_name), urlencoding::encode(value))
         } else {
