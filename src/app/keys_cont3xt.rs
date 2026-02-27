@@ -357,13 +357,6 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Tab if self.active_tab == Tab::Search => {
-                // Tab toggles focus between results list and detail pane
-                self.c3_focus = match self.c3_focus {
-                    Cont3xtFocus::Results => Cont3xtFocus::Detail,
-                    Cont3xtFocus::Detail => Cont3xtFocus::Results,
-                };
-            }
             KeyCode::Tab => {
                 self.next_tab();
                 if self.active_tab == Tab::C3Stats && self.c3_stats_data.is_empty() {
@@ -379,6 +372,21 @@ impl App {
                         tokio::runtime::Handle::current().block_on(self.c3_fetch_stats())
                     });
                 }
+            }
+            KeyCode::Enter if self.active_tab == Tab::Search => {
+                match self.c3_focus {
+                    Cont3xtFocus::Results => {
+                        self.c3_focus = Cont3xtFocus::Detail;
+                        self.c3_detail_scroll = 0;
+                        self.c3_detail_hscroll = 0;
+                    }
+                    Cont3xtFocus::Detail => {
+                        self.c3_focus = Cont3xtFocus::Results;
+                    }
+                }
+            }
+            KeyCode::Esc if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail => {
+                self.c3_focus = Cont3xtFocus::Results;
             }
             KeyCode::Char('/') | KeyCode::Char('E') if self.active_tab == Tab::Search => {
                 self.expression_edit = self.expression.clone();
@@ -435,11 +443,14 @@ impl App {
                 if self.active_tab == Tab::Search {
                     match self.c3_focus {
                         Cont3xtFocus::Results => {
-                            if !self.c3_tree_order.is_empty() {
-                                self.c3_selected = (self.c3_selected + self.visible_rows).min(self.c3_tree_order.len() - 1);
-                                self.c3_detail_scroll = 0;
-                                self.c3_detail_hscroll = 0;
+                            // Jump to next top-level indicator
+                            if let Some(next) = self.c3_tree_roots.iter().find(|&&r| r > self.c3_selected) {
+                                self.c3_selected = *next;
+                            } else if !self.c3_tree_order.is_empty() {
+                                self.c3_selected = self.c3_tree_order.len() - 1;
                             }
+                            self.c3_detail_scroll = 0;
+                            self.c3_detail_hscroll = 0;
                         }
                         Cont3xtFocus::Detail => {
                             self.c3_detail_scroll = self.c3_detail_scroll.saturating_add(self.visible_rows as u16);
@@ -461,7 +472,12 @@ impl App {
                 if self.active_tab == Tab::Search {
                     match self.c3_focus {
                         Cont3xtFocus::Results => {
-                            self.c3_selected = self.c3_selected.saturating_sub(self.visible_rows);
+                            // Jump to previous top-level indicator
+                            if let Some(prev) = self.c3_tree_roots.iter().rev().find(|&&r| r < self.c3_selected) {
+                                self.c3_selected = *prev;
+                            } else {
+                                self.c3_selected = 0;
+                            }
                             self.c3_detail_scroll = 0;
                             self.c3_detail_hscroll = 0;
                         }
@@ -547,13 +563,33 @@ impl App {
                 }
             }
             KeyCode::Left => {
-                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
-                    self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_sub(4);
+                if self.active_tab == Tab::Search {
+                    match self.c3_focus {
+                        Cont3xtFocus::Results => {
+                            self.c3_selected = 0;
+                            self.c3_detail_scroll = 0;
+                            self.c3_detail_hscroll = 0;
+                        }
+                        Cont3xtFocus::Detail => {
+                            self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_sub(4);
+                        }
+                    }
                 }
             }
             KeyCode::Right => {
-                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
-                    self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_add(4);
+                if self.active_tab == Tab::Search {
+                    match self.c3_focus {
+                        Cont3xtFocus::Results => {
+                            if !self.c3_tree_order.is_empty() {
+                                self.c3_selected = self.c3_tree_order.len() - 1;
+                                self.c3_detail_scroll = 0;
+                                self.c3_detail_hscroll = 0;
+                            }
+                        }
+                        Cont3xtFocus::Detail => {
+                            self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_add(4);
+                        }
+                    }
                 }
             }
             // C3 Stats tab keys

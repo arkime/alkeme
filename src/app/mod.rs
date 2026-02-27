@@ -130,6 +130,7 @@ pub struct App {
     pub c3_results: Vec<Cont3xtResult>,
     pub c3_selected: usize,           // index into c3_tree_order
     pub c3_tree_order: Vec<usize>,    // result indices in tree display order
+    pub c3_tree_roots: Vec<usize>,    // indices into c3_tree_order where each root indicator starts
     pub c3_detail_scroll: u16,        // scroll in detail pane
     pub c3_detail_hscroll: u16,       // horizontal scroll in detail pane
     pub c3_search_total: u64,
@@ -346,6 +347,7 @@ impl App {
             c3_results: Vec::new(),
             c3_selected: 0,
             c3_tree_order: Vec::new(),
+            c3_tree_roots: Vec::new(),
             c3_detail_scroll: 0,
             c3_detail_hscroll: 0,
             c3_search_total: 0,

@@ -66,16 +66,10 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(Color::White)
     };
 
-    let itype_label = if !app.c3_search_itype.is_empty() {
-        format!(" [{}] ", app.c3_search_itype)
-    } else {
-        String::new()
-    };
-
     let integrations_label = if let Some(ref name) = app.c3_active_view_name {
         format!("[view: {name}] ")
     } else if app.c3_disabled_integrations.is_empty() {
-        String::new()
+        "[all] ".to_string()
     } else {
         "[custom] ".to_string()
     };
@@ -88,7 +82,7 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
     };
     let expr_widget = Paragraph::new(Span::styled(expr_display.as_str(), expr_style))
         .scroll((0, expr_scroll))
-        .block(Block::default().borders(Borders::ALL).title(format!(" Search (/) {itype_label}{integrations_label}")));
+        .block(Block::default().borders(Borders::ALL).title(format!(" Search (/) {integrations_label}")));
     f.render_widget(expr_widget, area);
 
     if app.input_mode == InputMode::Expression {
@@ -229,11 +223,24 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
-    // Build tree_order: list of result indices in display order
-    let tree_order: Vec<usize> = display_rows.iter()
-        .filter_map(|(_, _, idx)| *idx)
-        .collect();
+    // Build tree_order and tree_roots from display_rows
+    let mut tree_order: Vec<usize> = Vec::new();
+    let mut tree_roots: Vec<usize> = Vec::new();
+    let mut last_root_depth = false;
+    for (depth, _, idx) in &display_rows {
+        if *depth == 0 {
+            last_root_depth = true;
+        }
+        if let Some(result_idx) = idx {
+            if last_root_depth {
+                tree_roots.push(tree_order.len());
+                last_root_depth = false;
+            }
+            tree_order.push(*result_idx);
+        }
+    }
     app.c3_tree_order = tree_order;
+    app.c3_tree_roots = tree_roots;
 
     // The actual result index for the current selection
     let selected_result_idx = app.c3_tree_order.get(app.c3_selected).copied();

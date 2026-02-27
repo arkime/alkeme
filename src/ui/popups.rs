@@ -493,25 +493,51 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("/"), Span::raw("Filter links by name")]),
             Line::from(vec![key("Esc / q / l"), Span::raw("Close popup")]),
         ])
-    } else if app.app_mode == AppMode::Cont3xt {
-        ("Cont3xt Search", vec![
+    } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::Search && app.c3_focus == Cont3xtFocus::Detail {
+        ("Cont3xt Detail", vec![
             hdr!("Navigation"),
             blank(),
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
-            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate results / scroll")]),
+            Line::from(vec![key("↑ / ↓"), Span::raw("Scroll detail vertically")]),
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
-            Line::from(vec![key("PgUp / PgDn"), Span::raw("Page up / down (detail)")]),
+            Line::from(vec![key("PgUp / PgDn"), Span::raw("Page up / down")]),
             Line::from(vec![key("← / →"), Span::raw("Scroll detail left / right")]),
+            Line::from(vec![key("Shift+← / Shift+→"), Span::raw("Fast scroll left / right")]),
             Line::from(vec![key("Home"), Span::raw("Jump to top, reset scroll")]),
             Line::from(vec![key("End"), Span::raw("Jump to bottom")]),
             blank(),
             hdr!("Actions"),
             blank(),
+            Line::from(vec![key("Enter / Esc"), Span::raw("Return to results panel")]),
+            Line::from(vec![key("R"), Span::raw("Toggle raw JSON / card view")]),
             Line::from(vec![key("/"), Span::raw("Edit search indicator")]),
-            Line::from(vec![key("Tab (in results)"), Span::raw("Toggle results / detail focus")]),
+            Line::from(vec![key("i"), Span::raw("Integrations popup")]),
+            Line::from(vec![key("I (Shift+i)"), Span::raw("Views popup")]),
+            Line::from(vec![key("l"), Span::raw("Link groups popup")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
+        ].into_iter().chain(
+            if app.pl_saved_client.is_some() {
+                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
+            } else { vec![] }
+        ).chain(vec![
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ]).collect())
+    } else if app.app_mode == AppMode::Cont3xt {
+        (if app.active_tab == Tab::Search { "Cont3xt Results" } else { "Cont3xt" }, vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate results list")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Next / prev top-level indicator")]),
+            Line::from(vec![key("← / →"), Span::raw("Jump to top / bottom")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Open detail panel")]),
+            Line::from(vec![key("/"), Span::raw("Edit search indicator")]),
             Line::from(vec![key("R"), Span::raw("Toggle raw JSON / card view")]),
             Line::from(vec![key("i"), Span::raw("Integrations popup (v:views inside)")]),
-            Line::from(vec![key("I (Shift+i)"), Span::raw("Views popup (select integration views)")]),
+            Line::from(vec![key("I (Shift+i)"), Span::raw("Views popup")]),
             Line::from(vec![key("l"), Span::raw("Link groups popup")]),
             Line::from(vec![key("r"), Span::raw("Re-run search")]),
             Line::from(vec![key("Ctrl+r"), Span::raw("Re-run search (no cache)")]),
@@ -629,8 +655,8 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
     lines.push(blank());
     lines.push(Line::from(Span::styled("Press any key to close", Style::default().fg(Color::DarkGray))));
 
-    let popup_width = 52;
-    let popup_height = lines.len() as u16 + 2;
+    let popup_width = 64u16.min(area.width.saturating_sub(4));
+    let popup_height = (lines.len() as u16 + 2).min(area.height.saturating_sub(4));
     let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
     let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
@@ -638,6 +664,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, popup_area);
 
     let help = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
         .block(
             Block::default()
                 .borders(Borders::ALL)
