@@ -63,6 +63,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Overviews** — indicator headers are selectable in the results tree and show a cross-integration overview in the detail pane; press `o` to choose from available overviews; `R` toggles debug mode showing all fields including missing data
 - **History** — browse search audit history with sortable, filterable table; server-side pagination with `←`/`→`; `Enter` re-runs a past search; `d` deletes an entry
 - **JSON export** — press `J` to save all search results as a combined JSON file with a filename prompt
+- **Search tags** — press `t` to set comma-separated tags sent with search queries; also settable via `--cont3xt-tags` CLI option; shown in the search bar title
 
 ### Parliament Mode
 - **Cluster dashboard** — groups displayed with clusters showing health status (●green/●yellow/●red), bytes/sec, drops/sec, active sessions, node counts, ES info, and inline issues
@@ -160,6 +161,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `--auth <MODE>` | Authentication mode: `basic`, `digest`, `form`, `web`, or `okta` |
 | `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`); `user` without colon prompts for password only |
 | `--search <EXPR>` | Default search expression (viewer) or indicator (cont3xt); auto-submits in cont3xt mode |
+| `--cont3xt-tags <TAGS>` | Comma-separated tags to include with Cont3xt searches |
 | `--app <MODE>` | Force app mode: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appversion` detection) |
 
 ## Keybindings
@@ -220,6 +222,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `s` / `S` | Next sort column / toggle direction (Stats/History) |
 | `d` | Delete history entry (History) |
 | `J` | Save all results as JSON (prompts for filename) |
+| `t` | Edit search tags (comma-separated, sent with queries) |
 | `←` / `→` | Previous / next page (History); jump to top/bottom (results); scroll detail |
 | `D` | HTTP debug log (↑/↓ navigate, Enter expand, Esc collapse) |
 | `h` / `?` | Show help |

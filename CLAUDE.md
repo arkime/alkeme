@@ -16,6 +16,7 @@ cargo run -- URL --auth okta                                   # okta auth (prom
 cargo run -- URL --auth digest                                 # prompts for both user+pass
 cargo run -- URL --auth digest --user admin                    # prompts for password only
 cargo run -- URL --app cont3xt --auth form --user admin:admin  # force cont3xt mode
+cargo run -- URL --search 1.2.3.4 --cont3xt-tags mytag       # cont3xt with tags
 ```
 
 ## Architecture
@@ -177,6 +178,7 @@ src/
 | S | Toggle sort direction (History/Stats) |
 | d | Delete history entry (History tab) |
 | J | Save all results as JSON (prompts for filename) |
+| t | Edit search tags (comma-separated, sent with queries) |
 | ← / → | Previous/next page (History); jump to top/bottom (results); scroll detail |
 | D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
 | h / ? | Show help |
@@ -348,6 +350,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - `c3_search_total`, `c3_search_sent`, `c3_search_itype`, `c3_focus`, `c3_raw_view`, `c3_show_card_popup`, `c3_card_popup_scroll`
 - `c3_disabled_integrations`, `show_integration_popup`, `integration_popup_selected`, `integration_popup_filter`, `integration_popup_filtering`
 - `c3_searching`, `pending_c3_search`
+- `c3_tags` — Vec<String> tags sent with search; `c3_tags_edit`, `c3_show_tags_popup` — tag editor state
 - `c3_tree_order` — Vec<C3TreeItem> in tree display order; items are Indicator(itype, query) or Result(idx)
 - `c3_tree_roots` — indices into `c3_tree_order` where each root indicator starts (for Shift+Up/Down jumping)
 - `c3_indicator_parents` — HashMap<(indicator, itype), Vec<(parent_query, parent_itype)>> for tree nesting
