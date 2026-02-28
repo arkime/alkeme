@@ -241,6 +241,12 @@ impl FetchClient {
         streaming_total: Arc<AtomicU64>,
         streaming_sent: Arc<AtomicU64>,
     ) -> Result<(u64, String, Vec<(String, String)>)> {
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            log_http(&self.http_log, "POST", "", None, status, 0, 0, Some(&text));
+            anyhow::bail!("HTTP {} (see debug log [D] for details)", status);
+        }
         use futures_util::StreamExt;
         let mut total = 0u64;
         let mut itype = String::new();

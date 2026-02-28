@@ -27,6 +27,14 @@ pub struct FetchClient {
 }
 
 impl FetchClient {
+    fn check_status(status: u16, body: &str, http_log: &HttpLog, method: &str, url: &str, post_data: Option<String>, first_byte: u64, last_byte: u64) -> Result<()> {
+        if status >= 400 {
+            log_http(http_log, method, url, post_data, status, first_byte, last_byte, Some(body));
+            anyhow::bail!("HTTP {} (see debug log [D] for details)", status);
+        }
+        Ok(())
+    }
+
     pub async fn fetch_url(&self, url: &str) -> Result<String> {
         let start = Instant::now();
         let username = match self.username.as_deref() {
@@ -36,7 +44,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
+                log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
                 return Ok(body);
             }
         };
@@ -48,7 +58,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
+                log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
                 Ok(body)
             }
             AuthMode::Basic => {
@@ -59,7 +71,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
+                log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
                 Ok(body)
             }
             AuthMode::Digest => {
@@ -68,7 +82,9 @@ impl FetchClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                    let last_byte = start.elapsed().as_millis() as u64;
+                    Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
+                    log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
                     return Ok(body);
                 }
                 let www_auth = resp.headers().get("www-authenticate")
@@ -87,7 +103,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
+                log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
                 Ok(body)
             }
             AuthMode::Form | AuthMode::Web | AuthMode::Okta => {
@@ -99,7 +117,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
+                log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
                 Ok(body)
             }
         }
@@ -115,7 +135,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
+                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
                 return Ok(body);
             }
         };
@@ -127,7 +149,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
+                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
                 Ok(body)
             }
             AuthMode::Basic => {
@@ -141,7 +165,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
+                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
                 Ok(body)
             }
             AuthMode::Digest => {
@@ -150,7 +176,9 @@ impl FetchClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
-                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                    let last_byte = start.elapsed().as_millis() as u64;
+                    Self::check_status(status, &body, &self.http_log, "POST", url, post_data.clone(), first_byte, last_byte)?;
+                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, last_byte, Some(&body));
                     return Ok(body);
                 }
                 let www_auth = resp.headers().get("www-authenticate")
@@ -171,7 +199,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
+                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
                 Ok(body)
             }
             AuthMode::Form | AuthMode::Web | AuthMode::Okta => {
@@ -183,7 +213,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
+                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
                 Ok(body)
             }
         }
@@ -203,7 +235,9 @@ impl FetchClient {
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let body = resp.text().await?;
-                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                let last_byte = start.elapsed().as_millis() as u64;
+                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
+                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
                 return Ok(body);
             }
         };
@@ -218,7 +252,9 @@ impl FetchClient {
                     let first_byte = start.elapsed().as_millis() as u64;
                     let status = resp.status().as_u16();
                     let body = resp.text().await?;
-                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+                    let last_byte = start.elapsed().as_millis() as u64;
+                    Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
+                    log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
                     return Ok(body);
                 }
                 let www_auth = resp.headers().get("www-authenticate")
@@ -246,7 +282,9 @@ impl FetchClient {
         let first_byte = start.elapsed().as_millis() as u64;
         let status = resp.status().as_u16();
         let body = resp.text().await?;
-        log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
+        let last_byte = start.elapsed().as_millis() as u64;
+        Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
+        log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
         Ok(body)
     }
 }
@@ -499,7 +537,7 @@ impl ArkimeClient {
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
             log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
-            anyhow::bail!("HTTP {}: {}", status, text);
+            anyhow::bail!("HTTP {} (see debug log [D] for details)", status);
         }
         let result = resp.json().await?;
         log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, None);
@@ -562,7 +600,7 @@ impl ArkimeClient {
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
             log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
-            anyhow::bail!("HTTP {}: {}", status, text);
+            anyhow::bail!("HTTP {} (see debug log [D] for details)", status);
         }
         let result = resp.json().await?;
         log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, None);
@@ -618,7 +656,7 @@ impl ArkimeClient {
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
             log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
-            anyhow::bail!("HTTP {}: {}", status, text);
+            anyhow::bail!("HTTP {} (see debug log [D] for details)", status);
         }
         let result = resp.json().await?;
         log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);

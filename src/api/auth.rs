@@ -1606,7 +1606,7 @@ impl ArkimeClient {
                 if !resp.status().is_success() {
                     let text = resp.text().await.unwrap_or_default();
                     log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
-                    anyhow::bail!("HTTP {}: {}", status, text);
+                    anyhow::bail!("HTTP {} (see debug log [D] for details)", status);
                 }
                 let body = resp.text().await?;
                 log_http(&self.http_log, "GET", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&body));
