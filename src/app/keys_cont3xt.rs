@@ -46,6 +46,43 @@ impl App {
             return;
         }
 
+        // Overview selector popup handler
+        if self.c3_show_overview_popup {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('o') => {
+                    self.c3_show_overview_popup = false;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.c3_overview_popup_selected = self.c3_overview_popup_selected.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    // Get count of overviews for current itype
+                    if let Some(C3TreeItem::Indicator(itype, _)) = self.c3_tree_order.get(self.c3_selected) {
+                        let itype_lower = itype.to_lowercase();
+                        let count = self.c3_overviews.iter().filter(|o| o.itype.to_lowercase() == itype_lower).count();
+                        if count > 0 {
+                            self.c3_overview_popup_selected = (self.c3_overview_popup_selected + 1).min(count - 1);
+                        }
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(C3TreeItem::Indicator(itype, _)) = self.c3_tree_order.get(self.c3_selected) {
+                        let itype_lower = itype.to_lowercase();
+                        let matching: Vec<&crate::api::Cont3xtOverview> = self.c3_overviews.iter()
+                            .filter(|o| o.itype.to_lowercase() == itype_lower)
+                            .collect();
+                        if let Some(ov) = matching.get(self.c3_overview_popup_selected) {
+                            self.c3_selected_overviews.insert(itype_lower, ov.id.clone());
+                            self.c3_detail_scroll = 0;
+                        }
+                    }
+                    self.c3_show_overview_popup = false;
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // Link groups popup handler
         if self.c3_show_link_popup {
             if self.c3_link_popup_filtering {
@@ -133,20 +170,22 @@ impl App {
                 KeyCode::End => self.c3_card_popup_scroll = u16::MAX,
                 KeyCode::Char('s') | KeyCode::Char('w') => {
                     // Write card definition to /tmp file
-                    let actual_idx = self.c3_tree_order.get(self.c3_selected).copied().unwrap_or(0);
-                    if let Some(result) = self.c3_results.get(actual_idx) {
-                        let card = self.c3_integrations.iter()
-                            .find(|i| i.name == result.name)
-                            .and_then(|i| i.card.as_ref());
-                        let text = if let Some(card) = card {
-                            format!("{:#?}", card)
-                        } else {
-                            "No card definition found.".to_string()
-                        };
-                        let path = "/tmp/alkeme-card.txt";
-                        match std::fs::write(path, &text) {
-                            Ok(_) => self.status_msg = format!("Card written to {path}"),
-                            Err(e) => self.status_msg = format!("Error writing card: {e}"),
+                    let actual_idx = self.c3_tree_order.get(self.c3_selected).and_then(|t| t.result_idx());
+                    if let Some(actual_idx) = actual_idx {
+                        if let Some(result) = self.c3_results.get(actual_idx) {
+                            let card = self.c3_integrations.iter()
+                                .find(|i| i.name == result.name)
+                                .and_then(|i| i.card.as_ref());
+                            let text = if let Some(card) = card {
+                                format!("{:#?}", card)
+                            } else {
+                                "No card definition found.".to_string()
+                            };
+                            let path = "/tmp/alkeme-card.txt";
+                            match std::fs::write(path, &text) {
+                                Ok(_) => self.status_msg = format!("Card written to {path}"),
+                                Err(e) => self.status_msg = format!("Error writing card: {e}"),
+                            }
                         }
                     }
                 }
@@ -451,8 +490,28 @@ impl App {
                 self.c3_detail_hscroll = 0;
             }
             KeyCode::Char('C') if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail => {
+                // Show card popup for results, overview definition for indicators
                 self.c3_show_card_popup = !self.c3_show_card_popup;
                 self.c3_card_popup_scroll = 0;
+            }
+            KeyCode::Char('o') if self.active_tab == Tab::Search => {
+                // Overview selector — only when on an indicator
+                if let Some(C3TreeItem::Indicator(itype, _)) = self.c3_tree_order.get(self.c3_selected) {
+                    let itype_lower = itype.to_lowercase();
+                    let matching: Vec<&crate::api::Cont3xtOverview> = self.c3_overviews.iter()
+                        .filter(|o| o.itype.to_lowercase() == itype_lower)
+                        .collect();
+                    if !matching.is_empty() {
+                        let current_id = self.c3_selected_overviews.get(&itype_lower);
+                        self.c3_overview_popup_selected = matching.iter().position(|o| {
+                            Some(&o.id) == current_id
+                        }).or_else(|| matching.iter().position(|o| o.is_default))
+                            .unwrap_or(0);
+                        self.c3_show_overview_popup = true;
+                    } else {
+                        self.status_msg = format!("No overviews for type '{}'", itype);
+                    }
+                }
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) && self.active_tab == Tab::Search => {
                 self.c3_no_cache = true;

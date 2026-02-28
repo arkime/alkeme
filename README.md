@@ -59,7 +59,8 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Link groups** — press `l` to browse applicable link groups for the selected indicator; Enter opens the link URL in your browser
 - **Indicator navigation** — `Shift+↑`/`Shift+↓` jumps between top-level indicators in the results tree
 - **Detail filter** — press `/` in the detail panel to filter fields by text; section headers shown only when matching data exists
-- **Card definition** — press `C` in detail to view card definition; `s` to save to `/tmp/alkeme-card.txt`
+- **Card definition** — press `C` in detail to view card/overview definition; `s` to save to `/tmp/alkeme-card.txt`
+- **Overviews** — indicator headers are selectable in the results tree and show a cross-integration overview in the detail pane; press `o` to choose from available overviews; `R` toggles debug mode showing all fields including missing data
 
 ### Parliament Mode
 - **Cluster dashboard** — groups displayed with clusters showing health status (●green/●yellow/●red), bytes/sec, drops/sec, active sessions, node counts, ES info, and inline issues
@@ -208,8 +209,9 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `Esc` | Return to results from detail; close popups |
 | `/` | Edit search indicator (results); filter detail fields (detail) |
 | `E` | Edit search indicator |
-| `R` | Toggle raw JSON / card view |
-| `C` | Card definition popup (detail); `s` saves to `/tmp/alkeme-card.txt` |
+| `R` | Toggle raw JSON / card view; debug mode for overview |
+| `C` | Card/overview definition popup (detail); `s` saves to `/tmp/alkeme-card.txt` |
+| `o` | Select overview (when on indicator header) |
 | `i` | Integration filter (toggle on/off, `a`:all, `n`:none, `!`:invert, `/`:filter) |
 | `Shift+I` | Open views popup (select/create/delete integration views) |
 | `l` | Link groups for selected indicator (Enter opens in browser) |

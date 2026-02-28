@@ -1,5 +1,11 @@
 use super::*;
 
+fn format_compact_bytes(bytes: usize) -> String {
+    if bytes < 1024 { return format!("{}B", bytes); }
+    if bytes < 1024 * 1024 { return format!("{:.1}K", bytes as f64 / 1024.0); }
+    format!("{:.1}M", bytes as f64 / (1024.0 * 1024.0))
+}
+
 pub(super) fn draw_action_menu(f: &mut Frame, app: &App, area: Rect) {
     let menu = match &app.action_menu {
         Some(m) => m,
@@ -134,6 +140,7 @@ pub(super) fn draw_debug(f: &mut Frame, app: &App, area: Rect) {
         let status = entries[entry_idx].status;
         let first_byte_ms = entries[entry_idx].first_byte_ms;
         let last_byte_ms = entries[entry_idx].last_byte_ms;
+        let response_len = entries[entry_idx].response_len;
         let url = entries[entry_idx].url.clone();
         let post_data = entries[entry_idx].post_data.clone();
         let response_body = entries[entry_idx].response_body.clone();
@@ -156,6 +163,7 @@ pub(super) fn draw_debug(f: &mut Frame, app: &App, area: Rect) {
         ]));
         lines.push(Line::from(vec![label("First byte"), Span::raw(format!("{first_byte_ms}ms"))]));
         lines.push(Line::from(vec![label("Last byte"), Span::raw(format!("{last_byte_ms}ms"))]));
+        lines.push(Line::from(vec![label("Resp length"), Span::raw(format!("{response_len} bytes"))]));
         lines.push(Line::from(vec![label("URL"), Span::raw(url)]));
 
         if let Some(ref data) = post_data {
@@ -183,26 +191,27 @@ pub(super) fn draw_debug(f: &mut Frame, app: &App, area: Rect) {
 
         if let Some(ref resp) = response_body {
             lines.push(Line::from(""));
+            let resp_color = if status >= 400 { Color::Red } else { Color::White };
             lines.push(Line::from(Span::styled(" Response Body:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
             if resp.starts_with('{') || resp.starts_with('[') {
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(resp) {
                     if let Ok(pretty) = serde_json::to_string_pretty(&parsed) {
                         for line in pretty.lines() {
-                            lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(Color::Red))));
+                            lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(resp_color))));
                         }
                     } else {
                         for line in resp.lines() {
-                            lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(Color::Red))));
+                            lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(resp_color))));
                         }
                     }
                 } else {
                     for line in resp.lines() {
-                        lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(Color::Red))));
+                        lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(resp_color))));
                     }
                 }
             } else {
                 for line in resp.lines() {
-                    lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(Color::Red))));
+                    lines.push(Line::from(Span::styled(format!("   {line}"), Style::default().fg(resp_color))));
                 }
             }
         }
@@ -267,12 +276,19 @@ pub(super) fn draw_debug(f: &mut Frame, app: &App, area: Rect) {
 
             let marker = if is_selected { "►" } else { " " };
 
+            let len_str = if entry.response_len > 0 {
+                format!(" {:>6}", format_compact_bytes(entry.response_len))
+            } else {
+                "       ".to_string()
+            };
+
             lines.push(Line::from(vec![
                 Span::styled(format!("{marker}{:<23}", ts), row_style),
                 Span::styled(format!(" {:<6}", entry.method), row_style.fg(Color::Cyan)),
                 Span::styled(format!(" {:>4}", entry.status), row_style.fg(status_color)),
                 Span::styled(format!(" {:>5}ms", entry.first_byte_ms), row_style),
                 Span::styled(format!(" {:>5}ms", entry.last_byte_ms), row_style),
+                Span::styled(len_str, row_style),
                 Span::styled(format!("  {}", entry.url), row_style),
             ]));
 
@@ -285,10 +301,11 @@ pub(super) fn draw_debug(f: &mut Frame, app: &App, area: Rect) {
             }
 
             if let Some(ref resp) = entry.response_body {
+                let resp_color = if entry.status >= 400 { Color::Red } else { Color::DarkGray };
                 let truncated = if resp.len() > 120 { &resp[..120] } else { resp.as_str() };
                 lines.push(Line::from(vec![
                     Span::raw("                          "),
-                    Span::styled(format!("← {truncated}"), Style::default().fg(Color::Red)),
+                    Span::styled(format!("← {truncated}"), Style::default().fg(resp_color)),
                 ]));
             }
         }
@@ -509,9 +526,11 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             hdr!("Actions"),
             blank(),
             Line::from(vec![key("Enter / Esc"), Span::raw("Return to results panel")]),
-            Line::from(vec![key("R"), Span::raw("Toggle raw JSON / card view")]),
+            Line::from(vec![key("R"), Span::raw("Toggle raw JSON / card view (debug for overview)")]),
             Line::from(vec![key("/"), Span::raw("Filter detail fields")]),
             Line::from(vec![key("E"), Span::raw("Edit search indicator")]),
+            Line::from(vec![key("o"), Span::raw("Select overview (on indicator)")]),
+            Line::from(vec![key("C"), Span::raw("Show card/overview definition")]),
             Line::from(vec![key("i"), Span::raw("Integrations popup")]),
             Line::from(vec![key("I (Shift+i)"), Span::raw("Views popup")]),
             Line::from(vec![key("l"), Span::raw("Link groups popup")]),

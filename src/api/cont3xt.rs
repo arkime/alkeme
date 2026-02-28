@@ -29,6 +29,40 @@ impl ArkimeClient {
         Ok(val)
     }
 
+    /// Fetch cont3xt overviews
+    pub async fn c3_get_overviews(&self) -> Result<Vec<Cont3xtOverview>> {
+        let url = format!("{}/api/overview", self.base_url);
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let mut overviews = Vec::new();
+        if let Some(data) = parsed.get("overviews").and_then(|d| d.as_array()) {
+            for item in data {
+                let id = item.get("_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let itype = item.get("iType").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let fields = item.get("fields").and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().map(|f| {
+                        Cont3xtOverviewField {
+                            field_type: f.get("type").and_then(|v| v.as_str()).unwrap_or("linked").to_string(),
+                            from: f.get("from").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            field: f.get("field").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            alias: f.get("alias").and_then(|v| v.as_str()).map(String::from),
+                            custom: if f.get("type").and_then(|v| v.as_str()) == Some("custom") {
+                                Some(f.clone())
+                            } else {
+                                None
+                            },
+                        }
+                    }).collect())
+                    .unwrap_or_default();
+                let is_default = itype == id; // default overviews have _id == iType
+                overviews.push(Cont3xtOverview { id, name, title, itype, is_default, fields });
+            }
+        }
+        Ok(overviews)
+    }
+
     pub fn cont3xt_search_url(&self) -> String {
         format!("{}/api/integration/search", self.base_url)
     }

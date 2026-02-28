@@ -7,7 +7,7 @@ mod keys_wise;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtResult, Cont3xtView, GraphData, HttpLog, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats, parse_card};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats, parse_card};
 use ratatui::widgets::TableState;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -127,9 +127,10 @@ pub struct App {
     pub anim_start: std::time::Instant,
     // Cont3xt state
     pub c3_integrations: Vec<Cont3xtIntegration>,
+    pub c3_overviews: Vec<Cont3xtOverview>,
     pub c3_results: Vec<Cont3xtResult>,
     pub c3_selected: usize,           // index into c3_tree_order
-    pub c3_tree_order: Vec<usize>,    // result indices in tree display order
+    pub c3_tree_order: Vec<C3TreeItem>, // tree items in display order
     pub c3_tree_roots: Vec<usize>,    // indices into c3_tree_order where each root indicator starts
     pub c3_detail_scroll: u16,        // scroll in detail pane
     pub c3_detail_hscroll: u16,       // horizontal scroll in detail pane
@@ -145,6 +146,9 @@ pub struct App {
     pub c3_raw_view: bool,            // show raw JSON instead of card
     pub c3_show_card_popup: bool,     // show card definition popup
     pub c3_card_popup_scroll: u16,    // scroll offset for card popup
+    pub c3_show_overview_popup: bool,  // overview selector popup
+    pub c3_overview_popup_selected: usize,
+    pub c3_selected_overviews: HashMap<String, String>, // itype -> overview id
     pub c3_disabled_integrations: std::collections::HashSet<String>, // user-toggled off
     pub c3_show_integration_popup: bool,
     pub c3_integration_popup_selected: usize,
@@ -349,6 +353,7 @@ impl App {
             anim_start: std::time::Instant::now(),
             // Cont3xt state
             c3_integrations: Vec::new(),
+            c3_overviews: Vec::new(),
             c3_results: Vec::new(),
             c3_selected: 0,
             c3_tree_order: Vec::new(),
@@ -365,6 +370,9 @@ impl App {
             c3_raw_view: false,
             c3_show_card_popup: false,
             c3_card_popup_scroll: 0,
+            c3_show_overview_popup: false,
+            c3_overview_popup_selected: 0,
+            c3_selected_overviews: HashMap::new(),
             c3_disabled_integrations: std::collections::HashSet::new(),
             c3_show_integration_popup: false,
             c3_integration_popup_selected: 0,
@@ -826,6 +834,17 @@ impl App {
         }
     }
 
+    pub async fn c3_fetch_overviews(&mut self) {
+        match self.client.c3_get_overviews().await {
+            Ok(overviews) => {
+                self.c3_overviews = overviews;
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching overviews: {e}");
+            }
+        }
+    }
+
     /// Get the list of currently enabled integration names
     pub fn c3_enabled_integration_names(&self) -> Vec<String> {
         self.c3_integrations.iter()
@@ -881,11 +900,18 @@ impl App {
     /// Build the flat list of links filtered by selected result's itype
     pub fn c3_build_link_flat(&mut self) {
         // Use the selected result's itype and indicator
-        let result_idx = self.c3_tree_order.get(self.c3_selected).copied().unwrap_or(0);
-        let (itype, indicator) = if let Some(result) = self.c3_results.get(result_idx) {
-            (result.itype.clone(), result.indicator.clone())
-        } else {
-            (self.c3_search_itype.clone(), self.expression.clone())
+        let (itype, indicator) = match self.c3_tree_order.get(self.c3_selected) {
+            Some(C3TreeItem::Result(idx)) => {
+                if let Some(result) = self.c3_results.get(*idx) {
+                    (result.itype.clone(), result.indicator.clone())
+                } else {
+                    (self.c3_search_itype.clone(), self.expression.clone())
+                }
+            }
+            Some(C3TreeItem::Indicator(itype, query)) => {
+                (itype.clone(), query.clone())
+            }
+            None => (self.c3_search_itype.clone(), self.expression.clone()),
         };
         let filter = self.c3_link_popup_filter.to_lowercase();
         self.c3_link_flat.clear();

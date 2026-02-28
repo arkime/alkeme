@@ -151,6 +151,7 @@ async fn main() -> Result<()> {
         app::AppMode::Cont3xt => {
             app.c3_fetch_integrations().await;
             app.c3_fetch_views().await;
+            app.c3_fetch_overviews().await;
             app.c3_fetch_link_groups().await;
             if !app.expression.is_empty() {
                 app.c3_request_search();

@@ -8,6 +8,22 @@ pub fn is_non_actionable_field(key: &str) -> bool {
     key == "@timestamp"
 }
 
+/// An entry in the cont3xt results tree — either an indicator header or an integration result
+#[derive(Clone)]
+pub enum C3TreeItem {
+    Indicator(String, String), // (itype, query)
+    Result(usize),             // index into c3_results
+}
+
+impl C3TreeItem {
+    pub fn result_idx(&self) -> Option<usize> {
+        match self {
+            C3TreeItem::Result(idx) => Some(*idx),
+            C3TreeItem::Indicator(_, _) => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Cont3xtFocus {
     Results,

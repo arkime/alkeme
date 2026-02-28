@@ -268,6 +268,7 @@ impl App {
         // Initialize cont3xt data
         self.c3_fetch_integrations().await;
         self.c3_fetch_views().await;
+        self.c3_fetch_overviews().await;
         self.c3_fetch_link_groups().await;
     }
 

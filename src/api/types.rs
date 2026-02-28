@@ -12,6 +12,7 @@ pub struct HttpLogEntry {
     pub first_byte_ms: u64,
     pub last_byte_ms: u64,
     pub response_body: Option<String>,
+    pub response_len: usize,
 }
 
 pub type HttpLog = Arc<Mutex<Vec<HttpLogEntry>>>;
@@ -22,14 +23,11 @@ pub fn new_http_log() -> HttpLog {
 
 pub(crate) fn log_http(log: &HttpLog, method: &str, url: &str, post_data: Option<String>, status: u16, first_byte_ms: u64, last_byte_ms: u64, response_body: Option<&str>) {
     if let Ok(mut entries) = log.lock() {
-        let resp = if status >= 300 {
-            response_body.map(|b| {
-                let truncated = if b.len() > 4096 { &b[..4096] } else { b };
-                truncated.to_string()
-            })
-        } else {
-            None
-        };
+        let response_len = response_body.map(|b| b.len()).unwrap_or(0);
+        let resp = response_body.map(|b| {
+            let truncated = if b.len() > 4096 { &b[..4096] } else { b };
+            truncated.to_string()
+        });
         entries.push(HttpLogEntry {
             timestamp: chrono::Local::now(),
             method: method.to_string(),
@@ -39,6 +37,7 @@ pub(crate) fn log_http(log: &HttpLog, method: &str, url: &str, post_data: Option
             first_byte_ms,
             last_byte_ms,
             response_body: resp,
+            response_len,
         });
     }
 }
@@ -169,6 +168,29 @@ pub struct CardField {
     pub field_root: Option<String>, // dot-joined fieldRootPath
     #[allow(dead_code)]
     pub filter_empty: bool,         // filter null/empty values from arrays/tables
+}
+
+/// A field in a cont3xt overview definition
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct Cont3xtOverviewField {
+    pub field_type: String,      // "linked" or "custom"
+    pub from: String,            // integration name
+    pub field: String,           // card field label to pull
+    pub alias: Option<String>,   // display alias
+    pub custom: Option<Value>,   // custom field definition (CardField-like)
+}
+
+/// A cont3xt overview definition
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct Cont3xtOverview {
+    pub id: String,
+    pub name: String,
+    pub title: String,
+    pub itype: String,
+    pub is_default: bool,
+    pub fields: Vec<Cont3xtOverviewField>,
 }
 
 /// A search result from one integration

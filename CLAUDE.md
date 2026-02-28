@@ -105,6 +105,9 @@ src/
 - `Cont3xtCard` — Card display definition: title, fields (Vec<CardField>).
 - `CardField` — Card field: label, field (dot-joined path), field_type (string/url/date/ms/seconds/array/table/json/dnsRecords), join, fields (sub-fields for tables), defang, field_root, filter_empty.
 - `Cont3xtResult` — Search result from one integration: name, indicator, itype, data (Value), has_data.
+- `Cont3xtOverview` — Overview definition: id, name, title, itype, is_default, fields (Vec<Cont3xtOverviewField>).
+- `Cont3xtOverviewField` — Overview field: field_type ("linked"/"custom"), from (integration name), field (card field label), alias (display name), custom (Option<Value>).
+- `C3TreeItem` — Enum: `Indicator(itype, query)` | `Result(usize)`. Entry in the results tree; has `result_idx()` helper.
 - `Cont3xtLink` — Link definition: name, url, itypes (Vec<String>), info (String). From link groups API.
 - `Cont3xtLinkGroup` — Link group: name, links (Vec<Cont3xtLink>). Fetched from `/api/linkGroup`.
 - `PlGroup` — Parliament group: title, description, clusters (Vec<PlCluster>).
@@ -163,8 +166,9 @@ src/
 | / or E | Search expression or filter (Enter to apply, Esc to cancel) |
 | / | Filter detail fields (when in detail panel) |
 | E | Edit search indicator (when in detail panel) |
-| R | Toggle raw JSON / card view |
-| C | Card definition popup (detail); s saves to /tmp/alkeme-card.txt |
+| R | Toggle raw JSON / card view; debug mode for overview |
+| C | Card/overview definition popup (detail); s saves to /tmp/alkeme-card.txt |
+| o | Select overview (when on indicator header) |
 | i | Integration filter popup (Space:toggle, a:all, n:none, !:invert, /:filter) |
 | Shift+I | Open views popup (select/create/delete integration views) |
 | r | Re-run search |
@@ -333,10 +337,13 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ### Cont3xt state fields
 - `c3_integrations`, `c3_results`, `c3_selected`, `c3_detail_scroll`, `c3_detail_hscroll`, `c3_detail_filter`
+- `c3_overviews` — Vec<Cont3xtOverview> fetched from `/api/overview`
+- `c3_selected_overviews` — HashMap<String, String> mapping itype → selected overview id
+- `c3_show_overview_popup`, `c3_overview_popup_selected` — overview selector popup state
 - `c3_search_total`, `c3_search_sent`, `c3_search_itype`, `c3_focus`, `c3_raw_view`, `c3_show_card_popup`, `c3_card_popup_scroll`
 - `c3_disabled_integrations`, `show_integration_popup`, `integration_popup_selected`, `integration_popup_filter`, `integration_popup_filtering`
 - `c3_searching`, `pending_c3_search`
-- `c3_tree_order` — result indices in tree display order (navigation uses this, not flat c3_results)
+- `c3_tree_order` — Vec<C3TreeItem> in tree display order; items are Indicator(itype, query) or Result(idx)
 - `c3_tree_roots` — indices into `c3_tree_order` where each root indicator starts (for Shift+Up/Down jumping)
 - `c3_indicator_parents` — HashMap<(indicator, itype), Vec<(parent_query, parent_itype)>> for tree nesting
 - `c3_active_view_id`, `c3_active_view_name` — active integration view ID/name (shown in search bar label)
@@ -349,10 +356,21 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - `c3_indicator_parents` maps (child_indicator, child_itype) → Vec<(parent_query, parent_itype)>
 - Children appear under all their parents (multi-parent support for shared IPs, etc.)
 - Parent indicators without results are injected into the tree (e.g., URL with no integrations)
-- `c3_tree_order` stores result indices in display order; `c3_selected` indexes into this
+- `c3_tree_order` stores `C3TreeItem` entries (Indicator or Result) in display order; 1:1 with display_rows
 - `c3_tree_roots` stores indices into `c3_tree_order` where each root indicator starts — enables Shift+Up/Down to jump between indicators
-- All navigation and lookups go through `c3_tree_order`: `c3_results[c3_tree_order[c3_selected]]`
+- Both indicator headers and integration results are selectable; `c3_selected` indexes into `c3_tree_order`
+- When an Indicator is selected, detail pane shows the overview; when a Result is selected, shows the integration card
 - Enter switches focus to detail panel; Esc returns to results; Tab always switches tabs
+
+### Overviews
+- `GET /api/overview` returns `{success: true, overviews: [{_id, name, title, iType, fields: [...], ...}]}`
+- Default overviews have `_id` == iType name (e.g., "domain", "ip"); `is_default` derived from this
+- Each overview field: `{type: "linked", from: "IntegrationName", field: "CardFieldLabel", alias: "DisplayName"}`
+- "linked" type means: find result from integration `from`, find card field with label `field`, display data with `alias`
+- Overview title supports `%{query}` substitution for the indicator value
+- `c3_selected_overviews` maps itype → chosen overview id; falls back to default then first match
+- `o` key opens overview selector popup; `R` toggles debug mode showing all fields including missing data
+- `C` on an indicator shows overview definition popup; on a result shows card definition
 
 ### Link groups
 - `l` key opens link groups popup filtered by the selected indicator's itype

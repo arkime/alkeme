@@ -1,5 +1,6 @@
 use super::*;
-use crate::api::{CardField, Cont3xtCard};
+use crate::api::{CardField, Cont3xtCard, Cont3xtOverview};
+use crate::app::C3TreeItem;
 
 pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
     let status_h = status_bar_height(app);
@@ -68,6 +69,10 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
 
     if app.c3_show_card_popup {
         draw_card_popup(f, app, f.area());
+    }
+
+    if app.c3_show_overview_popup {
+        draw_overview_popup(f, app, f.area());
     }
 
     if app.c3_show_link_popup {
@@ -249,31 +254,37 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     // Build tree_order and tree_roots from display_rows
-    let mut tree_order: Vec<usize> = Vec::new();
+    let mut tree_order: Vec<C3TreeItem> = Vec::new();
     let mut tree_roots: Vec<usize> = Vec::new();
-    let mut last_root_depth = false;
-    for (depth, _, idx) in &display_rows {
-        if *depth == 0 {
-            last_root_depth = true;
-        }
-        if let Some(result_idx) = idx {
-            if last_root_depth {
-                tree_roots.push(tree_order.len());
-                last_root_depth = false;
+    for (depth, label, idx) in &display_rows {
+        if *depth == 0 && idx.is_none() {
+            // Root indicator header — parse "ITYPE QUERY" back to (itype, query)
+            tree_roots.push(tree_order.len());
+            if let Some(space_pos) = label.find(' ') {
+                let itype = label[..space_pos].to_lowercase();
+                let query = label[space_pos + 1..].to_string();
+                tree_order.push(C3TreeItem::Indicator(itype, query));
+            } else {
+                tree_order.push(C3TreeItem::Indicator(label.to_lowercase(), String::new()));
             }
-            tree_order.push(*result_idx);
+        } else if idx.is_none() {
+            // Child indicator header
+            if let Some(space_pos) = label.find(' ') {
+                let itype = label[..space_pos].to_lowercase();
+                let query = label[space_pos + 1..].to_string();
+                tree_order.push(C3TreeItem::Indicator(itype, query));
+            } else {
+                tree_order.push(C3TreeItem::Indicator(label.to_lowercase(), String::new()));
+            }
+        } else if let Some(result_idx) = idx {
+            tree_order.push(C3TreeItem::Result(*result_idx));
         }
     }
     app.c3_tree_order = tree_order;
     app.c3_tree_roots = tree_roots;
 
-    // The actual result index for the current selection
-    let selected_result_idx = app.c3_tree_order.get(app.c3_selected).copied();
-
-    // Find which display row corresponds to c3_selected
-    let selected_display_row = display_rows.iter()
-        .position(|(_, _, idx)| *idx == selected_result_idx)
-        .unwrap_or(0);
+    // tree_order now has 1:1 mapping with display_rows
+    let selected_display_row = app.c3_selected.min(display_rows.len().saturating_sub(1));
 
     // Scroll to keep selected visible
     let scroll_offset = if selected_display_row >= visible_height {
@@ -287,14 +298,14 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         if y >= inner.y + inner.height { break; }
 
         let is_header = result_idx.is_none();
-        let is_selected = *result_idx == selected_result_idx && result_idx.is_some();
+        let is_selected = row_i == selected_display_row;
 
-        let style = if is_header {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-        } else if is_selected && results_focused {
+        let style = if is_selected && results_focused {
             Style::default().fg(Color::Black).bg(Color::Cyan)
         } else if is_selected {
             Style::default().fg(Color::Black).bg(Color::Yellow)
+        } else if is_header {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
@@ -319,32 +330,64 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(Color::DarkGray)
     };
 
-    let actual_result_idx = app.c3_tree_order.get(app.c3_selected).copied().unwrap_or(0);
-    if let Some(result) = app.c3_results.get(actual_result_idx) {
-        // Find the card definition for this integration
-        let card = if !app.c3_raw_view {
-            app.c3_integrations.iter()
-                .find(|i| i.name == result.name)
-                .and_then(|i| i.card.as_ref())
-        } else {
-            None
-        };
+    let selected_tree_item = app.c3_tree_order.get(app.c3_selected).cloned();
 
-        let view_label = if app.c3_raw_view { " [RAW] " } else { "" };
+    // Determine detail content based on selected tree item type
+    let (detail_title, detail_lines) = match &selected_tree_item {
+        Some(C3TreeItem::Result(idx)) => {
+            if let Some(result) = app.c3_results.get(*idx) {
+                let card = if !app.c3_raw_view {
+                    app.c3_integrations.iter()
+                        .find(|i| i.name == result.name)
+                        .and_then(|i| i.card.as_ref())
+                } else {
+                    None
+                };
+                let view_label = if app.c3_raw_view { " [RAW] " } else { "" };
+                let title = format!(" {} — {} {view_label}", result.name, result.indicator);
+                let lines = if let Some(card) = card {
+                    render_card_lines(card, &result.data, &result.indicator)
+                } else {
+                    flatten_json_to_lines(&result.data, "", 0)
+                };
+                (title, lines)
+            } else {
+                (" Detail ".to_string(), Vec::new())
+            }
+        }
+        Some(C3TreeItem::Indicator(itype, query)) => {
+            let itype_lower = itype.to_lowercase();
+            // Use user-selected overview if set, otherwise prefer default, then any
+            let overview = if let Some(selected_id) = app.c3_selected_overviews.get(&itype_lower) {
+                app.c3_overviews.iter().find(|o| o.id == *selected_id)
+            } else {
+                None
+            }.or_else(|| app.c3_overviews.iter().find(|o| o.itype.to_lowercase() == itype_lower && o.is_default))
+             .or_else(|| app.c3_overviews.iter().find(|o| o.itype.to_lowercase() == itype_lower));
+            if let Some(overview) = overview {
+                let title_str = overview.title.replace("%{query}", query);
+                let raw_label = if app.c3_raw_view { " [DEBUG] " } else { "" };
+                let title = format!(" {}{raw_label}", title_str);
+                let lines = render_overview_lines(overview, itype, query, &app.c3_results, &app.c3_integrations, app.c3_raw_view);
+                (title, lines)
+            } else {
+                let title = format!(" {} — {} ", itype, query);
+                (title, vec![JsonLine::KeyValue("No overview available".to_string(), format!("for type '{}'", itype))])
+            }
+        }
+        None => (String::new(), Vec::new()),
+    };
+
+    if selected_tree_item.is_some() {
         let detail_block = Block::default()
             .borders(Borders::ALL)
             .border_style(detail_border_style)
-            .title(format!(" {} — {} {view_label}", result.name, result.indicator));
+            .title(detail_title.clone());
 
         let detail_inner = detail_block.inner(horiz[1]);
         f.render_widget(detail_block, horiz[1]);
 
-        // Build lines based on card definition or raw JSON
-        let mut lines = if let Some(card) = card {
-            render_card_lines(card, &result.data, &result.indicator)
-        } else {
-            flatten_json_to_lines(&result.data, "", 0)
-        };
+        let mut lines = detail_lines;
         align_table_columns(&mut lines);
 
         // Apply detail filter
@@ -498,6 +541,136 @@ enum JsonLine {
     ArrayValue(String),
     TableHeader(Vec<String>, Vec<usize>),  // cells, column widths
     TableRow(Vec<String>, Vec<usize>),     // cells, column widths
+}
+
+/// Render overview lines by pulling data from multiple integration results
+fn render_overview_lines(
+    overview: &Cont3xtOverview,
+    _itype: &str,
+    query: &str,
+    results: &[crate::api::Cont3xtResult],
+    integrations: &[crate::api::Cont3xtIntegration],
+    debug: bool,
+) -> Vec<JsonLine> {
+    let mut lines = Vec::new();
+
+    for field in &overview.fields {
+        if field.field_type == "linked" {
+            // Find the integration result for this indicator with matching integration name
+            let result = results.iter().find(|r| r.name == field.from && r.indicator == query);
+            let display_name = field.alias.as_deref().unwrap_or(&field.field);
+
+            if let Some(result) = result {
+                // Find the card definition for this integration
+                let card = integrations.iter()
+                    .find(|i| i.name == field.from)
+                    .and_then(|i| i.card.as_ref());
+
+                if let Some(card) = card {
+                    // Find the card field with matching label
+                    let card_field = card.fields.iter().find(|cf| cf.label == field.field);
+                    if let Some(cf) = card_field {
+                        let val = get_by_path(&result.data, &cf.field);
+                        if val.is_some() {
+                            render_overview_card_field(&mut lines, display_name, cf, val, &result.data);
+                        } else if debug {
+                            lines.push(JsonLine::KeyValue(
+                                display_name.to_string(),
+                                format!("(no data at path '{}' in {})", cf.field, field.from),
+                            ));
+                        }
+                    } else if debug {
+                        let card_labels: Vec<&str> = card.fields.iter().map(|f| f.label.as_str()).collect();
+                        lines.push(JsonLine::KeyValue(
+                            display_name.to_string(),
+                            format!("(card field '{}' not found in {}, have: [{}])", field.field, field.from, card_labels.join(", ")),
+                        ));
+                    }
+                } else {
+                    // No card — try direct data access
+                    let val = get_by_path(&result.data, &field.field);
+                    if let Some(v) = val {
+                        lines.push(JsonLine::KeyValue(display_name.to_string(), format_json_value(v)));
+                    } else if debug {
+                        lines.push(JsonLine::KeyValue(
+                            display_name.to_string(),
+                            format!("(no card for integration '{}')", field.from),
+                        ));
+                    }
+                }
+            } else if debug {
+                lines.push(JsonLine::KeyValue(
+                    display_name.to_string(),
+                    format!("(no result from '{}')", field.from),
+                ));
+            }
+        }
+    }
+
+    lines
+}
+
+/// Render a single overview field using its card field definition
+fn render_overview_card_field(lines: &mut Vec<JsonLine>, display_name: &str, cf: &CardField, val: Option<&serde_json::Value>, _data: &serde_json::Value) {
+    match cf.field_type.as_str() {
+        "table" => {
+            lines.push(JsonLine::Header(display_name.to_string(), true));
+            if let Some(arr) = val.and_then(|v| v.as_array()) {
+                if !cf.fields.is_empty() {
+                    let headers: Vec<String> = cf.fields.iter().map(|f| f.label.clone()).collect();
+                    lines.push(JsonLine::TableHeader(headers, vec![]));
+                }
+                for item in arr {
+                    let row_data = if let Some(ref fr) = cf.field_root {
+                        get_by_path(item, fr).unwrap_or(item)
+                    } else {
+                        item
+                    };
+                    if cf.fields.is_empty() {
+                        lines.push(JsonLine::ArrayValue(format_json_value(row_data)));
+                    } else {
+                        let cells: Vec<String> = cf.fields.iter().map(|sub| {
+                            get_by_path(row_data, &sub.field)
+                                .map(|v| format_card_value(v, sub))
+                                .unwrap_or_default()
+                        }).collect();
+                        lines.push(JsonLine::TableRow(cells, vec![]));
+                    }
+                }
+            }
+            lines.push(JsonLine::Close("  ]".to_string()));
+        }
+        "array" => {
+            if let Some(arr) = val.and_then(|v| v.as_array()) {
+                let items: Vec<serde_json::Value> = if let Some(ref fr) = cf.field_root {
+                    arr.iter().filter_map(|item| get_by_path(item, fr).cloned()).collect()
+                } else {
+                    arr.clone()
+                };
+                let items: Vec<&serde_json::Value> = items.iter()
+                    .filter(|v| !v.is_null() && v.as_str().map(|s| !s.is_empty()).unwrap_or(true))
+                    .collect();
+                if let Some(ref join) = cf.join {
+                    let joined: Vec<String> = items.iter().map(|v| format_json_value(v)).collect();
+                    lines.push(JsonLine::KeyValue(display_name.to_string(), joined.join(join)));
+                } else {
+                    lines.push(JsonLine::Header(display_name.to_string(), true));
+                    for item in items {
+                        lines.push(JsonLine::ArrayValue(format_json_value(item)));
+                    }
+                    lines.push(JsonLine::Close("  ]".to_string()));
+                }
+            } else if let Some(v) = val {
+                lines.push(JsonLine::KeyValue(display_name.to_string(), format_card_value(v, cf)));
+            }
+        }
+        _ => {
+            // string, url, date, ms, seconds, etc — single value
+            if let Some(v) = val {
+                lines.push(JsonLine::KeyValue(display_name.to_string(), format_card_value(v, cf)));
+            }
+        }
+    }
 }
 
 /// Post-process lines to compute aligned column widths for table blocks
@@ -916,10 +1089,13 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
     };
     f.render_widget(Clear, popup_area);
 
-    let link_result_idx = app.c3_tree_order.get(app.c3_selected).copied().unwrap_or(0);
-    let (indicator, itype) = app.c3_results.get(link_result_idx)
-        .map(|r| (r.indicator.as_str(), r.itype.as_str()))
-        .unwrap_or((app.expression.as_str(), app.c3_search_itype.as_str()));
+    let (indicator, itype) = match app.c3_tree_order.get(app.c3_selected) {
+        Some(C3TreeItem::Result(idx)) => app.c3_results.get(*idx)
+            .map(|r| (r.indicator.as_str(), r.itype.as_str()))
+            .unwrap_or((app.expression.as_str(), app.c3_search_itype.as_str())),
+        Some(C3TreeItem::Indicator(it, q)) => (q.as_str(), it.as_str()),
+        None => (app.expression.as_str(), app.c3_search_itype.as_str()),
+    };
     let title = format!(
         " Links for {} ({}) — {} links ",
         indicator, itype, app.c3_link_flat.len()
@@ -1200,18 +1376,119 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_card_popup(f: &mut Frame, app: &App, area: Rect) {
-    let actual_result_idx = app.c3_tree_order.get(app.c3_selected).copied().unwrap_or(0);
-    let result = match app.c3_results.get(actual_result_idx) {
-        Some(r) => r,
+    let popup_w = (area.width - 4).min(80);
+    let popup_h = (area.height - 4).min(40);
+    let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+    let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+    let popup_area = Rect::new(x, y, popup_w, popup_h);
+
+    f.render_widget(Clear, popup_area);
+
+    let (title, text) = match app.c3_tree_order.get(app.c3_selected) {
+        Some(C3TreeItem::Result(idx)) => {
+            let result = match app.c3_results.get(*idx) {
+                Some(r) => r,
+                None => return,
+            };
+            let card = app.c3_integrations.iter()
+                .find(|i| i.name == result.name)
+                .and_then(|i| i.card.as_ref());
+            let title = format!(" Card: {} ", result.name);
+            let text = if let Some(card) = card {
+                let mut lines = Vec::new();
+                lines.push(format!("Title: {}", card.title));
+                lines.push(String::new());
+                for (fi, field) in card.fields.iter().enumerate() {
+                    lines.push(format!("Field[{}]:", fi));
+                    lines.push(format!("  label: {}", field.label));
+                    lines.push(format!("  field: {}", field.field));
+                    lines.push(format!("  type: {}", field.field_type));
+                    if let Some(ref join) = field.join {
+                        lines.push(format!("  join: {:?}", join));
+                    }
+                    if field.defang {
+                        lines.push("  defang: true".to_string());
+                    }
+                    if let Some(ref root) = field.field_root {
+                        lines.push(format!("  fieldRoot: {}", root));
+                    }
+                    if field.filter_empty {
+                        lines.push("  filterEmpty: true".to_string());
+                    }
+                    if !field.fields.is_empty() {
+                        lines.push("  sub-fields:".to_string());
+                        for sf in &field.fields {
+                            lines.push(format!("    - {} ({}): {}", sf.label, sf.field_type, sf.field));
+                        }
+                    }
+                    lines.push(String::new());
+                }
+                lines.join("\n")
+            } else {
+                "No card definition found for this integration.".to_string()
+            };
+            (title, text)
+        }
+        Some(C3TreeItem::Indicator(itype, query)) => {
+            let itype_lower = itype.to_lowercase();
+            let overview = app.c3_overviews.iter()
+                .find(|o| o.itype.to_lowercase() == itype_lower && o.is_default)
+                .or_else(|| app.c3_overviews.iter().find(|o| o.itype.to_lowercase() == itype_lower));
+            let title = format!(" Overview: {} {} ", itype, query);
+            let text = if let Some(ov) = overview {
+                let mut lines = Vec::new();
+                lines.push(format!("Name: {}", ov.name));
+                lines.push(format!("Title: {}", ov.title));
+                lines.push(format!("iType: {}", ov.itype));
+                lines.push(format!("Default: {}", ov.is_default));
+                lines.push(String::new());
+                for (fi, field) in ov.fields.iter().enumerate() {
+                    lines.push(format!("Field[{}]:", fi));
+                    lines.push(format!("  type: {}", field.field_type));
+                    lines.push(format!("  from: {}", field.from));
+                    lines.push(format!("  field: {}", field.field));
+                    if let Some(ref alias) = field.alias {
+                        lines.push(format!("  alias: {}", alias));
+                    }
+                    lines.push(String::new());
+                }
+                lines.join("\n")
+            } else {
+                format!("No overview found for iType '{}'", itype)
+            };
+            (title, text)
+        }
         None => return,
     };
 
-    let card = app.c3_integrations.iter()
-        .find(|i| i.name == result.name)
-        .and_then(|i| i.card.as_ref());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(title);
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
 
-    let popup_w = (area.width - 4).min(80);
-    let popup_h = (area.height - 4).min(40);
+    let para = Paragraph::new(text)
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: false })
+        .scroll((app.c3_card_popup_scroll, 0));
+    f.render_widget(para, inner);
+}
+
+fn draw_overview_popup(f: &mut Frame, app: &App, area: Rect) {
+    let (itype, _query) = match app.c3_tree_order.get(app.c3_selected) {
+        Some(C3TreeItem::Indicator(itype, query)) => (itype.clone(), query.clone()),
+        _ => return,
+    };
+    let itype_lower = itype.to_lowercase();
+    let matching: Vec<&crate::api::Cont3xtOverview> = app.c3_overviews.iter()
+        .filter(|o| o.itype.to_lowercase() == itype_lower)
+        .collect();
+
+    let current_id = app.c3_selected_overviews.get(&itype_lower);
+
+    let popup_w = (area.width - 4).min(60);
+    let popup_h = (matching.len() as u16 + 4).min(area.height - 4);
     let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
     let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
     let popup_area = Rect::new(x, y, popup_w, popup_h);
@@ -1220,47 +1497,32 @@ fn draw_card_popup(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(format!(" Card: {} ", result.name));
+        .title(format!(" Select Overview ({}) ", itype));
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
 
-    let text = if let Some(card) = card {
-        let mut lines = Vec::new();
-        lines.push(format!("Title: {}", card.title));
-        lines.push(String::new());
-        for (fi, field) in card.fields.iter().enumerate() {
-            lines.push(format!("Field[{}]:", fi));
-            lines.push(format!("  label: {}", field.label));
-            lines.push(format!("  field: {}", field.field));
-            lines.push(format!("  type: {}", field.field_type));
-            if let Some(ref join) = field.join {
-                lines.push(format!("  join: {:?}", join));
-            }
-            if field.defang {
-                lines.push("  defang: true".to_string());
-            }
-            if let Some(ref root) = field.field_root {
-                lines.push(format!("  fieldRoot: {}", root));
-            }
-            if field.filter_empty {
-                lines.push("  filterEmpty: true".to_string());
-            }
-            if !field.fields.is_empty() {
-                lines.push("  sub-fields:".to_string());
-                for sf in &field.fields {
-                    lines.push(format!("    - {} ({}): {}", sf.label, sf.field_type, sf.field));
-                }
-            }
-            lines.push(String::new());
-        }
-        lines.join("\n")
-    } else {
-        "No card definition found for this integration.".to_string()
-    };
+    for (i, ov) in matching.iter().enumerate() {
+        if i as u16 >= inner.height { break; }
+        let is_selected = i == app.c3_overview_popup_selected;
+        let is_active = Some(&ov.id) == current_id
+            || (current_id.is_none() && ov.is_default)
+            || (current_id.is_none() && i == 0 && !matching.iter().any(|o| o.is_default));
 
-    let para = Paragraph::new(text)
-        .style(Style::default().fg(Color::White))
-        .wrap(Wrap { trim: false })
-        .scroll((app.c3_card_popup_scroll, 0));
-    f.render_widget(para, inner);
+        let marker = if is_active { "● " } else { "  " };
+        let default_tag = if ov.is_default { " (default)" } else { "" };
+        let label = format!("{marker}{}{default_tag}", ov.name);
+
+        let style = if is_selected {
+            Style::default().fg(Color::Black).bg(Color::Cyan)
+        } else if is_active {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        f.render_widget(
+            Paragraph::new(Span::styled(format!(" {label:<width$}", width = inner.width as usize - 1), style)),
+            Rect::new(inner.x, inner.y + i as u16, inner.width, 1),
+        );
+    }
 }
