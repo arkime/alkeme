@@ -52,11 +52,11 @@ impl ArkimeClient {
         Ok(parsed)
     }
 
-    pub async fn vr_get_stats(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
+    async fn vr_get_sorted_filtered(&self, endpoint: &str, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
         let dir = if sort_desc { "desc" } else { "asc" };
         let mut url = format!(
-            "{}/api/stats?sortField={}&desc={}",
-            self.base_url, urlencoding::encode(sort_field), dir
+            "{}/api/{}?sortField={}&desc={}",
+            self.base_url, endpoint, urlencoding::encode(sort_field), dir
         );
         if !filter.is_empty() {
             url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
@@ -64,34 +64,18 @@ impl ArkimeClient {
         let body = self.authenticated_get(&url).await?;
         let parsed: Value = serde_json::from_str(&body)?;
         Ok(parsed)
+    }
+
+    pub async fn vr_get_stats(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
+        self.vr_get_sorted_filtered("stats", filter, sort_field, sort_desc).await
     }
 
     pub async fn vr_get_esstats(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
-        let dir = if sort_desc { "desc" } else { "asc" };
-        let mut url = format!(
-            "{}/api/esstats?sortField={}&desc={}",
-            self.base_url, urlencoding::encode(sort_field), dir
-        );
-        if !filter.is_empty() {
-            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
-        }
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
+        self.vr_get_sorted_filtered("esstats", filter, sort_field, sort_desc).await
     }
 
     pub async fn vr_get_esindices(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
-        let dir = if sort_desc { "desc" } else { "asc" };
-        let mut url = format!(
-            "{}/api/esindices?sortField={}&desc={}",
-            self.base_url, urlencoding::encode(sort_field), dir
-        );
-        if !filter.is_empty() {
-            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
-        }
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
+        self.vr_get_sorted_filtered("esindices", filter, sort_field, sort_desc).await
     }
 
     pub async fn vr_get_fields(&self) -> Result<(Vec<ArkimeField>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>)> {
@@ -161,27 +145,26 @@ impl ArkimeClient {
         self.authenticated_post(&url, &[("tags", tags), ("ids", id)]).await
     }
 
-    pub async fn vr_add_sessions_tags(&self, expression: &str, date: &str, tags: &str, view: &Option<String>) -> Result<String> {
-        let mut url = format!("{}/api/sessions/addtags?date={}", self.base_url, urlencoding::encode(date));
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
-        self.authenticated_post(&url, &[("tags", tags)]).await
-    }
-
     pub async fn vr_remove_session_tags(&self, id: &str, tags: &str) -> Result<String> {
         let url = format!("{}/api/sessions/removetags", self.base_url);
         self.authenticated_post(&url, &[("tags", tags), ("ids", id)]).await
     }
 
-    pub async fn vr_remove_sessions_tags(&self, expression: &str, date: &str, tags: &str, view: &Option<String>) -> Result<String> {
-        let mut url = format!("{}/api/sessions/removetags?date={}", self.base_url, urlencoding::encode(date));
+    async fn vr_bulk_tag_op(&self, endpoint: &str, expression: &str, date: &str, tags: &str, view: &Option<String>) -> Result<String> {
+        let mut url = format!("{}/api/sessions/{}?date={}", self.base_url, endpoint, urlencoding::encode(date));
         if !expression.is_empty() {
             url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
         }
         Self::append_view(&mut url, view);
         self.authenticated_post(&url, &[("tags", tags)]).await
+    }
+
+    pub async fn vr_add_sessions_tags(&self, expression: &str, date: &str, tags: &str, view: &Option<String>) -> Result<String> {
+        self.vr_bulk_tag_op("addtags", expression, date, tags, view).await
+    }
+
+    pub async fn vr_remove_sessions_tags(&self, expression: &str, date: &str, tags: &str, view: &Option<String>) -> Result<String> {
+        self.vr_bulk_tag_op("removetags", expression, date, tags, view).await
     }
 
     pub fn vr_summary_url(&self, expression: &str, date: &str, view: &Option<String>) -> String {
@@ -239,10 +222,10 @@ impl ArkimeClient {
         if let Some(data) = parsed.get("data").and_then(|d| d.as_array()) {
             let current_user = self.username.as_deref().unwrap_or("");
             for item in data {
-                let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let expression = item.get("expression").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let user = item.get("user").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let id = str_val(item, "id");
+                let name = str_val(item, "name");
+                let expression = str_val(item, "expression");
+                let user = str_val(item, "user");
                 let shared = user != current_user;
                 views.push(ArkimeView { id, name, expression, user, shared });
             }

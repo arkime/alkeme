@@ -20,9 +20,7 @@ pub(super) fn draw_action_menu(f: &mut Frame, app: &App, area: Rect) {
 
         let popup_width = 30u16;
         let popup_height = scope_options.len() as u16 + 2;
-        let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-        let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-        let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+        let popup_area = center_popup(popup_width, popup_height, area);
 
         f.render_widget(Clear, popup_area);
 
@@ -56,9 +54,7 @@ pub(super) fn draw_action_menu(f: &mut Frame, app: &App, area: Rect) {
 
     let popup_width = 30u16;
     let popup_height = options.len() as u16 + 2;
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -92,9 +88,7 @@ pub(super) fn draw_action_prompt(f: &mut Frame, app: &App, area: Rect) {
     let label = prompt.kind.prompt_label();
     let popup_width = 50u16;
     let popup_height = 3u16;
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -121,12 +115,7 @@ pub(super) fn draw_debug(f: &mut Frame, app: &App, area: Rect) {
 
     let popup_width = area.width.saturating_sub(4).min(140);
     let popup_height = area.height.saturating_sub(4);
-    let popup_area = Rect::new(
-        area.x + (area.width.saturating_sub(popup_width)) / 2,
-        area.y + (area.height.saturating_sub(popup_height)) / 2,
-        popup_width,
-        popup_height,
-    );
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -701,9 +690,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
 
     let popup_width = 64u16.min(area.width.saturating_sub(4));
     let popup_height = (lines.len() as u16 + 2).min(area.height.saturating_sub(4));
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -726,9 +713,7 @@ pub(super) fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
 
     let popup_width = (area.width as f32 * 0.9) as u16;
     let popup_height = (area.height as f32 * 0.9) as u16;
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -843,9 +828,7 @@ pub(super) fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
 pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let popup_width = 60u16.min(area.width.saturating_sub(4));
     let popup_height = (area.height as f32 * 0.8) as u16;
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -953,9 +936,7 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
 pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
     let popup_width = 44u16.min(area.width.saturating_sub(4));
     let popup_height = (app.vr_saved_layouts.len() as u16 + 9).min(area.height.saturating_sub(4));
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -1098,9 +1079,7 @@ pub(super) fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {
     let filtered = app.view_filtered_indices();
     let popup_height = (filtered.len() as u16 + 8).min(area.height - 2).max(8);
     let popup_width = 60u16.min(area.width - 4);
-    let x = (area.width.saturating_sub(popup_width)) / 2;
-    let y = (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(x, y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -1258,9 +1237,7 @@ pub(super) fn draw_loading(f: &mut Frame, app: &mut App, area: Rect) {
     ];
     let popup_width = 30u16;
     let popup_height = (owl_right.len() + 5) as u16;
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 

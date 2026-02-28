@@ -570,9 +570,7 @@ impl App {
                 self.input_mode = InputMode::DetailFilter;
             }
             KeyCode::Char('/') | KeyCode::Char('E') if self.active_tab == Tab::Search => {
-                self.expression_edit = self.expression.clone();
-                self.expression_cursor = self.expression_edit.len();
-                self.input_mode = InputMode::Expression;
+                self.enter_expression_mode();
             }
             KeyCode::Char('/') if self.active_tab == Tab::C3Stats => {
                 self.c3_stats_filtering = true;

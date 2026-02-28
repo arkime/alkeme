@@ -8,9 +8,38 @@ mod keys_wise;
 pub use types::*;
 
 use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats, parse_card};
+use crossterm::event::KeyCode;
 use ratatui::widgets::TableState;
 use serde_json::Value;
 use std::collections::HashMap;
+
+/// Handle common text input key events (char insert, backspace, cursor movement).
+/// Returns true if the key was handled.
+pub fn handle_text_input_key(key: KeyCode, text: &mut String, cursor: &mut usize) -> bool {
+    match key {
+        KeyCode::Backspace => {
+            if *cursor > 0 {
+                *cursor -= 1;
+                text.remove(*cursor);
+            }
+            true
+        }
+        KeyCode::Left => {
+            *cursor = cursor.saturating_sub(1);
+            true
+        }
+        KeyCode::Right => {
+            *cursor = (*cursor + 1).min(text.len());
+            true
+        }
+        KeyCode::Char(c) => {
+            text.insert(*cursor, c);
+            *cursor += 1;
+            true
+        }
+        _ => false,
+    }
+}
 
 pub struct App {
     pub client: ArkimeClient,
@@ -1198,5 +1227,11 @@ impl App {
     pub fn ws_filtered_types(&self) -> Vec<&WsTypeStats> {
         let Some(stats) = &self.ws_stats else { return vec![] };
         stats.types.iter().collect()
+    }
+
+    pub fn enter_expression_mode(&mut self) {
+        self.expression_edit = self.expression.clone();
+        self.expression_cursor = self.expression_edit.len();
+        self.input_mode = InputMode::Expression;
     }
 }

@@ -93,11 +93,6 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
     } else {
         &app.expression
     };
-    let expr_style = if app.input_mode == InputMode::Expression {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::White)
-    };
 
     let integrations_label = if let Some(ref name) = app.c3_active_view_name {
         format!("[view: {name}] ")
@@ -113,23 +108,9 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
         format!("[tags: {}] ", app.c3_tags.join(","))
     };
 
-    let inner_width = area.width.saturating_sub(2) as usize;
-    let expr_scroll = if app.expression_cursor > inner_width {
-        (app.expression_cursor - inner_width) as u16
-    } else {
-        0
-    };
-    let expr_widget = Paragraph::new(Span::styled(expr_display.as_str(), expr_style))
-        .scroll((0, expr_scroll))
-        .block(Block::default().borders(Borders::ALL).title(format!(" Search (/) {integrations_label}{tags_label}")));
-    f.render_widget(expr_widget, area);
-
-    if app.input_mode == InputMode::Expression {
-        f.set_cursor_position((
-            area.x + (app.expression_cursor as u16 - expr_scroll) + 1,
-            area.y + 1,
-        ));
-    }
+    let is_editing = app.input_mode == InputMode::Expression;
+    let title = format!(" Search (/) {integrations_label}{tags_label}");
+    render_text_input(f, expr_display, app.expression_cursor, is_editing, &title, area);
 }
 
 fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
@@ -1028,16 +1009,9 @@ fn c3_draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Build header
     let header_cells: Vec<Cell> = columns.iter().enumerate().map(|(i, &(_, label, _))| {
-        let arrow = if i == app.c3_stats_sort_col {
-            if app.c3_stats_sort_desc { " ▼" } else { " ▲" }
-        } else { "" };
-        let text = format!("{label}{arrow}");
-        let style = if i == app.c3_stats_sort_col {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        };
-        Cell::from(text).style(style)
+        let is_sorted = i == app.c3_stats_sort_col;
+        Cell::from(sort_header_label(label, is_sorted, app.c3_stats_sort_desc))
+            .style(sort_header_style(is_sorted))
     }).collect();
     let header = Row::new(header_cells).height(1);
 
@@ -1107,14 +1081,12 @@ fn c3_draw_history(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Build header
     let header_cells: Vec<Cell> = columns.iter().enumerate().map(|(i, &(_, label, _, sortable))| {
-        let arrow = if i == app.c3_history_sort_col {
-            if app.c3_history_sort_desc { " ▼" } else { " ▲" }
-        } else { "" };
-        let text = format!("{label}{arrow}");
-        let style = if i == app.c3_history_sort_col {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        let is_sorted = i == app.c3_history_sort_col;
+        let text = sort_header_label(label, is_sorted, app.c3_history_sort_desc);
+        let style = if is_sorted {
+            sort_header_style(true)
         } else if sortable {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            sort_header_style(false)
         } else {
             Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)
         };
@@ -1197,12 +1169,7 @@ fn c3_draw_history(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
     let popup_width = 70u16.min(area.width.saturating_sub(4));
     let popup_height = 30u16.min(area.height.saturating_sub(4));
-    let popup_area = Rect {
-        x: area.x + (area.width.saturating_sub(popup_width)) / 2,
-        y: area.y + (area.height.saturating_sub(popup_height)) / 2,
-        width: popup_width,
-        height: popup_height,
-    };
+    let popup_area = center_popup(popup_width, popup_height, area);
     f.render_widget(Clear, popup_area);
 
     let (indicator, itype) = match app.c3_tree_order.get(app.c3_selected) {
@@ -1362,9 +1329,7 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
             // Views list: "Save Current" + saved views
             let list_len = app.c3_views.len() + 1; // +1 for "Save Current"
             let popup_height = (list_len as u16 + 4).min(area.height.saturating_sub(4)).max(6);
-            let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-            let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-            let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+            let popup_area = center_popup(popup_width, popup_height, area);
 
             f.render_widget(Clear, popup_area);
 
@@ -1434,9 +1399,7 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
             let enabled = total - disabled_count;
 
             let popup_height = (filtered.len() as u16 + 5).min(area.height.saturating_sub(4));
-            let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-            let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-            let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+            let popup_area = center_popup(popup_width, popup_height, area);
 
             f.render_widget(Clear, popup_area);
 
@@ -1494,9 +1457,7 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 fn draw_card_popup(f: &mut Frame, app: &App, area: Rect) {
     let popup_w = (area.width - 4).min(80);
     let popup_h = (area.height - 4).min(40);
-    let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
-    let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
-    let popup_area = Rect::new(x, y, popup_w, popup_h);
+    let popup_area = center_popup(popup_w, popup_h, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -1605,9 +1566,7 @@ fn draw_overview_popup(f: &mut Frame, app: &App, area: Rect) {
 
     let popup_w = (area.width - 4).min(60);
     let popup_h = (matching.len() as u16 + 4).min(area.height - 4);
-    let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
-    let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
-    let popup_area = Rect::new(x, y, popup_w, popup_h);
+    let popup_area = center_popup(popup_w, popup_h, area);
 
     f.render_widget(Clear, popup_area);
     let block = Block::default()
@@ -1651,9 +1610,7 @@ fn draw_save_json_prompt(f: &mut Frame, app: &App, area: Rect) {
 
     let popup_width = 60u16.min(area.width.saturating_sub(4));
     let popup_height = 3u16;
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -1676,9 +1633,7 @@ fn draw_save_json_prompt(f: &mut Frame, app: &App, area: Rect) {
 fn draw_tags_popup(f: &mut Frame, app: &App, area: Rect) {
     let popup_width = 60u16.min(area.width.saturating_sub(4));
     let popup_height = 5u16;
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 

@@ -187,6 +187,24 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Drain newly arrived streaming C3 results into the app, returning new consumed count
+fn drain_c3_results(app: &mut App, vec: &[crate::api::Cont3xtResult], consumed: usize) -> usize {
+    for item in &vec[consumed..] {
+        if item.name.is_empty() {
+            let parent_query = item.data.get("_link_parent_query")
+                .and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let parent_itype = item.data.get("_link_parent_itype")
+                .and_then(|v| v.as_str()).unwrap_or("").to_string();
+            app.c3_indicator_parents.entry(
+                (item.indicator.clone(), item.itype.clone()),
+            ).or_default().push((parent_query, parent_itype));
+        } else {
+            app.c3_results.push(item.clone());
+        }
+    }
+    vec.len()
+}
+
 async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     let mut packets_handle: Option<tokio::task::JoinHandle<Result<crate::api::PacketsData, anyhow::Error>>> = None;
     let mut summary_handle: Option<tokio::task::JoinHandle<Result<Vec<crate::api::SummaryItem>, anyhow::Error>>> = None;
@@ -352,21 +370,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 app.c3_search_sent = live_sent;
                 if let Ok(vec) = c3_streaming_results.lock() {
                     if vec.len() > c3_stream_consumed {
-                        for item in &vec[c3_stream_consumed..] {
-                            if item.name.is_empty() {
-                                // Link marker: extract parent relationship
-                                let parent_query = item.data.get("_link_parent_query")
-                                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                let parent_itype = item.data.get("_link_parent_itype")
-                                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                app.c3_indicator_parents.entry(
-                                    (item.indicator.clone(), item.itype.clone()),
-                                ).or_default().push((parent_query, parent_itype));
-                            } else {
-                                app.c3_results.push(item.clone());
-                            }
-                        }
-                        c3_stream_consumed = vec.len();
+                        c3_stream_consumed = drain_c3_results(app, &vec, c3_stream_consumed);
                         app.status_msg = format!(
                             "Searching... {} results so far",
                             app.c3_results.len()
@@ -380,20 +384,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     let handle = c3_search_handle.take().unwrap();
                     // Final drain of any remaining results
                     if let Ok(vec) = c3_streaming_results.lock() {
-                        for item in &vec[c3_stream_consumed..] {
-                            if item.name.is_empty() {
-                                let parent_query = item.data.get("_link_parent_query")
-                                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                let parent_itype = item.data.get("_link_parent_itype")
-                                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                app.c3_indicator_parents.entry(
-                                    (item.indicator.clone(), item.itype.clone()),
-                                ).or_default().push((parent_query, parent_itype));
-                            } else {
-                                app.c3_results.push(item.clone());
-                            }
-                        }
-                        c3_stream_consumed = vec.len();
+                        c3_stream_consumed = drain_c3_results(app, &vec, c3_stream_consumed);
                     }
                     match handle.await {
                         Ok(Ok((total, itype, init_indicators))) => {

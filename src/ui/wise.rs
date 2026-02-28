@@ -122,14 +122,14 @@ fn draw_sources_table(f: &mut Frame, app: &mut App, area: Rect) {
         };
         Row::new(vec![
             Cell::from(s.source.as_str()),
-            Cell::from(format_num(s.request)),
-            Cell::from(format_num(s.cache_hit)),
-            Cell::from(format_num(s.cache_miss)),
-            Cell::from(format_num(s.cache_refresh)),
-            Cell::from(format_num(s.direct_hit)),
-            Cell::from(format_num(s.request_dropped)),
+            Cell::from(format_number(s.request)),
+            Cell::from(format_number(s.cache_hit)),
+            Cell::from(format_number(s.cache_miss)),
+            Cell::from(format_number(s.cache_refresh)),
+            Cell::from(format_number(s.direct_hit)),
+            Cell::from(format_number(s.request_dropped)),
             Cell::from(format!("{:.4}", s.recent_avg_ms)),
-            Cell::from(format_num(s.items)),
+            Cell::from(format_number(s.items)),
         ]).style(style)
     }).collect();
 
@@ -179,12 +179,12 @@ fn draw_types_table(f: &mut Frame, app: &mut App, area: Rect) {
         };
         Row::new(vec![
             Cell::from(t.type_name.as_str()),
-            Cell::from(format_num(t.request)),
-            Cell::from(format_num(t.found)),
-            Cell::from(format_num(t.cache_hit)),
-            Cell::from(format_num(t.cache_src_hit)),
-            Cell::from(format_num(t.cache_src_miss)),
-            Cell::from(format_num(t.cache_src_refresh)),
+            Cell::from(format_number(t.request)),
+            Cell::from(format_number(t.found)),
+            Cell::from(format_number(t.cache_hit)),
+            Cell::from(format_number(t.cache_src_hit)),
+            Cell::from(format_number(t.cache_src_miss)),
+            Cell::from(format_number(t.cache_src_refresh)),
         ]).style(style)
     }).collect();
 
@@ -290,17 +290,3 @@ fn draw_ws_query(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(table, chunks[2]);
 }
 
-fn format_num(n: u64) -> String {
-    if n == 0 {
-        return "0".into();
-    }
-    let s = n.to_string();
-    let mut result = String::new();
-    for (i, c) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            result.push(',');
-        }
-        result.push(c);
-    }
-    result.chars().rev().collect()
-}

@@ -23,22 +23,22 @@ cargo run -- URL --search 1.2.3.4 --cont3xt-tags mytag       # cont3xt with tags
 
 ```
 src/
-  main.rs              - Entry point, clap CLI parsing, terminal setup, event loop (crossterm polling)
-  app/mod.rs           - App struct, state, fetch methods
+  main.rs              - Entry point, clap CLI parsing, terminal setup, event loop (crossterm polling), drain_c3_results()
+  app/mod.rs           - App struct, state, fetch methods, enter_expression_mode(), handle_text_input_key()
   app/types.rs         - Enums (AppMode, Tab, TimeRange, InputMode, etc.)
   app/keys.rs          - Key dispatch + expression handler
   app/keys_viewer.rs   - Viewer key handlers
   app/keys_cont3xt.rs  - Cont3xt key handler
   app/keys_parliament.rs - Parliament key handler
   app/keys_wise.rs     - WISE key handler
-  api/mod.rs           - ArkimeClient + FetchClient: HTTP calls (reqwest + digest_auth)
-  api/types.rs         - Shared types (structs, enums, parsing functions)
+  api/mod.rs           - ArkimeClient + FetchClient: HTTP calls (reqwest + digest_auth), finish_response(), digest_auth_header()
+  api/types.rs         - Shared types (structs, enums, parsing functions), str_val()
   api/auth.rs          - Web + Okta authentication flows
-  api/viewer.rs        - Viewer API methods (vr_*)
+  api/viewer.rs        - Viewer API methods (vr_*), vr_get_sorted_filtered(), vr_bulk_tag_op()
   api/cont3xt.rs       - Cont3xt API methods (c3_*)
   api/parliament.rs    - Parliament API methods (pl_*)
   api/wise.rs          - WISE API methods (ws_*)
-  ui/mod.rs            - Draw dispatch, common layout (tabs, toolbar, status bar, graph)
+  ui/mod.rs            - Draw dispatch, common layout (tabs, toolbar, status bar, graph), center_popup(), sort_header_style(), sort_header_label(), render_text_input(), format_number()
   ui/sessions.rs       - Session list/detail rendering
   ui/stats.rs          - Stats tab rendering
   ui/arkime.rs         - Summary tab + owl animation rendering
@@ -47,6 +47,22 @@ src/
   ui/wise.rs           - WISE stats + query rendering
   ui/popups.rs         - Help overlays, debug log, action menus
 ```
+
+## Shared helpers
+
+- `center_popup(width, height, area) -> Rect` — Center a popup within an area (ui/mod.rs)
+- `sort_header_style(is_sorted) -> Style` — Cyan+bold if sorted, yellow+bold otherwise (ui/mod.rs)
+- `sort_header_label(label, is_sorted, is_desc) -> String` — Append ▲/▼ arrow if sorted (ui/mod.rs)
+- `render_text_input(f, text, cursor, is_editing, title, area)` — Render scrollable text input with cursor (ui/mod.rs)
+- `format_number(n) -> String` — Format u64 with comma separators (ui/mod.rs)
+- `str_val(v, key) -> String` — Extract string from serde_json::Value or return empty string (api/types.rs)
+- `enter_expression_mode(&mut self)` — Enter expression editing mode with cursor at end (app/mod.rs)
+- `handle_text_input_key(key, text, cursor) -> bool` — Handle cursor-based text input keys (app/mod.rs)
+- `drain_c3_results(app, results_arc, sent_arc, total_arc)` — Drain streaming cont3xt results into app state (main.rs)
+- `FetchClient::finish_response(...)` — Consolidate timing, status check, logging for HTTP responses (api/mod.rs)
+- `FetchClient::digest_auth_header(...)` — Build digest auth Authorization header (api/mod.rs)
+- `ArkimeClient::vr_get_sorted_filtered(...)` — Shared stats endpoint with sort/filter params (api/viewer.rs)
+- `ArkimeClient::vr_bulk_tag_op(...)` — Shared add/remove tag operation (api/viewer.rs)
 
 ## App Mode / Multi-App
 

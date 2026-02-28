@@ -35,19 +35,41 @@ impl FetchClient {
         Ok(())
     }
 
+    async fn finish_response(&self, start: Instant, method: &str, url: &str, post_data: Option<String>, resp: reqwest::Response) -> Result<String> {
+        let first_byte = start.elapsed().as_millis() as u64;
+        let status = resp.status().as_u16();
+        let body = resp.text().await?;
+        let last_byte = start.elapsed().as_millis() as u64;
+        Self::check_status(status, &body, &self.http_log, method, url, post_data.clone(), first_byte, last_byte)?;
+        log_http(&self.http_log, method, url, post_data, status, first_byte, last_byte, Some(&body));
+        Ok(body)
+    }
+
+    fn digest_auth_header(resp: &reqwest::Response, url: &str, username: &str, password: &str, is_post: bool) -> Result<String> {
+        let www_auth = resp.headers().get("www-authenticate")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?.to_string();
+        let parsed_url = reqwest::Url::parse(url)?;
+        let uri = if let Some(q) = parsed_url.query() {
+            format!("{}?{}", parsed_url.path(), q)
+        } else { parsed_url.path().to_string() };
+        let mut prompt = digest_auth::parse(&www_auth)?;
+        if is_post {
+            let context = digest_auth::AuthContext::new_post::<_, _, _, &[u8]>(username, password, &uri, None);
+            Ok(prompt.respond(&context)?.to_header_string())
+        } else {
+            let context = digest_auth::AuthContext::new(username, password, &uri);
+            Ok(prompt.respond(&context)?.to_header_string())
+        }
+    }
+
     pub async fn fetch_url(&self, url: &str) -> Result<String> {
         let start = Instant::now();
         let username = match self.username.as_deref() {
             Some(u) => u,
             None => {
                 let resp = self.client.get(url).send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
-                return Ok(body);
+                return self.finish_response(start, "GET", url, None, resp).await;
             }
         };
         let password = self.password.as_deref().unwrap_or("");
@@ -55,72 +77,27 @@ impl FetchClient {
         match self.auth_mode {
             AuthMode::None => {
                 let resp = self.client.get(url).send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
-                Ok(body)
+                self.finish_response(start, "GET", url, None, resp).await
             }
             AuthMode::Basic => {
                 let resp = self.client.get(url)
                     .basic_auth(username, Some(password))
                     .send()
                     .await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
-                Ok(body)
+                self.finish_response(start, "GET", url, None, resp).await
             }
             AuthMode::Digest => {
                 let resp = self.client.get(url).send().await?;
                 if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
-                    let first_byte = start.elapsed().as_millis() as u64;
-                    let status = resp.status().as_u16();
-                    let body = resp.text().await?;
-                    let last_byte = start.elapsed().as_millis() as u64;
-                    Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
-                    log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
-                    return Ok(body);
+                    return self.finish_response(start, "GET", url, None, resp).await;
                 }
-                let www_auth = resp.headers().get("www-authenticate")
-                    .and_then(|v| v.to_str().ok())
-                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?.to_string();
-                let parsed_url = reqwest::Url::parse(url)?;
-                let uri = if let Some(q) = parsed_url.query() {
-                    format!("{}?{}", parsed_url.path(), q)
-                } else {
-                    parsed_url.path().to_string()
-                };
-                let context = digest_auth::AuthContext::new(username, password, &uri);
-                let mut prompt = digest_auth::parse(&www_auth)?;
-                let auth_header = prompt.respond(&context)?.to_header_string();
+                let auth_header = Self::digest_auth_header(&resp, url, username, password, false)?;
                 let resp = self.client.get(url).header("Authorization", auth_header).send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
-                Ok(body)
+                self.finish_response(start, "GET", url, None, resp).await
             }
             AuthMode::Form | AuthMode::Web | AuthMode::Okta => {
-                let mut req = self.client.get(url);
-                if let Some(ref cookie) = self.arkime_cookie {
-                    req = req.header("Cookie", cookie.as_str());
-                }
-                let resp = req.send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "GET", url, None, first_byte, last_byte)?;
-                log_http(&self.http_log, "GET", url, None, status, first_byte, last_byte, Some(&body));
-                Ok(body)
+                let resp = self.client.get(url).send().await?;
+                self.finish_response(start, "GET", url, None, resp).await
             }
         }
     }
@@ -132,13 +109,7 @@ impl FetchClient {
             Some(u) => u,
             None => {
                 let resp = self.client.post(url).form(form).send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
-                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
-                return Ok(body);
+                return self.finish_response(start, "POST", url, post_data, resp).await;
             }
         };
         let password = self.password.as_deref().unwrap_or("");
@@ -146,13 +117,7 @@ impl FetchClient {
         match self.auth_mode {
             AuthMode::None => {
                 let resp = self.client.post(url).form(form).send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
-                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
-                Ok(body)
+                self.finish_response(start, "POST", url, post_data, resp).await
             }
             AuthMode::Basic => {
                 let mut req = self.client.post(url)
@@ -162,47 +127,20 @@ impl FetchClient {
                     req = req.header(self.cookie_header_name, cookie.as_str());
                 }
                 let resp = req.send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
-                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
-                Ok(body)
+                self.finish_response(start, "POST", url, post_data, resp).await
             }
             AuthMode::Digest => {
                 let resp = self.client.post(url).send().await?;
                 if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
-                    let first_byte = start.elapsed().as_millis() as u64;
-                    let status = resp.status().as_u16();
-                    let body = resp.text().await?;
-                    let last_byte = start.elapsed().as_millis() as u64;
-                    Self::check_status(status, &body, &self.http_log, "POST", url, post_data.clone(), first_byte, last_byte)?;
-                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, last_byte, Some(&body));
-                    return Ok(body);
+                    return self.finish_response(start, "POST", url, post_data, resp).await;
                 }
-                let www_auth = resp.headers().get("www-authenticate")
-                    .and_then(|v| v.to_str().ok())
-                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?.to_string();
-                let parsed_url = reqwest::Url::parse(url)?;
-                let uri = if let Some(q) = parsed_url.query() {
-                    format!("{}?{}", parsed_url.path(), q)
-                } else { parsed_url.path().to_string() };
-                let context = digest_auth::AuthContext::new_post::<_, _, _, &[u8]>(username, password, &uri, None);
-                let mut prompt = digest_auth::parse(&www_auth)?;
-                let auth_header = prompt.respond(&context)?.to_header_string();
+                let auth_header = Self::digest_auth_header(&resp, url, username, password, true)?;
                 let mut req = self.client.post(url).header("Authorization", auth_header).form(form);
                 if let Some(ref cookie) = self.arkime_cookie {
                     req = req.header(self.cookie_header_name, cookie.as_str());
                 }
                 let resp = req.send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
-                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
-                Ok(body)
+                self.finish_response(start, "POST", url, post_data, resp).await
             }
             AuthMode::Form | AuthMode::Web | AuthMode::Okta => {
                 let mut req = self.client.post(url).form(form);
@@ -210,13 +148,7 @@ impl FetchClient {
                     req = req.header(self.cookie_header_name, cookie.as_str());
                 }
                 let resp = req.send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
-                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
-                Ok(body)
+                self.finish_response(start, "POST", url, post_data, resp).await
             }
         }
     }
@@ -232,13 +164,7 @@ impl FetchClient {
                     .header("Content-Type", "application/json")
                     .body(json_body.to_string())
                     .send().await?;
-                let first_byte = start.elapsed().as_millis() as u64;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
-                let last_byte = start.elapsed().as_millis() as u64;
-                Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
-                log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
-                return Ok(body);
+                return self.finish_response(start, "POST", url, post_data, resp).await;
             }
         };
         let password = self.password.as_deref().unwrap_or("");
@@ -249,24 +175,9 @@ impl FetchClient {
             AuthMode::Digest => {
                 let resp = self.client.post(url).send().await?;
                 if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
-                    let first_byte = start.elapsed().as_millis() as u64;
-                    let status = resp.status().as_u16();
-                    let body = resp.text().await?;
-                    let last_byte = start.elapsed().as_millis() as u64;
-                    Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
-                    log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
-                    return Ok(body);
+                    return self.finish_response(start, "POST", url, post_data, resp).await;
                 }
-                let www_auth = resp.headers().get("www-authenticate")
-                    .and_then(|v| v.to_str().ok())
-                    .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?.to_string();
-                let parsed_url = reqwest::Url::parse(url)?;
-                let uri = if let Some(q) = parsed_url.query() {
-                    format!("{}?{}", parsed_url.path(), q)
-                } else { parsed_url.path().to_string() };
-                let context = digest_auth::AuthContext::new_post::<_, _, _, &[u8]>(username, password, &uri, None);
-                let mut prompt = digest_auth::parse(&www_auth)?;
-                let auth_header = prompt.respond(&context)?.to_header_string();
+                let auth_header = Self::digest_auth_header(&resp, url, username, password, true)?;
                 self.client.post(url).header("Authorization", auth_header)
             }
             AuthMode::Form | AuthMode::Web | AuthMode::Okta => self.client.post(url),
@@ -279,15 +190,29 @@ impl FetchClient {
             req = req.header(self.cookie_header_name, cookie.as_str());
         }
         let resp = req.send().await?;
-        let first_byte = start.elapsed().as_millis() as u64;
-        let status = resp.status().as_u16();
-        let body = resp.text().await?;
-        let last_byte = start.elapsed().as_millis() as u64;
-        Self::check_status(status, &body, &self.http_log, "POST", url, post_data, first_byte, last_byte)?;
-        log_http(&self.http_log, "POST", url, None, status, first_byte, last_byte, Some(&body));
-        Ok(body)
+        self.finish_response(start, "POST", url, post_data, resp).await
     }
 }
+
+fn digest_auth_header(resp: &reqwest::Response, url: &str, username: &str, password: &str, method: &str) -> Result<String> {
+    let www_auth = resp.headers().get("www-authenticate")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| anyhow::anyhow!("No WWW-Authenticate header"))?.to_string();
+    let parsed_url = reqwest::Url::parse(url)?;
+    let uri = if let Some(q) = parsed_url.query() {
+        format!("{}?{}", parsed_url.path(), q)
+    } else { parsed_url.path().to_string() };
+    let http_method = match method {
+        "POST" => digest_auth::HttpMethod::POST,
+        "PUT" => digest_auth::HttpMethod::PUT,
+        "DELETE" => digest_auth::HttpMethod::DELETE,
+        _ => digest_auth::HttpMethod::GET,
+    };
+    let context = digest_auth::AuthContext::new_with_method::<_, _, _, &[u8]>(username, password, &uri, None, http_method);
+    let mut prompt = digest_auth::parse(&www_auth)?;
+    Ok(prompt.respond(&context)?.to_header_string())
+}
+
 #[derive(Clone)]
 pub struct ArkimeClient {
     pub(super) client: Client,
@@ -446,17 +371,7 @@ impl ArkimeClient {
                     self.extract_cookie(&resp);
                     return Ok(());
                 }
-                let www_auth = resp.headers().get("www-authenticate")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("")
-                    .to_string();
-                let parsed_url = reqwest::Url::parse(&url)?;
-                let uri = if let Some(q) = parsed_url.query() {
-                    format!("{}?{}", parsed_url.path(), q)
-                } else { parsed_url.path().to_string() };
-                let context = digest_auth::AuthContext::new(username, password, &uri);
-                let mut prompt = digest_auth::parse(&www_auth)?;
-                let auth_header = prompt.respond(&context)?.to_header_string();
+                let auth_header = digest_auth_header(&resp, &url, username, password, "GET")?;
                 self.client.get(&url).header("Authorization", auth_header).send().await?
             }
             AuthMode::Form | AuthMode::Web | AuthMode::Okta => return Ok(()), // already captured during login
@@ -512,15 +427,7 @@ impl ArkimeClient {
                     log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
                     return Ok(serde_json::from_str(&text)?);
                 }
-                let www_auth = resp.headers().get("www-authenticate")
-                    .and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-                let parsed_url = reqwest::Url::parse(url)?;
-                let uri = if let Some(q) = parsed_url.query() {
-                    format!("{}?{}", parsed_url.path(), q)
-                } else { parsed_url.path().to_string() };
-                let context = digest_auth::AuthContext::new_post::<_, _, _, &[u8]>(username, password, &uri, None);
-                let mut prompt = digest_auth::parse(&www_auth)?;
-                let auth_header = prompt.respond(&context)?.to_header_string();
+                let auth_header = digest_auth_header(&resp, url, username, password, "POST")?;
                 self.client.post(url).header("Authorization", auth_header)
             }
             AuthMode::Form | AuthMode::Web | AuthMode::Okta => self.client.post(url),
@@ -575,15 +482,7 @@ impl ArkimeClient {
                     log_http(&self.http_log, "PUT", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
                     return Ok(serde_json::from_str(&text)?);
                 }
-                let www_auth = resp.headers().get("www-authenticate")
-                    .and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-                let parsed_url = reqwest::Url::parse(url)?;
-                let uri = if let Some(q) = parsed_url.query() {
-                    format!("{}?{}", parsed_url.path(), q)
-                } else { parsed_url.path().to_string() };
-                let context = digest_auth::AuthContext::new_with_method::<_, _, _, &[u8]>(username, password, &uri, None, digest_auth::HttpMethod::PUT);
-                let mut prompt = digest_auth::parse(&www_auth)?;
-                let auth_header = prompt.respond(&context)?.to_header_string();
+                let auth_header = digest_auth_header(&resp, url, username, password, "PUT")?;
                 self.client.put(url).header("Authorization", auth_header)
             }
             AuthMode::Form | AuthMode::Web | AuthMode::Okta => self.client.put(url),
@@ -634,15 +533,7 @@ impl ArkimeClient {
                     log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
                     return Ok(serde_json::from_str(&text)?);
                 }
-                let www_auth = resp.headers().get("www-authenticate")
-                    .and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-                let parsed_url = reqwest::Url::parse(url)?;
-                let uri = if let Some(q) = parsed_url.query() {
-                    format!("{}?{}", parsed_url.path(), q)
-                } else { parsed_url.path().to_string() };
-                let context = digest_auth::AuthContext::new_with_method::<_, _, _, &[u8]>(username, password, &uri, None, digest_auth::HttpMethod::DELETE);
-                let mut prompt = digest_auth::parse(&www_auth)?;
-                let auth_header = prompt.respond(&context)?.to_header_string();
+                let auth_header = digest_auth_header(&resp, url, username, password, "DELETE")?;
                 self.client.delete(url).header("Authorization", auth_header)
             }
             AuthMode::Form | AuthMode::Web | AuthMode::Okta => self.client.delete(url),

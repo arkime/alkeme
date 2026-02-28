@@ -291,11 +291,6 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         &app.pl_issues_filter
     };
-    let filter_style = if app.input_mode == InputMode::Expression {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::White)
-    };
 
     let sort_indicator = format!("{} {}", app.pl_issues_sort.label(),
         if app.pl_issues_sort_desc { "▼" } else { "▲" });
@@ -308,23 +303,8 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
         ])
         .split(chunks[0]);
 
-    let inner_width = filter_chunks[0].width.saturating_sub(2) as usize;
-    let filter_scroll = if app.input_mode == InputMode::Expression && app.expression_cursor > inner_width {
-        (app.expression_cursor - inner_width) as u16
-    } else {
-        0
-    };
-    let filter_widget = Paragraph::new(Span::styled(filter_display.as_str(), filter_style))
-        .scroll((0, filter_scroll))
-        .block(Block::default().borders(Borders::ALL).title(" Filter (/) "));
-    f.render_widget(filter_widget, filter_chunks[0]);
-
-    if app.input_mode == InputMode::Expression {
-        f.set_cursor_position((
-            filter_chunks[0].x + (app.expression_cursor as u16 - filter_scroll) + 1,
-            filter_chunks[0].y + 1,
-        ));
-    }
+    let is_editing = app.input_mode == InputMode::Expression;
+    render_text_input(f, filter_display, app.expression_cursor, is_editing, " Filter (/) ", filter_chunks[0]);
 
     let sort_widget = Paragraph::new(Span::styled(
         &sort_indicator,
@@ -338,21 +318,17 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
     let filtered = app.pl_filtered_issues();
     let total = app.pl_issues.len();
 
-    let sort_arrow = if app.pl_issues_sort_desc { "▼" } else { "▲" };
     let pl_sort_hdr = |sort: PlIssueSort, label: &str| -> Cell {
-        let (text, style) = if app.pl_issues_sort == sort {
-            (format!("{label} {sort_arrow}"), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        } else {
-            (label.to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-        };
-        Cell::from(text).style(style)
+        let is_sorted = app.pl_issues_sort == sort;
+        Cell::from(sort_header_label(label, is_sorted, app.pl_issues_sort_desc))
+            .style(sort_header_style(is_sorted))
     };
     let header = Row::new(vec![
         pl_sort_hdr(PlIssueSort::Cluster, "Cluster"),
         pl_sort_hdr(PlIssueSort::Severity, "Severity"),
         pl_sort_hdr(PlIssueSort::Title, "Title"),
-        Cell::from("Node").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("Message").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Cell::from("Node").style(sort_header_style(false)),
+        Cell::from("Message").style(sort_header_style(false)),
         pl_sort_hdr(PlIssueSort::FirstNoticed, "First Noticed"),
         pl_sort_hdr(PlIssueSort::LastNoticed, "Last Noticed"),
     ]);

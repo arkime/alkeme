@@ -1,3 +1,4 @@
+use super::str_val;
 use anyhow::Result;
 use serde::Deserialize;
 use serde_json::Value;
@@ -62,10 +63,10 @@ pub struct PlClusterStats {
 impl PlClusterStats {
     pub fn from_value(val: &Value) -> Self {
         Self {
-            status: val.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            health_error: val.get("healthError").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            stats_error: val.get("statsError").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            es_version: val.get("esVersion").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            status: str_val(val, "status"),
+            health_error: str_val(val, "healthError"),
+            stats_error: str_val(val, "statsError"),
+            es_version: str_val(val, "esVersion"),
             delta_bps: val.get("deltaBPS").and_then(|v| v.as_f64()).unwrap_or(0.0),
             delta_tdps: val.get("deltaTDPS").and_then(|v| v.as_f64()).unwrap_or(0.0),
             monitoring: val.get("monitoring").and_then(|v| v.as_u64()).unwrap_or(0),

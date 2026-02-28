@@ -89,23 +89,17 @@ fn draw_summary_bar_chart(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_summary_table(f: &mut Frame, app: &mut App, area: Rect) {
-    let arrow = if app.vr_summary_sort_desc { "▼" } else { "▲" };
-    let sort_indicator = |sort: SummarySort, label: &str| -> String {
-        if app.vr_summary_sort == sort { format!("{label} {arrow}") } else { label.to_string() }
+    let sort_lbl = |sort: SummarySort, label: &str| -> String {
+        sort_header_label(label, app.vr_summary_sort == sort, app.vr_summary_sort_desc)
     };
-
-    let sort_style = |sort: SummarySort| -> Style {
-        if app.vr_summary_sort == sort {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        }
+    let sort_sty = |sort: SummarySort| -> Style {
+        sort_header_style(app.vr_summary_sort == sort)
     };
     let header = Row::new(vec![
-        Cell::from(sort_indicator(SummarySort::Value, "Value")).style(sort_style(SummarySort::Value)),
-        Cell::from(sort_indicator(SummarySort::Sessions, "Sessions")).style(sort_style(SummarySort::Sessions)),
-        Cell::from(sort_indicator(SummarySort::Packets, "Packets")).style(sort_style(SummarySort::Packets)),
-        Cell::from(sort_indicator(SummarySort::Bytes, "Bytes")).style(sort_style(SummarySort::Bytes)),
+        Cell::from(sort_lbl(SummarySort::Value, "Value")).style(sort_sty(SummarySort::Value)),
+        Cell::from(sort_lbl(SummarySort::Sessions, "Sessions")).style(sort_sty(SummarySort::Sessions)),
+        Cell::from(sort_lbl(SummarySort::Packets, "Packets")).style(sort_sty(SummarySort::Packets)),
+        Cell::from(sort_lbl(SummarySort::Bytes, "Bytes")).style(sort_sty(SummarySort::Bytes)),
     ])
     .height(1)
     .bottom_margin(0);
@@ -146,12 +140,7 @@ fn draw_summary_table(f: &mut Frame, app: &mut App, area: Rect) {
 pub(super) fn draw_field_selector(f: &mut Frame, app: &App, area: Rect) {
     let popup_width = 60u16.min(area.width.saturating_sub(4));
     let popup_height = 20u16.min(area.height.saturating_sub(4));
-    let popup_area = Rect::new(
-        area.x + (area.width.saturating_sub(popup_width)) / 2,
-        area.y + (area.height.saturating_sub(popup_height)) / 2,
-        popup_width,
-        popup_height,
-    );
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 

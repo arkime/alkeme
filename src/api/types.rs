@@ -2,6 +2,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 
+/// Extract a string field from a JSON Value, returning empty string if missing
+pub fn str_val(v: &Value, key: &str) -> String {
+    v.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+}
+
 #[derive(Clone)]
 pub struct HttpLogEntry {
     pub timestamp: chrono::DateTime<chrono::Local>,

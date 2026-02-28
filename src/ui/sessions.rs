@@ -17,18 +17,9 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, col)| {
-            let label = if i == app.vr_sort_column {
-                let arrow = if app.vr_sort_desc { "▼" } else { "▲" };
-                format!("{}{arrow}", col.label)
-            } else {
-                col.label.clone()
-            };
-            let style = if i == app.vr_sort_column {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-            };
-            Cell::from(label).style(style)
+            let is_sorted = i == app.vr_sort_column;
+            let label = sort_header_label(&col.label, is_sorted, app.vr_sort_desc);
+            Cell::from(label).style(sort_header_style(is_sorted))
         });
     let header = Row::new(header_cells).height(1);
 
@@ -97,9 +88,7 @@ fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
     // Centered overlay: 80% width, 80% height
     let popup_width = (area.width as f32 * 0.8) as u16;
     let popup_height = (area.height as f32 * 0.8) as u16;
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     // Clear the popup area
     f.render_widget(Clear, popup_area);
@@ -213,9 +202,7 @@ pub(super) fn draw_detail_action_menu(f: &mut Frame, app: &App, area: Rect) {
         // Value selection sub-menu
         let popup_width = 40u16;
         let popup_height = (values.len() as u16) + 3;
-        let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-        let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-        let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+        let popup_area = center_popup(popup_width, popup_height, area);
 
         f.render_widget(Clear, popup_area);
 
@@ -252,9 +239,7 @@ pub(super) fn draw_detail_action_menu(f: &mut Frame, app: &App, area: Rect) {
 
     let popup_width = 40u16;
     let popup_height = (DetailActionMenu::OPTIONS.len() as u16) + 4; // borders + title + field line
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 

@@ -79,9 +79,7 @@ impl App {
                 self.vr_fetch_sessions().await;
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
-                self.expression_edit = self.expression.clone();
-                self.expression_cursor = self.expression_edit.len();
-                self.input_mode = InputMode::Expression;
+                self.enter_expression_mode();
             }
             KeyCode::Char('t') => {
                 self.time_range = self.time_range.next();
@@ -531,21 +529,8 @@ impl App {
                             self.vr_show_layout_popup = false;
                         }
                     }
-                    KeyCode::Backspace => {
-                        if self.vr_layout_save_cursor > 0 {
-                            self.vr_layout_save_cursor -= 1;
-                            self.vr_layout_save_name.remove(self.vr_layout_save_cursor);
-                        }
-                    }
-                    KeyCode::Left => {
-                        self.vr_layout_save_cursor = self.vr_layout_save_cursor.saturating_sub(1);
-                    }
-                    KeyCode::Right => {
-                        self.vr_layout_save_cursor = (self.vr_layout_save_cursor + 1).min(self.vr_layout_save_name.len());
-                    }
-                    KeyCode::Char(c) => {
-                        self.vr_layout_save_name.insert(self.vr_layout_save_cursor, c);
-                        self.vr_layout_save_cursor += 1;
+                    KeyCode::Backspace | KeyCode::Left | KeyCode::Right | KeyCode::Char(_) => {
+                        handle_text_input_key(key.code, &mut self.vr_layout_save_name, &mut self.vr_layout_save_cursor);
                     }
                     _ => {}
                 }
@@ -626,25 +611,8 @@ impl App {
                     KeyCode::Tab => {
                         self.vr_view_save_columns = !self.vr_view_save_columns;
                     }
-                    KeyCode::Left => {
-                        if self.vr_view_save_cursor > 0 {
-                            self.vr_view_save_cursor -= 1;
-                        }
-                    }
-                    KeyCode::Right => {
-                        if self.vr_view_save_cursor < self.vr_view_save_name.len() {
-                            self.vr_view_save_cursor += 1;
-                        }
-                    }
-                    KeyCode::Char(c) => {
-                        self.vr_view_save_name.insert(self.vr_view_save_cursor, c);
-                        self.vr_view_save_cursor += 1;
-                    }
-                    KeyCode::Backspace => {
-                        if self.vr_view_save_cursor > 0 {
-                            self.vr_view_save_cursor -= 1;
-                            self.vr_view_save_name.remove(self.vr_view_save_cursor);
-                        }
+                    KeyCode::Backspace | KeyCode::Left | KeyCode::Right | KeyCode::Char(_) => {
+                        handle_text_input_key(key.code, &mut self.vr_view_save_name, &mut self.vr_view_save_cursor);
                     }
                     _ => {}
                 }
@@ -886,9 +854,7 @@ impl App {
                 self.input_mode = InputMode::DetailFilter;
             }
             KeyCode::Char('E') => {
-                self.expression_edit = self.expression.clone();
-                self.expression_cursor = self.expression_edit.len();
-                self.input_mode = InputMode::Expression;
+                self.enter_expression_mode();
             }
             KeyCode::Char('p') => {
                 self.request_packets();
@@ -1504,9 +1470,7 @@ impl App {
                 }
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
-                self.expression_edit = self.expression.clone();
-                self.expression_cursor = self.expression_edit.len();
-                self.input_mode = InputMode::Expression;
+                self.enter_expression_mode();
             }
             KeyCode::Char('f') => {
                 self.vr_field_filter.clear();

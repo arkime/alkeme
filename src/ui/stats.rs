@@ -28,28 +28,8 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
     } else {
         &app.vr_stats_filter
     };
-    let filter_style = if app.input_mode == InputMode::Expression {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::White)
-    };
-    let inner_width_stats = toolbar_chunks[1].width.saturating_sub(2) as usize;
-    let filter_scroll = if app.input_mode == InputMode::Expression && app.expression_cursor > inner_width_stats {
-        (app.expression_cursor - inner_width_stats) as u16
-    } else {
-        0
-    };
-    let filter_widget = Paragraph::new(Span::styled(filter_display.as_str(), filter_style))
-        .scroll((0, filter_scroll))
-        .block(Block::default().borders(Borders::ALL).title(" Filter (/) "));
-    f.render_widget(filter_widget, toolbar_chunks[1]);
-
-    if app.input_mode == InputMode::Expression {
-        f.set_cursor_position((
-            toolbar_chunks[1].x + (app.expression_cursor as u16 - filter_scroll) + 1,
-            toolbar_chunks[1].y + 1,
-        ));
-    }
+    let is_editing = app.input_mode == InputMode::Expression;
+    render_text_input(f, filter_display, app.expression_cursor, is_editing, " Filter (/) ", toolbar_chunks[1]);
 }
 
 pub(super) fn draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
@@ -63,17 +43,9 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
     let columns = app.vr_stats_tab.columns();
 
     let header_cells = columns.iter().enumerate().map(|(i, (field, label, _))| {
-        let text = if i == app.vr_stats_sort_column {
-            let arrow = if app.vr_stats_sort_desc { "▼" } else { "▲" };
-            format!("{label}{arrow}")
-        } else {
-            label.to_string()
-        };
-        let style = if i == app.vr_stats_sort_column {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        };
+        let is_sorted = i == app.vr_stats_sort_column;
+        let text = sort_header_label(label, is_sorted, app.vr_stats_sort_desc);
+        let style = sort_header_style(is_sorted);
         let line = if is_numeric_field(field) {
             Line::from(text).alignment(Alignment::Right)
         } else {
@@ -210,9 +182,7 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
 
     let popup_width = (area.width as f32 * 0.8) as u16;
     let popup_height = (area.height as f32 * 0.8) as u16;
-    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+    let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 

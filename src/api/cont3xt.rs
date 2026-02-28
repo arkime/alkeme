@@ -37,16 +37,16 @@ impl ArkimeClient {
         let mut overviews = Vec::new();
         if let Some(data) = parsed.get("overviews").and_then(|d| d.as_array()) {
             for item in data {
-                let id = item.get("_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let itype = item.get("iType").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let id = str_val(item, "_id");
+                let name = str_val(item, "name");
+                let title = str_val(item, "title");
+                let itype = str_val(item, "iType");
                 let fields = item.get("fields").and_then(|v| v.as_array())
                     .map(|arr| arr.iter().map(|f| {
                         Cont3xtOverviewField {
                             field_type: f.get("type").and_then(|v| v.as_str()).unwrap_or("linked").to_string(),
-                            from: f.get("from").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            field: f.get("field").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            from: str_val(f, "from"),
+                            field: str_val(f, "field"),
                             alias: f.get("alias").and_then(|v| v.as_str()).map(String::from),
                             custom: if f.get("type").and_then(|v| v.as_str()) == Some("custom") {
                                 Some(f.clone())
@@ -78,8 +78,8 @@ impl ArkimeClient {
             for item in data {
                 let id = item.get("_id").or_else(|| item.get("id"))
                     .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let creator = item.get("creator").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let name = str_val(item, "name");
+                let creator = str_val(item, "creator");
                 let integrations: Vec<String> = item.get("integrations")
                     .and_then(|v| v.as_array())
                     .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
@@ -140,19 +140,19 @@ impl ArkimeClient {
         let mut groups = Vec::new();
         if let Some(arr) = parsed.get("linkGroups").and_then(|v| v.as_array()) {
             for g in arr {
-                let name = g.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                let name = str_val(g, "name");
                 let links_arr = g.get("links").and_then(|l| l.as_array());
                 let mut links = Vec::new();
                 if let Some(larr) = links_arr {
                     for l in larr {
-                        let lname = l.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                        let lurl = l.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
+                        let lname = str_val(l, "name");
+                        let lurl = str_val(l, "url");
                         let itypes: Vec<String> = l.get("itypes")
                             .and_then(|i| i.as_array())
                             .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
                             .unwrap_or_default();
                         if lname == "----------" { continue; } // skip separators
-                        let info = l.get("infoField").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                        let info = str_val(l, "infoField");
                         links.push(Cont3xtLink { name: lname, url: lurl, itypes, info });
                     }
                 }

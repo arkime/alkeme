@@ -293,29 +293,8 @@ fn draw_toolbar(f: &mut Frame, app: &App, area: Rect) {
     } else {
         &app.expression
     };
-    let expr_style = if app.input_mode == InputMode::Expression {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::White)
-    };
-    let inner_width = toolbar_chunks[1].width.saturating_sub(2) as usize;
-    let expr_scroll = if app.expression_cursor > inner_width {
-        (app.expression_cursor - inner_width) as u16
-    } else {
-        0
-    };
-    let expr_widget = Paragraph::new(Span::styled(expr_display.as_str(), expr_style))
-        .scroll((0, expr_scroll))
-        .block(Block::default().borders(Borders::ALL).title(" Expression (/) "));
-    f.render_widget(expr_widget, toolbar_chunks[1]);
-
-    // Show cursor in expression field when editing
-    if app.input_mode == InputMode::Expression {
-        f.set_cursor_position((
-            toolbar_chunks[1].x + (app.expression_cursor as u16 - expr_scroll) + 1,
-            toolbar_chunks[1].y + 1,
-        ));
-    }
+    let is_editing = app.input_mode == InputMode::Expression;
+    render_text_input(f, expr_display, app.expression_cursor, is_editing, " Expression (/) ", toolbar_chunks[1]);
 }
 
 
@@ -460,6 +439,68 @@ fn format_duration_ms(ms: f64) -> String {
         format!("{:.1}w", secs / (86400.0 * 7.0))
     } else {
         format!("{:.1}mo", secs / (86400.0 * 30.0))
+    }
+}
+
+/// Center a popup of given width/height within an area
+pub(super) fn center_popup(width: u16, height: u16, area: Rect) -> Rect {
+    Rect::new(
+        area.x + (area.width.saturating_sub(width)) / 2,
+        area.y + (area.height.saturating_sub(height)) / 2,
+        width.min(area.width),
+        height.min(area.height),
+    )
+}
+
+/// Style a table header cell with sort indicator
+pub(super) fn sort_header_style(is_sorted: bool) -> Style {
+    if is_sorted {
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+    }
+}
+
+/// Format a column label with sort arrow if this column is sorted
+pub(super) fn sort_header_label(label: &str, is_sorted: bool, is_desc: bool) -> String {
+    if is_sorted {
+        let arrow = if is_desc { "▼" } else { "▲" };
+        format!("{label}{arrow}")
+    } else {
+        label.to_string()
+    }
+}
+
+/// Render a text input field with scroll and cursor positioning
+pub(super) fn render_text_input(
+    f: &mut Frame,
+    text: &str,
+    cursor: usize,
+    is_editing: bool,
+    title: &str,
+    area: Rect,
+) {
+    let style = if is_editing {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let scroll = if is_editing && cursor > inner_width {
+        (cursor - inner_width) as u16
+    } else {
+        0
+    };
+    let widget = Paragraph::new(Span::styled(text, style))
+        .scroll((0, scroll))
+        .block(Block::default().borders(Borders::ALL).title(title));
+    f.render_widget(widget, area);
+
+    if is_editing {
+        f.set_cursor_position((
+            area.x + (cursor as u16 - scroll) + 1,
+            area.y + 1,
+        ));
     }
 }
 
