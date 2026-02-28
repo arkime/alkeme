@@ -180,6 +180,17 @@ pub struct App {
     pub c3_stats_filtering: bool,
     pub c3_stats_sort_col: usize,
     pub c3_stats_sort_desc: bool,
+    // Cont3xt history
+    pub c3_history_data: Vec<serde_json::Value>,
+    pub c3_history_total: usize,
+    pub c3_history_page: usize,  // 1-indexed
+    pub c3_history_selected: usize,
+    pub c3_history_table_state: ratatui::widgets::TableState,
+    pub c3_history_filter: String,
+    pub c3_history_filtering: bool,
+    pub c3_history_sort_col: usize,
+    pub c3_history_sort_desc: bool,
+    pub c3_history_loaded: bool,
     // Parliament state
     pub pl_groups: Vec<PlGroup>,
     pub pl_stats: HashMap<String, PlClusterStats>,
@@ -402,6 +413,16 @@ impl App {
             c3_stats_filtering: false,
             c3_stats_sort_col: 0,
             c3_stats_sort_desc: false,
+            c3_history_data: Vec::new(),
+            c3_history_total: 0,
+            c3_history_page: 1,
+            c3_history_selected: 0,
+            c3_history_table_state: ratatui::widgets::TableState::default(),
+            c3_history_filter: String::new(),
+            c3_history_filtering: false,
+            c3_history_sort_col: 0,
+            c3_history_sort_desc: true,
+            c3_history_loaded: false,
             // Parliament state
             pl_groups: Vec::new(),
             pl_stats: HashMap::new(),
@@ -883,6 +904,70 @@ impl App {
         match self.c3_stats_tab {
             C3StatsTab::Integrations => &self.c3_stats_data,
             C3StatsTab::ITypes => &self.c3_itype_stats_data,
+        }
+    }
+
+    pub fn c3_history_sort_field(&self) -> &str {
+        C3_HISTORY_COLUMNS.get(self.c3_history_sort_col).map(|c| c.0).unwrap_or("issuedAt")
+    }
+
+    pub fn c3_history_filtered_len(&self) -> usize {
+        if self.c3_history_filter.is_empty() {
+            self.c3_history_data.len()
+        } else {
+            let filter_lower = self.c3_history_filter.to_lowercase();
+            self.c3_history_data.iter().filter(|item| {
+                item.get("indicator").and_then(|v| v.as_str()).unwrap_or("")
+                    .to_lowercase().contains(&filter_lower)
+                || item.get("iType").and_then(|v| v.as_str()).unwrap_or("")
+                    .to_lowercase().contains(&filter_lower)
+                || item.get("tags").and_then(|v| v.as_array())
+                    .map(|a| a.iter().any(|t| t.as_str().unwrap_or("").to_lowercase().contains(&filter_lower)))
+                    .unwrap_or(false)
+            }).count()
+        }
+    }
+
+    pub async fn c3_fetch_history(&mut self) {
+        let sort_by = self.c3_history_sort_field().to_string();
+        let sort_order = if self.c3_history_sort_desc { "desc" } else { "asc" };
+        match self.client.c3_get_audits(&sort_by, sort_order, self.c3_history_page, 100).await {
+            Ok(val) => {
+                if let Some(audits) = val.get("audits").and_then(|v| v.as_array()) {
+                    self.c3_history_data = audits.clone();
+                }
+                self.c3_history_total = val.get("total").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                self.c3_history_loaded = true;
+                self.c3_history_selected = 0;
+                self.c3_history_table_state.select(Some(0));
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching history: {e}");
+            }
+        }
+    }
+
+    pub async fn c3_delete_history(&mut self, id: &str) {
+        match self.client.c3_delete_audit(id).await {
+            Ok(val) => {
+                if val.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    self.c3_history_data.retain(|item| {
+                        item.get("_id").and_then(|v| v.as_str()).unwrap_or("") != id
+                    });
+                    self.c3_history_total = self.c3_history_total.saturating_sub(1);
+                    if self.c3_history_selected >= self.c3_history_data.len() && self.c3_history_selected > 0 {
+                        self.c3_history_selected -= 1;
+                    }
+                    self.c3_history_table_state.select(Some(self.c3_history_selected));
+                    self.status_msg = "History entry deleted".to_string();
+                } else {
+                    let text = val.get("text").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+                    self.status_msg = format!("Delete failed: {text}");
+                }
+            }
+            Err(e) => {
+                self.status_msg = format!("Error deleting history: {e}");
+            }
         }
     }
 

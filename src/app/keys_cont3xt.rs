@@ -440,6 +440,30 @@ impl App {
             return;
         }
 
+        // C3 history filter mode
+        if self.c3_history_filtering {
+            match key.code {
+                KeyCode::Esc => {
+                    self.c3_history_filtering = false;
+                }
+                KeyCode::Enter => {
+                    self.c3_history_filtering = false;
+                }
+                KeyCode::Backspace => {
+                    self.c3_history_filter.pop();
+                    self.c3_history_selected = 0;
+                    self.c3_history_table_state.select(Some(0));
+                }
+                KeyCode::Char(c) => {
+                    self.c3_history_filter.push(c);
+                    self.c3_history_selected = 0;
+                    self.c3_history_table_state.select(Some(0));
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Tab => {
                 self.next_tab();
@@ -448,12 +472,22 @@ impl App {
                         tokio::runtime::Handle::current().block_on(self.c3_fetch_stats())
                     });
                 }
+                if self.active_tab == Tab::History && !self.c3_history_loaded {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(self.c3_fetch_history())
+                    });
+                }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
                 if self.active_tab == Tab::C3Stats && self.c3_stats_data.is_empty() {
                     tokio::task::block_in_place(|| {
                         tokio::runtime::Handle::current().block_on(self.c3_fetch_stats())
+                    });
+                }
+                if self.active_tab == Tab::History && !self.c3_history_loaded {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(self.c3_fetch_history())
                     });
                 }
             }
@@ -578,6 +612,12 @@ impl App {
                         self.c3_stats_selected = (self.c3_stats_selected + self.visible_rows).min(filtered_len - 1);
                         self.c3_stats_table_state.select(Some(self.c3_stats_selected));
                     }
+                } else if self.active_tab == Tab::History {
+                    let len = self.c3_history_filtered_len();
+                    if len > 0 {
+                        self.c3_history_selected = (self.c3_history_selected + self.visible_rows).min(len - 1);
+                        self.c3_history_table_state.select(Some(self.c3_history_selected));
+                    }
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -600,6 +640,9 @@ impl App {
                 } else if self.active_tab == Tab::C3Stats {
                     self.c3_stats_selected = self.c3_stats_selected.saturating_sub(self.visible_rows);
                     self.c3_stats_table_state.select(Some(self.c3_stats_selected));
+                } else if self.active_tab == Tab::History {
+                    self.c3_history_selected = self.c3_history_selected.saturating_sub(self.visible_rows);
+                    self.c3_history_table_state.select(Some(self.c3_history_selected));
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -627,6 +670,12 @@ impl App {
                         self.c3_stats_selected = (self.c3_stats_selected + 1).min(filtered_len - 1);
                         self.c3_stats_table_state.select(Some(self.c3_stats_selected));
                     }
+                } else if self.active_tab == Tab::History {
+                    let len = self.c3_history_filtered_len();
+                    if len > 0 {
+                        self.c3_history_selected = (self.c3_history_selected + 1).min(len - 1);
+                        self.c3_history_table_state.select(Some(self.c3_history_selected));
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -644,6 +693,9 @@ impl App {
                 } else if self.active_tab == Tab::C3Stats {
                     self.c3_stats_selected = self.c3_stats_selected.saturating_sub(1);
                     self.c3_stats_table_state.select(Some(self.c3_stats_selected));
+                } else if self.active_tab == Tab::History {
+                    self.c3_history_selected = self.c3_history_selected.saturating_sub(1);
+                    self.c3_history_table_state.select(Some(self.c3_history_selected));
                 }
             }
             KeyCode::PageDown => {
@@ -660,11 +712,20 @@ impl App {
                 if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
                     self.c3_detail_scroll = 0;
                     self.c3_detail_hscroll = 0;
+                } else if self.active_tab == Tab::History {
+                    self.c3_history_selected = 0;
+                    self.c3_history_table_state.select(Some(0));
                 }
             }
             KeyCode::End => {
                 if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Detail {
                     self.c3_detail_scroll = u16::MAX;
+                } else if self.active_tab == Tab::History {
+                    let len = self.c3_history_filtered_len();
+                    if len > 0 {
+                        self.c3_history_selected = len - 1;
+                        self.c3_history_table_state.select(Some(self.c3_history_selected));
+                    }
                 }
             }
             KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -689,6 +750,12 @@ impl App {
                             self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_sub(4);
                         }
                     }
+                } else if self.active_tab == Tab::History && self.c3_history_page > 1 {
+                    self.c3_history_page -= 1;
+                    self.c3_history_selected = 0;
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(self.c3_fetch_history())
+                    });
                 }
             }
             KeyCode::Right => {
@@ -704,6 +771,15 @@ impl App {
                         Cont3xtFocus::Detail => {
                             self.c3_detail_hscroll = self.c3_detail_hscroll.saturating_add(4);
                         }
+                    }
+                } else if self.active_tab == Tab::History {
+                    let total_pages = (self.c3_history_total + 99) / 100;
+                    if self.c3_history_page < total_pages {
+                        self.c3_history_page += 1;
+                        self.c3_history_selected = 0;
+                        tokio::task::block_in_place(|| {
+                            tokio::runtime::Handle::current().block_on(self.c3_fetch_history())
+                        });
                     }
                 }
             }
@@ -728,6 +804,59 @@ impl App {
             }
             KeyCode::Char('S') if self.active_tab == Tab::C3Stats => {
                 self.c3_stats_sort_desc = !self.c3_stats_sort_desc;
+            }
+            // History tab keys
+            KeyCode::Char('/') if self.active_tab == Tab::History => {
+                self.c3_history_filtering = true;
+            }
+            KeyCode::Char('s') if self.active_tab == Tab::History => {
+                let sortable_cols: Vec<usize> = C3_HISTORY_COLUMNS.iter().enumerate()
+                    .filter(|(_, c)| c.3).map(|(i, _)| i).collect();
+                if let Some(pos) = sortable_cols.iter().position(|&i| i == self.c3_history_sort_col) {
+                    self.c3_history_sort_col = sortable_cols[(pos + 1) % sortable_cols.len()];
+                } else if !sortable_cols.is_empty() {
+                    self.c3_history_sort_col = sortable_cols[0];
+                }
+                self.c3_history_page = 1;
+                self.c3_history_selected = 0;
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(self.c3_fetch_history())
+                });
+            }
+            KeyCode::Char('S') if self.active_tab == Tab::History => {
+                self.c3_history_sort_desc = !self.c3_history_sort_desc;
+                self.c3_history_page = 1;
+                self.c3_history_selected = 0;
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(self.c3_fetch_history())
+                });
+            }
+            KeyCode::Char('r') if self.active_tab == Tab::History => {
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(self.c3_fetch_history())
+                });
+            }
+            KeyCode::Char('d') if self.active_tab == Tab::History => {
+                if let Some(item) = self.c3_history_data.get(self.c3_history_selected) {
+                    if let Some(id) = item.get("_id").and_then(|v| v.as_str()) {
+                        let id = id.to_string();
+                        tokio::task::block_in_place(|| {
+                            tokio::runtime::Handle::current().block_on(self.c3_delete_history(&id))
+                        });
+                    }
+                }
+            }
+            KeyCode::Enter if self.active_tab == Tab::History => {
+                // Re-run the search from the selected history entry
+                if let Some(item) = self.c3_history_data.get(self.c3_history_selected) {
+                    let indicator = item.get("indicator").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    if !indicator.is_empty() {
+                        self.expression = indicator;
+                        self.active_tab = Tab::Search;
+                        self.c3_focus = Cont3xtFocus::Results;
+                        self.c3_request_search();
+                    }
+                }
             }
             _ => {}
         }

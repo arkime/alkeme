@@ -61,6 +61,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Detail filter** — press `/` in the detail panel to filter fields by text; section headers shown only when matching data exists
 - **Card definition** — press `C` in detail to view card/overview definition; `s` to save to `/tmp/alkeme-card.txt`
 - **Overviews** — indicator headers are selectable in the results tree and show a cross-integration overview in the detail pane; press `o` to choose from available overviews; `R` toggles debug mode showing all fields including missing data
+- **History** — browse search audit history with sortable, filterable table; server-side pagination with `←`/`→`; `Enter` re-runs a past search; `d` deletes an entry
 
 ### Parliament Mode
 - **Cluster dashboard** — groups displayed with clusters showing health status (●green/●yellow/●red), bytes/sec, drops/sec, active sessions, node counts, ES info, and inline issues
@@ -201,11 +202,10 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `j` / `k` / `↑` / `↓` | Navigate results list or scroll detail |
 | `Shift+↑` / `Shift+↓` | Page up / down; jump to next/prev indicator (results) |
 | `PgUp` / `PgDn` | Page up / down (detail) |
-| `←` / `→` | Jump to top / bottom (results); scroll detail left / right |
 | `Shift+←` / `Shift+→` | Fast scroll detail left / right; word jump in expression |
 | `Home` | Jump to top, reset horizontal scroll |
 | `End` | Jump to bottom |
-| `Enter` | Open detail panel (results); close detail panel uses `Esc` |
+| `Enter` | Open detail panel (results); re-run search (History); close detail uses `Esc` |
 | `Esc` | Return to results from detail; close popups |
 | `/` | Edit search indicator (results); filter detail fields (detail) |
 | `E` | Edit search indicator |
@@ -215,7 +215,10 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `i` | Integration filter (toggle on/off, `a`:all, `n`:none, `!`:invert, `/`:filter) |
 | `Shift+I` | Open views popup (select/create/delete integration views) |
 | `l` | Link groups for selected indicator (Enter opens in browser) |
-| `r` | Re-run search |
+| `r` | Re-run search; refresh (Stats/History) |
+| `s` / `S` | Next sort column / toggle direction (Stats/History) |
+| `d` | Delete history entry (History) |
+| `←` / `→` | Previous / next page (History); jump to top/bottom (results); scroll detail |
 | `D` | HTTP debug log (↑/↓ navigate, Enter expand, Esc collapse) |
 | `h` / `?` | Show help |
 | `q` | Quit |

@@ -48,13 +48,8 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
             c3_draw_stats(f, app, stats_area);
         }
         Tab::History => {
-            let block = Block::default().borders(Borders::ALL).title(" History ");
-            f.render_widget(block, chunks[1]);
-            let block = Block::default().borders(Borders::ALL).title(" Query History ");
-            let placeholder = Paragraph::new("  History coming soon...")
-                .style(Style::default().fg(Color::DarkGray))
-                .block(block);
-            f.render_widget(placeholder, chunks[2]);
+            let history_area = Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, chunks[1].height + chunks[2].height);
+            c3_draw_history(f, app, history_area);
         }
         Tab::Settings => {
             let block = Block::default().borders(Borders::ALL).title(" Settings ");
@@ -1076,6 +1071,113 @@ fn c3_draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
         .row_highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan));
     app.c3_stats_table_state.select(Some(app.c3_stats_selected));
     f.render_stateful_widget(table, chunks[1], &mut app.c3_stats_table_state);
+}
+
+fn c3_draw_history(f: &mut Frame, app: &mut App, area: Rect) {
+    let columns = C3_HISTORY_COLUMNS;
+
+    // Client-side filter
+    let filter_lower = app.c3_history_filter.to_lowercase();
+    let filtered: Vec<&serde_json::Value> = app.c3_history_data.iter()
+        .filter(|item| {
+            if app.c3_history_filter.is_empty() { return true; }
+            item.get("indicator").and_then(|v| v.as_str()).unwrap_or("")
+                .to_lowercase().contains(&filter_lower)
+            || item.get("iType").and_then(|v| v.as_str()).unwrap_or("")
+                .to_lowercase().contains(&filter_lower)
+            || item.get("tags").and_then(|v| v.as_array())
+                .map(|a| a.iter().any(|t| t.as_str().unwrap_or("").to_lowercase().contains(&filter_lower)))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    // Build header
+    let header_cells: Vec<Cell> = columns.iter().enumerate().map(|(i, &(_, label, _, sortable))| {
+        let arrow = if i == app.c3_history_sort_col {
+            if app.c3_history_sort_desc { " ▼" } else { " ▲" }
+        } else { "" };
+        let text = format!("{label}{arrow}");
+        let style = if i == app.c3_history_sort_col {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else if sortable {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)
+        };
+        Cell::from(text).style(style)
+    }).collect();
+    let header = Row::new(header_cells).height(1);
+
+    // Build rows
+    let rows: Vec<Row> = filtered.iter().map(|item| {
+        let cells: Vec<Cell> = columns.iter().map(|&(field, _, _, _)| {
+            let text = match field {
+                "issuedAt" => {
+                    if let Some(ms) = item.get("issuedAt").and_then(|v| v.as_u64()) {
+                        format_epoch_short(ms as f64)
+                    } else { "-".into() }
+                }
+                "iType" => item.get("iType").and_then(|v| v.as_str()).unwrap_or("-").to_string(),
+                "indicator" => item.get("indicator").and_then(|v| v.as_str()).unwrap_or("-").to_string(),
+                "tags" => {
+                    item.get("tags").and_then(|v| v.as_array())
+                        .map(|a| a.iter().filter_map(|t| t.as_str()).collect::<Vec<_>>().join(", "))
+                        .unwrap_or_else(|| "-".into())
+                }
+                "resultCount" => {
+                    item.get("resultCount").and_then(|v| v.as_u64())
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "?".into())
+                }
+                "took" => {
+                    item.get("took").and_then(|v| v.as_u64())
+                        .map(|v| format!("{}ms", v))
+                        .unwrap_or_else(|| "?".into())
+                }
+                _ => "-".into(),
+            };
+            let style = match field {
+                "resultCount" | "took" => Style::default().fg(Color::White),
+                "iType" => Style::default().fg(Color::Yellow),
+                _ => Style::default(),
+            };
+            Cell::from(text).style(style)
+        }).collect();
+        Row::new(cells)
+    }).collect();
+
+    // Indicator column gets remaining width
+    let widths: Vec<Constraint> = columns.iter().map(|&(field, _, w, _)| {
+        if field == "indicator" { Constraint::Min(w) } else { Constraint::Length(w) }
+    }).collect();
+
+    let filter_info = if app.c3_history_filtering {
+        format!(" /{}█ ", app.c3_history_filter)
+    } else if !app.c3_history_filter.is_empty() {
+        format!(" /{} ", app.c3_history_filter)
+    } else {
+        String::new()
+    };
+
+    let total_pages = (app.c3_history_total + 99) / 100;
+    let page_start = (app.c3_history_page - 1) * 100 + 1;
+    let page_end = (page_start + app.c3_history_data.len()).saturating_sub(1);
+    let page_info = if app.c3_history_total > 0 {
+        format!(" [{}-{} of {}] ", page_start, page_end, app.c3_history_total)
+    } else {
+        " [0] ".to_string()
+    };
+    let nav = if total_pages > 1 {
+        format!("◄ {}/{} ► ", app.c3_history_page, total_pages)
+    } else { String::new() };
+
+    let title = format!(" History{}{}{}", page_info, nav, filter_info);
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .row_highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan));
+    app.c3_history_table_state.select(Some(app.c3_history_selected));
+    f.render_stateful_widget(table, area, &mut app.c3_history_table_state);
 }
 
 fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {

@@ -173,6 +173,10 @@ src/
 | Shift+I | Open views popup (select/create/delete integration views) |
 | r | Re-run search |
 | l | Link groups for selected indicator (Enter opens in browser, / filter) |
+| s | Next sort column (History/Stats); cycle source (WISE Query) |
+| S | Toggle sort direction (History/Stats) |
+| d | Delete history entry (History tab) |
+| ← / → | Previous/next page (History); jump to top/bottom (results); scroll detail |
 | D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
 | h / ? | Show help |
 | q | Quit |
@@ -349,6 +353,8 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - `c3_active_view_id`, `c3_active_view_name` — active integration view ID/name (shown in search bar label)
 - `c3_stats_table_state` — TableState for auto-scrolling stats table
 - `c3_link_groups`, `c3_show_link_popup`, `c3_link_popup_selected`, `c3_link_popup_filter`, `c3_link_popup_filtering`, `c3_link_flat`
+- `c3_history_data`, `c3_history_total`, `c3_history_page` (1-indexed), `c3_history_selected`, `c3_history_table_state`
+- `c3_history_filter`, `c3_history_filtering`, `c3_history_sort_col`, `c3_history_sort_desc`, `c3_history_loaded`
 
 ### Results tree hierarchy
 - Results panel shows indicators in a tree structure: parent indicators contain child indicators
@@ -639,6 +645,10 @@ All endpoints are relative to base_url. Use `flatten=1` to get dot-notation fiel
 | `/api/views` | GET | List saved views | returns `{data: [...]}` |
 | `/api/view` | POST | Create a view | body: `{name, expression}` |
 | `/api/view/:id` | DELETE | Delete a view | |
+| `/api/audits` | GET | List audit/history entries | `sortBy`, `sortOrder`, `page` (1-indexed), `itemsPerPage`, `searchTerm`, `startMs`, `stopMs` |
+| `/api/audit/:id` | DELETE | Delete a history entry | |
+| `/api/overview` | GET | List overview definitions | returns `{overviews: [...]}` |
+| `/api/integration/stats` | GET | Integration stats | returns `{stats: [...], itypeStats: [...]}` |
 
 Session fields use dot notation with `flatten=1`: `source.ip`, `destination.port`, `http.uri`, `dns.host`, etc.
 Expression syntax: `ip.src == 10.0.0.1 && protocols == tls`

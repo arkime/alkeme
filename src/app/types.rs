@@ -412,6 +412,16 @@ impl C3StatsTab {
     }
 }
 
+// (api_field, label, width, sortable)
+pub const C3_HISTORY_COLUMNS: &[(&str, &str, u16, bool)] = &[
+    ("issuedAt", "Time", 18, true),
+    ("iType", "iType", 8, true),
+    ("indicator", "Indicator", 30, true),
+    ("tags", "Tags", 15, false),
+    ("resultCount", "Results", 8, true),
+    ("took", "Took", 8, true),
+];
+
 impl StatsTab {
     pub const ALL: [StatsTab; 3] = [StatsTab::Capture, StatsTab::DBStats, StatsTab::DBIndices];
 

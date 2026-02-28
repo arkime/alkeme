@@ -8,7 +8,7 @@ mod wise;
 
 // Re-export app types for sub-modules via `use super::*`
 #[allow(unused_imports)]
-use crate::app::{App, AppMode, ActionTarget, C3StatsTab, ColumnEditorMode, Cont3xtFocus, DetailActionMenu, GraphType, InputMode, LayoutPopupMode, LineMode, PlIssueSort, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, ViewPopupMode, WsStatsTab, is_hidden_detail_field};
+use crate::app::{App, AppMode, ActionTarget, C3StatsTab, C3_HISTORY_COLUMNS, ColumnEditorMode, Cont3xtFocus, DetailActionMenu, GraphType, InputMode, LayoutPopupMode, LineMode, PlIssueSort, SessionView, StatsTab, StatsView, SummaryMetric, SummarySort, Tab, TimeRange, ViewPopupMode, WsStatsTab, is_hidden_detail_field};
 
 use chrono::{DateTime, Local};
 use ratatui::{

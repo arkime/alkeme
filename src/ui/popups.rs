@@ -497,6 +497,27 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
+    } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::History {
+        ("Cont3xt History", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
+            Line::from(vec![key("← / →"), Span::raw("Previous / next page")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Re-run search")]),
+            Line::from(vec![key("d"), Span::raw("Delete history entry")]),
+            Line::from(vec![key("/"), Span::raw("Filter by indicator/iType/tags")]),
+            Line::from(vec![key("s"), Span::raw("Next sort column")]),
+            Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
+            Line::from(vec![key("r"), Span::raw("Refresh history")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+        ])
     } else if app.c3_show_link_popup {
         ("Link Groups", vec![
             hdr!("Navigation"),

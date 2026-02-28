@@ -116,6 +116,23 @@ impl ArkimeClient {
         Ok(parsed)
     }
 
+    /// Fetch cont3xt audit history
+    pub async fn c3_get_audits(&self, sort_by: &str, sort_order: &str, page: usize, items_per_page: usize) -> Result<Value> {
+        let url = format!(
+            "{}/api/audits?sortBy={}&sortOrder={}&page={}&itemsPerPage={}",
+            self.base_url, sort_by, sort_order, page, items_per_page
+        );
+        let body = self.authenticated_get_with_cookie(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    /// Delete a cont3xt audit history entry
+    pub async fn c3_delete_audit(&self, id: &str) -> Result<Value> {
+        let url = format!("{}/api/audit/{}", self.base_url, urlencoding::encode(id));
+        self.authenticated_delete(&url).await
+    }
+
     pub async fn c3_get_link_groups(&self) -> Result<Vec<Cont3xtLinkGroup>> {
         let url = format!("{}/api/linkGroup", self.base_url);
         let body = self.authenticated_get_with_cookie(&url).await?;
