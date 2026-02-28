@@ -433,15 +433,17 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         let scroll = (app.c3_detail_scroll as usize).min(max_scroll);
         app.c3_detail_scroll = scroll as u16;
 
-        for (i, line) in lines.iter().skip(scroll).take(content_height as usize).enumerate() {
-            let y = detail_inner.y + i as u16;
-            if y >= detail_inner.y + detail_inner.height { break; }
-
+        let max_width = detail_inner.width as usize;
+        let hscroll = app.c3_detail_hscroll as usize;
+        let rendered_lines: Vec<Line> = lines.iter().map(|line| {
             let spans = match line {
                 JsonLine::KeyValue(key, value) => {
+                    let prefix = format!(" {}: ", key);
+                    let remaining = max_width.saturating_sub(prefix.len());
+                    let truncated: String = value.chars().take(remaining).collect();
                     vec![
-                        Span::styled(format!(" {}: ", key), Style::default().fg(Color::Yellow)),
-                        Span::styled(value.clone(), Style::default().fg(Color::White)),
+                        Span::styled(prefix, Style::default().fg(Color::Yellow)),
+                        Span::styled(truncated, Style::default().fg(Color::White)),
                     ]
                 }
                 JsonLine::Header(key, is_array) => {
@@ -452,15 +454,16 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
                     vec![Span::styled(format!(" {bracket}"), Style::default().fg(Color::DarkGray))]
                 }
                 JsonLine::ArrayValue(value) => {
+                    let remaining = max_width.saturating_sub(5);
+                    let truncated: String = value.chars().take(remaining).collect();
                     vec![
                         Span::styled("   • ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(value.clone(), Style::default().fg(Color::White)),
+                        Span::styled(truncated, Style::default().fg(Color::White)),
                     ]
                 }
                 JsonLine::TableRow(cells, widths) => {
                     let row_str = format_table_cells(cells, widths, " │ ");
-                    let hscroll = app.c3_detail_hscroll as usize;
-                    let visible: String = row_str.chars().skip(hscroll).collect();
+                    let visible: String = row_str.chars().skip(hscroll).take(max_width.saturating_sub(2)).collect();
                     vec![
                         Span::raw("  "),
                         Span::styled(visible, Style::default().fg(Color::White)),
@@ -468,17 +471,19 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
                 }
                 JsonLine::TableHeader(cells, widths) => {
                     let row_str = format_table_cells(cells, widths, " │ ");
-                    let hscroll = app.c3_detail_hscroll as usize;
-                    let visible: String = row_str.chars().skip(hscroll).collect();
+                    let visible: String = row_str.chars().skip(hscroll).take(max_width.saturating_sub(2)).collect();
                     vec![
                         Span::raw("  "),
                         Span::styled(visible, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                     ]
                 }
             };
+            Line::from(spans)
+        }).collect();
 
-            f.render_widget(Paragraph::new(Line::from(spans)), Rect::new(detail_inner.x, y, detail_inner.width, 1));
-        }
+        let detail_paragraph = Paragraph::new(rendered_lines)
+            .scroll((scroll as u16, 0));
+        f.render_widget(detail_paragraph, Rect::new(detail_inner.x, detail_inner.y, detail_inner.width, content_height));
 
         // Filter bar at bottom of detail pane
         if filter_height > 0 {
@@ -761,13 +766,19 @@ fn flatten_json_to_lines(value: &serde_json::Value, prefix: &str, depth: usize) 
 }
 
 fn format_json_value(val: &serde_json::Value) -> String {
-    match val {
+    let s = match val {
         serde_json::Value::String(s) => s.clone(),
         serde_json::Value::Number(n) => n.to_string(),
         serde_json::Value::Bool(b) => b.to_string(),
         serde_json::Value::Null => "null".to_string(),
         other => other.to_string(),
-    }
+    };
+    sanitize_control_chars(&s)
+}
+
+/// Strip control characters (newlines, carriage returns, tabs, etc.) that break rendering
+fn sanitize_control_chars(s: &str) -> String {
+    s.chars().map(|c| if c.is_control() && c != ' ' { ' ' } else { c }).collect()
 }
 
 /// Format table cells with aligned column widths
@@ -813,7 +824,7 @@ fn format_card_value(val: &serde_json::Value, field: &CardField) -> String {
         "date" => {
             // Try parsing as ISO date string or epoch ms
             if let Some(s) = val.as_str() {
-                s.to_string()
+                sanitize_control_chars(s)
             } else if let Some(n) = val.as_f64() {
                 let secs = if n > 1e12 { (n / 1000.0) as i64 } else { n as i64 };
                 chrono::DateTime::from_timestamp(secs, 0)
@@ -844,6 +855,7 @@ fn format_card_value(val: &serde_json::Value, field: &CardField) -> String {
         }
         _ => format_json_value(val),
     };
+    let raw = sanitize_control_chars(&raw);
     if field.defang { defang_string(&raw) } else { raw }
 }
 
