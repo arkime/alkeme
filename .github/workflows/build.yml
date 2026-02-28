@@ -156,7 +156,7 @@ jobs:
             xattr -d com.apple.quarantine alkeme-macos-arm64
             ```
 
-            Then run it with: `./alkeme-{platform} {VIEWER_URL}`
+            Then run it with: `./alkeme-{platform} {URL}`
             See `--help` and https://github.com/arkime/alkeme for more info.
 
             Alkeme works best with Arkime 6+
