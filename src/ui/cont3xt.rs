@@ -81,6 +81,10 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
     if app.c3_save_json_prompt.is_some() {
         draw_save_json_prompt(f, app, f.area());
     }
+
+    if app.c3_show_tags_popup {
+        draw_tags_popup(f, app, f.area());
+    }
 }
 
 fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
@@ -103,6 +107,12 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
         "[custom] ".to_string()
     };
 
+    let tags_label = if app.c3_tags.is_empty() {
+        String::new()
+    } else {
+        format!("[tags: {}] ", app.c3_tags.join(","))
+    };
+
     let inner_width = area.width.saturating_sub(2) as usize;
     let expr_scroll = if app.expression_cursor > inner_width {
         (app.expression_cursor - inner_width) as u16
@@ -111,7 +121,7 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
     };
     let expr_widget = Paragraph::new(Span::styled(expr_display.as_str(), expr_style))
         .scroll((0, expr_scroll))
-        .block(Block::default().borders(Borders::ALL).title(format!(" Search (/) {integrations_label}")));
+        .block(Block::default().borders(Borders::ALL).title(format!(" Search (/) {integrations_label}{tags_label}")));
     f.render_widget(expr_widget, area);
 
     if app.input_mode == InputMode::Expression {
@@ -1659,6 +1669,37 @@ fn draw_save_json_prompt(f: &mut Frame, app: &App, area: Rect) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
                 .title(" Save JSON "),
+        );
+    f.render_widget(paragraph, popup_area);
+}
+
+fn draw_tags_popup(f: &mut Frame, app: &App, area: Rect) {
+    let popup_width = 60u16.min(area.width.saturating_sub(4));
+    let popup_height = 5u16;
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("Tags: ", Style::default().fg(Color::Yellow)),
+            Span::styled(&app.c3_tags_edit, Style::default().fg(Color::White)),
+            Span::styled("█", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(Span::styled(
+            "  comma separated, Enter to set, Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    let paragraph = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" Edit Tags "),
         );
     f.render_widget(paragraph, popup_area);
 }

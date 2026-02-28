@@ -163,6 +163,9 @@ pub struct App {
     pub c3_searching: bool,           // streaming search in progress
     pub c3_pending_search: bool,
     pub c3_no_cache: bool,
+    pub c3_tags: Vec<String>,         // tags sent with search query
+    pub c3_tags_edit: String,         // edit buffer for tags popup
+    pub c3_show_tags_popup: bool,     // tag editor popup visible
     pub c3_save_json_prompt: Option<String>, // filename prompt for JSON export
     // Cont3xt link groups
     pub c3_link_groups: Vec<Cont3xtLinkGroup>,
@@ -399,6 +402,9 @@ impl App {
             c3_searching: false,
             c3_pending_search: false,
             c3_no_cache: false,
+            c3_tags: Vec::new(),
+            c3_tags_edit: String::new(),
+            c3_show_tags_popup: false,
             c3_save_json_prompt: None,
             c3_link_groups: Vec::new(),
             c3_show_link_popup: false,

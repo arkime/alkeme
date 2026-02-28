@@ -464,6 +464,36 @@ impl App {
             return;
         }
 
+        // Tags editor popup
+        if self.c3_show_tags_popup {
+            match key.code {
+                KeyCode::Esc => {
+                    self.c3_show_tags_popup = false;
+                }
+                KeyCode::Enter => {
+                    self.c3_tags = self.c3_tags_edit
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    self.c3_show_tags_popup = false;
+                    if self.c3_tags.is_empty() {
+                        self.status_msg = "Tags cleared".to_string();
+                    } else {
+                        self.status_msg = format!("Tags set: {}", self.c3_tags.join(", "));
+                    }
+                }
+                KeyCode::Backspace => {
+                    self.c3_tags_edit.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.c3_tags_edit.push(c);
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // JSON save filename prompt
         if self.c3_save_json_prompt.is_some() {
             match key.code {
@@ -584,6 +614,10 @@ impl App {
                     let default_name = format!("{}.json", self.expression.replace(['/', '\\', ' '], "_"));
                     self.c3_save_json_prompt = Some(default_name);
                 }
+            }
+            KeyCode::Char('t') if self.active_tab == Tab::Search => {
+                self.c3_tags_edit = self.c3_tags.join(", ");
+                self.c3_show_tags_popup = true;
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) && self.active_tab == Tab::Search => {
                 self.c3_no_cache = true;

@@ -3,4 +3,5 @@
 *.csv
 .DS_Store
 .*.swp
+.swp
 *.json

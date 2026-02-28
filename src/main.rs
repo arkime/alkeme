@@ -35,9 +35,13 @@ struct Cli {
     #[arg(long)]
     user: Option<String>,
 
-    /// Default search expression for sessions
+    /// Default search expression (sessions query for Viewer, indicator for Cont3xt)
     #[arg(long)]
     search: Option<String>,
+
+    /// Comma-separated tags to include with Cont3xt searches
+    #[arg(long)]
+    cont3xt_tags: Option<String>,
 
     /// Override app mode (viewer, cont3xt, wise, parliament) — skips /api/appversion
     #[arg(long, value_parser = ["viewer", "cont3xt", "wise", "parliament"])]
@@ -140,6 +144,9 @@ async fn main() -> Result<()> {
     if let Some(search) = cli.search {
         app.expression = search.clone();
         app.expression_edit = search;
+    }
+    if let Some(tags) = cli.cont3xt_tags {
+        app.c3_tags = tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
     }
 
     // Mode-specific initialization
@@ -307,6 +314,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 if !app.c3_disabled_integrations.is_empty() {
                     let enabled: Vec<String> = app.c3_enabled_integration_names();
                     body["doIntegrations"] = serde_json::json!(enabled);
+                }
+                if !app.c3_tags.is_empty() {
+                    body["tags"] = serde_json::json!(app.c3_tags);
                 }
                 let json_body = body.to_string();
                 let shared = c3_streaming_results.clone();
