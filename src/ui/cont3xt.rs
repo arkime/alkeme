@@ -77,6 +77,10 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
     if app.c3_show_integration_popup {
         draw_integration_popup(f, app, f.area());
     }
+
+    if app.c3_save_json_prompt.is_some() {
+        draw_save_json_prompt(f, app, f.area());
+    }
 }
 
 fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
@@ -1627,4 +1631,34 @@ fn draw_overview_popup(f: &mut Frame, app: &App, area: Rect) {
             Rect::new(inner.x, inner.y + i as u16, inner.width, 1),
         );
     }
+}
+
+fn draw_save_json_prompt(f: &mut Frame, app: &App, area: Rect) {
+    let filename = match &app.c3_save_json_prompt {
+        Some(f) => f,
+        None => return,
+    };
+
+    let popup_width = 60u16.min(area.width.saturating_sub(4));
+    let popup_height = 3u16;
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+
+    let line = Line::from(vec![
+        Span::styled("Filename: ", Style::default().fg(Color::Yellow)),
+        Span::styled(filename, Style::default().fg(Color::White)),
+        Span::styled("█", Style::default().fg(Color::Gray)),
+    ]);
+
+    let paragraph = Paragraph::new(line)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" Save JSON "),
+        );
+    f.render_widget(paragraph, popup_area);
 }

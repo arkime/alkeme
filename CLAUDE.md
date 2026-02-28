@@ -176,6 +176,7 @@ src/
 | s | Next sort column (History/Stats); cycle source (WISE Query) |
 | S | Toggle sort direction (History/Stats) |
 | d | Delete history entry (History tab) |
+| J | Save all results as JSON (prompts for filename) |
 | ← / → | Previous/next page (History); jump to top/bottom (results); scroll detail |
 | D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
 | h / ? | Show help |

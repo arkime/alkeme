@@ -163,6 +163,7 @@ pub struct App {
     pub c3_searching: bool,           // streaming search in progress
     pub c3_pending_search: bool,
     pub c3_no_cache: bool,
+    pub c3_save_json_prompt: Option<String>, // filename prompt for JSON export
     // Cont3xt link groups
     pub c3_link_groups: Vec<Cont3xtLinkGroup>,
     pub c3_show_link_popup: bool,
@@ -398,6 +399,7 @@ impl App {
             c3_searching: false,
             c3_pending_search: false,
             c3_no_cache: false,
+            c3_save_json_prompt: None,
             c3_link_groups: Vec::new(),
             c3_show_link_popup: false,
             c3_link_popup_selected: 0,
@@ -968,6 +970,29 @@ impl App {
             Err(e) => {
                 self.status_msg = format!("Error deleting history: {e}");
             }
+        }
+    }
+
+    pub fn c3_save_json(&mut self, filename: &str) {
+        // Build a combined JSON object from all results
+        let mut combined = serde_json::Map::new();
+        for result in &self.c3_results {
+            if result.data.is_null() { continue; }
+            let indicator_obj = combined.entry(&result.indicator)
+                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+            if let serde_json::Value::Object(map) = indicator_obj {
+                map.insert(result.name.clone(), result.data.clone());
+            }
+        }
+        let json = serde_json::Value::Object(combined);
+        match serde_json::to_string_pretty(&json) {
+            Ok(text) => {
+                match std::fs::write(filename, &text) {
+                    Ok(_) => self.status_msg = format!("JSON saved to {} ({} bytes)", filename, text.len()),
+                    Err(e) => self.status_msg = format!("Error writing {}: {e}", filename),
+                }
+            }
+            Err(e) => self.status_msg = format!("Error serializing JSON: {e}"),
         }
     }
 

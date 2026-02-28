@@ -464,6 +464,36 @@ impl App {
             return;
         }
 
+        // JSON save filename prompt
+        if self.c3_save_json_prompt.is_some() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.c3_save_json_prompt = None;
+                }
+                KeyCode::Enter => {
+                    if let Some(filename) = self.c3_save_json_prompt.take() {
+                        if filename.is_empty() {
+                            self.status_msg = "No filename provided".to_string();
+                        } else {
+                            self.c3_save_json(&filename);
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    if let Some(ref mut f) = self.c3_save_json_prompt {
+                        f.pop();
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(ref mut f) = self.c3_save_json_prompt {
+                        f.push(c);
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Tab => {
                 self.next_tab();
@@ -545,6 +575,14 @@ impl App {
                     } else {
                         self.status_msg = format!("No overviews for type '{}'", itype);
                     }
+                }
+            }
+            KeyCode::Char('J') if self.active_tab == Tab::Search => {
+                if self.c3_results.is_empty() {
+                    self.status_msg = "No results to save".to_string();
+                } else {
+                    let default_name = format!("{}.json", self.expression.replace(['/', '\\', ' '], "_"));
+                    self.c3_save_json_prompt = Some(default_name);
                 }
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) && self.active_tab == Tab::Search => {
