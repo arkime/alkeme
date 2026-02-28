@@ -2,7 +2,7 @@
 
 A terminal user interface (TUI) for the [Arkime](https://arkime.com) ecosystem, built with Rust and [ratatui](https://github.com/ratatui/ratatui).
 
-Alkeme auto-detects the Arkime application mode (Viewer, Cont3xt, WISE, Parliament) and provides a tailored interface for each. Currently supports Viewer (full packet capture session browsing), Cont3xt (integration search with card-based results), Parliament (cluster monitoring dashboard with health stats and issue tracking), and WISE (source/type statistics and lookups).
+Alkeme auto-detects the Arkime application (Viewer, Cont3xt, WISE, Parliament) and provides a tailored interface for each. Currently supports Viewer (full packet capture session browsing), Cont3xt (integration search with card-based results), Parliament (cluster monitoring dashboard with health stats and issue tracking), and WISE (source/type statistics and lookups).
 
 This project was entirely created by Claude — code, architecture, documentation, and even this README. The only exception is the screenshots, because sadly no one has given me eyes yet.
 
@@ -32,7 +32,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 
 ## Features
 
-### Viewer Mode
+### Viewer
 - **Session browsing** — paginated session list with configurable columns and sort order
 - **Column layout** — press `c` to toggle/reorder columns with type-to-filter search, save/load/delete named layouts via the Arkime API
 - **Views** — press `v` to select, create, or delete server-side views that filter sessions; shared views shown with indicator; active view displayed in title bar
@@ -48,7 +48,7 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **Packet hex dump** — press `p` to view packet contents as hex in a two-column overlay (source/destination) with timestamps, TCP flags, color-coded display, and hex offsets; `r` toggles raw frames, `l` cycles line number format; animated loading indicator for large sessions
 - **Stats tab** — view capture stats, DB stats, and DB indices with sortable tables, filtering, and detail view
 
-### Cont3xt Mode
+### Cont3xt
 - **Integration search** — search indicators (IPs, domains, emails, hashes) across all configured integrations
 - **Streaming results** — results appear incrementally as integrations respond; tree hierarchy shows parent-child indicator chains (e.g., URL → DOMAIN → IP); progress gauge shows sent/total count during search
 - **Card-based rendering** — integration results displayed using server-defined card templates with proper field types (string, date, url, table, array, JSON, DNS records)
@@ -65,15 +65,15 @@ Select any field to see top values with a bar chart and sortable table showing s
 - **JSON export** — press `J` to save all search results as a combined JSON file with a filename prompt
 - **Search tags** — press `t` to set comma-separated tags sent with search queries; also settable via `--cont3xt-tags` CLI option; shown in the search bar title
 
-### Parliament Mode
+### Parliament
 - **Cluster dashboard** — groups displayed with clusters showing health status (●green/●yellow/●red), bytes/sec, drops/sec, active sessions, node counts, ES info, and inline issues
 - **Issue tracking** — dedicated Issues tab with filterable, sortable table of all cluster issues with severity, timestamps, node info
 - **Cluster detail** — press `i` for a detailed overlay showing full stats and all issues for a cluster
-- **Viewer switch** — press `Enter` on a cluster to connect to it and switch to Viewer mode for live session browsing
+- **Viewer switch** — press `Enter` on a cluster to connect to it and switch to Viewer for live session browsing
 - **Cont3xt/WISE switch** — press `c` or `w` to switch to Cont3xt or WISE using URLs from Parliament settings
 - **Auto-refresh** — dashboard and issues auto-refresh every 30 seconds
 
-### WISE Mode
+### WISE
 - **Source stats** — view statistics for all WISE sources (requests, cache hits/misses, avg response time, item count)
 - **Type stats** — view statistics for all WISE types (requests, found, cache stats)
 - **Query** — look up values by type (ip, domain, email, etc.) across all or specific sources
@@ -149,7 +149,7 @@ alkeme http://viewer.example.com:8005 --auth okta
 # With basic authentication (prompts for credentials)
 alkeme http://viewer.example.com:8005 --auth basic
 
-# Skip app detection and force a specific mode
+# Skip app detection and force a specific application
 alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3xt
 ```
 
@@ -160,13 +160,13 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `<URL>` | Arkime URL (default: `http://localhost:8005`) |
 | `--auth <MODE>` | Authentication mode: `basic`, `digest`, `form`, `web`, or `okta` |
 | `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`); `user` without colon prompts for password only |
-| `--search <EXPR>` | Default search expression (viewer) or indicator (cont3xt); auto-submits in cont3xt mode |
+| `--search <EXPR>` | Default search expression (viewer) or indicator (cont3xt); auto-submits in cont3xt |
 | `--cont3xt-tags <TAGS>` | Comma-separated tags to include with Cont3xt searches |
-| `--app <MODE>` | Force app mode: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appversion` detection) |
+| `--app <APP>` | Force application: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appversion` detection) |
 
 ## Keybindings
 
-### Viewer Mode
+### Viewer
 
 | Key | Action |
 |---|---|
@@ -197,7 +197,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `h` / `?` | Show context-sensitive help overlay |
 | `q` | Quit |
 
-### Cont3xt Mode
+### Cont3xt
 
 | Key | Action |
 |---|---|
@@ -228,7 +228,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `h` / `?` | Show help |
 | `q` | Quit |
 
-### Parliament Mode
+### Parliament
 
 | Key | Action |
 |---|---|
@@ -236,11 +236,11 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `j` / `k` / `↑` / `↓` | Navigate clusters (Dashboard) or issues (Issues) |
 | `Shift+↑` / `Shift+↓` | Page up / down (Issues) |
 | `Home` / `End` | Jump to top / bottom (Issues) |
-| `Enter` | Open cluster in Viewer mode (Dashboard) |
+| `Enter` | Open cluster in Viewer (Dashboard) |
 | `i` | Cluster detail overlay (Dashboard) |
 | `c` | Open Cont3xt (if configured in Parliament settings) |
 | `w` | Open WISE (if configured in Parliament settings) |
-| `Ctrl+p` | Return to Parliament (from Viewer, Cont3xt, or WISE mode) |
+| `Ctrl+p` | Return to Parliament (from Viewer, Cont3xt, or WISE) |
 | `/` or `E` | Filter issues (Issues tab) |
 | `s` | Next sort column (Issues) |
 | `S` | Toggle sort direction (Issues) |
@@ -249,7 +249,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `h` / `?` | Show help |
 | `q` | Quit |
 
-### WISE Mode
+### WISE
 
 | Key | Action |
 |---|---|
