@@ -265,6 +265,9 @@ pub struct App {
     pub ws_query_value_edit: String,
     pub ws_query_results: Vec<WsQueryResult>,
     pub ws_query_selected: usize,
+
+    // Cached background buffer for popup double-buffering
+    pub popup_bg_cache: Option<ratatui::buffer::Buffer>,
 }
 
 impl App {
@@ -501,11 +504,25 @@ impl App {
             ws_query_value_edit: String::new(),
             ws_query_results: Vec::new(),
             ws_query_selected: 0,
+
+            popup_bg_cache: None,
         }
     }
 
     pub fn is_detail_view(&self) -> bool {
         self.vr_session_view == SessionView::Detail || self.vr_stats_view == StatsView::Detail
+    }
+
+    /// Returns true if any popup overlay is open that could use background caching
+    pub fn has_popup_open(&self) -> bool {
+        self.c3_show_card_popup
+            || self.c3_show_overview_popup
+            || self.c3_show_link_popup
+            || self.c3_show_integration_popup
+            || self.c3_show_tags_popup
+            || self.c3_save_json_prompt.is_some()
+            || self.show_help
+            || self.show_debug
     }
 
     pub fn tabs(&self) -> &'static [Tab] {

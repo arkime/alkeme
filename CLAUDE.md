@@ -686,6 +686,12 @@ Facets: `facets=1` adds `graph` object with histogram arrays to response (slower
 - `Style::default().fg(Color::X).add_modifier(Modifier::BOLD)` for styling
 - Direct buffer writes (`f.buffer_mut()`) for custom graph rendering with block chars
 
+## Rendering performance
+- **`needs_redraw` flag**: Skip `terminal.draw()` entirely when no state changed. Set true after key handling, background task completion, streaming result drain, auto-refresh.
+- **Key event draining**: After processing the first key event, drain all pending key events (poll 0ms) before redrawing. Prevents frame-per-key lag during fast scrolling.
+- **Popup double-buffering**: `popup_bg_cache: Option<Buffer>` in App caches the background frame when any popup is open. First frame with popup renders the full background and clones the buffer; subsequent frames restore the cached buffer (fast `clone_from_slice`) and only render the lightweight popup overlay. Cache invalidated on: popup close, terminal resize, streaming results arriving, search completion. This avoids re-rendering expensive tree/card views while scrolling through popups.
+- **Link popup windowed rendering**: Instead of building all lines then slicing, counts line positions in a first pass to find scroll offset, then renders only visible lines in a second pass.
+
 ## Naming conventions
 
 - All viewer-specific App fields and public methods use `vr_` prefix (e.g., `vr_sessions`, `vr_fetch_sessions()`)
@@ -696,3 +702,6 @@ Facets: `facets=1` adds `graph` object with histogram arrays to response (slower
 
 ## Crate versions
 ratatui 0.29, crossterm 0.28, tokio 1 (full), reqwest 0.12 (rustls-tls), serde/serde_json 1, anyhow 1, urlencoding 2, digest_auth 0.3, rpassword 7, clap 4, chrono, regex 1
+
+## Git rules
+- **Never use `git add -A`** — always specify files explicitly when staging (e.g., `git add src/main.rs src/app/mod.rs`)

@@ -217,8 +217,13 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
         std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let mut c3_stream_consumed: usize = 0;
 
+    let mut needs_redraw = true;
+
     loop {
-        terminal.draw(|f| ui::draw(f, app))?;
+        if needs_redraw {
+            terminal.draw(|f| ui::draw(f, app))?;
+            needs_redraw = false;
+        }
 
         // Viewer-specific background tasks
         if app.app_mode == app::AppMode::Viewer {
@@ -233,6 +238,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     let html = client.fetch_url(&url).await?;
                     Ok(crate::api::parse_packets_html(&html))
                 }));
+                needs_redraw = true;
                 continue;
             }
 
@@ -252,6 +258,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     }
                     Ok(Vec::new())
                 }));
+                needs_redraw = true;
                 continue;
             }
 
@@ -277,6 +284,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                         }
                     }
                     app.show_loading = false;
+                    needs_redraw = true;
                     continue;
                 }
             }
@@ -300,6 +308,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                         }
                     }
                     app.show_loading = false;
+                    needs_redraw = true;
                     continue;
                 }
             }
@@ -310,6 +319,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 && app.vr_stats_last_refresh.elapsed() >= Duration::from_secs(30)
             {
                 app.vr_fetch_stats().await;
+                needs_redraw = true;
             }
         }
 
@@ -356,6 +366,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 c3_search_handle = Some(tokio::spawn(async move {
                     client.fetch_post_json_streaming(&url, &json_body, shared, disabled, stotal, ssent).await
                 }));
+                needs_redraw = true;
                 continue;
             }
 
@@ -371,10 +382,12 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 if let Ok(vec) = c3_streaming_results.lock() {
                     if vec.len() > c3_stream_consumed {
                         c3_stream_consumed = drain_c3_results(app, &vec, c3_stream_consumed);
+                        app.popup_bg_cache = None; // background changed
                         app.status_msg = format!(
                             "Searching... {} results so far",
                             app.c3_results.len()
                         );
+                        needs_redraw = true;
                     }
                 }
             }
@@ -406,6 +419,8 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                         }
                     }
                     app.c3_searching = false;
+                    app.popup_bg_cache = None; // background changed
+                    needs_redraw = true;
                     continue;
                 }
             }
@@ -420,6 +435,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             if app.active_tab == app::Tab::Issues {
                 app.pl_fetch_issues().await;
             }
+            needs_redraw = true;
         }
 
         // WISE auto-refresh every 30 seconds
@@ -429,10 +445,12 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             && app.ws_last_refresh.elapsed() >= Duration::from_secs(30)
         {
             app.ws_fetch_stats().await;
+            needs_redraw = true;
         }
 
-        if event::poll(Duration::from_millis(100))?
-            && let Event::Key(key) = event::read()? {
+        // Drain all pending key events before next draw
+        while event::poll(Duration::from_millis(16))? {
+            if let Event::Key(key) = event::read()? {
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     return Ok(());
                 }
@@ -441,6 +459,24 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     return Ok(());
                 }
                 app.handle_key(key).await;
+                needs_redraw = true;
+                // Process remaining queued keys without waiting
+                while event::poll(Duration::from_millis(0))? {
+                    if let Event::Key(key) = event::read()? {
+                        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                            return Ok(());
+                        }
+                        if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
+                            && !app.vr_show_column_editor && !app.vr_show_layout_popup && !app.vr_show_view_popup && !app.show_help && !app.show_debug && !app.pl_show_detail {
+                            return Ok(());
+                        }
+                        app.handle_key(key).await;
+                    } else {
+                        break;
+                    }
+                }
+                break;
             }
+        }
     }
 }

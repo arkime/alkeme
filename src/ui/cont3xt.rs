@@ -3,6 +3,57 @@ use crate::api::{CardField, Cont3xtCard, Cont3xtOverview};
 use crate::app::C3TreeItem;
 
 pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
+    let any_popup = app.has_popup_open();
+    let area = f.area();
+
+    // Double-buffer: if a popup is open, restore cached background instead of re-rendering
+    if any_popup {
+        if let Some(ref cache) = app.popup_bg_cache {
+            if cache.area == area {
+                // Restore cached background into the frame buffer
+                let buf = f.buffer_mut();
+                let src = cache.content();
+                let dst = buf.content.as_mut_slice();
+                dst[..src.len()].clone_from_slice(src);
+            } else {
+                // Terminal resized — invalidate cache and re-render
+                app.popup_bg_cache = None;
+                draw_cont3xt_background(f, app);
+                app.popup_bg_cache = Some(f.buffer_mut().clone());
+            }
+        } else {
+            // First frame with popup — render background and cache it
+            draw_cont3xt_background(f, app);
+            app.popup_bg_cache = Some(f.buffer_mut().clone());
+        }
+    } else {
+        // No popup — render normally, clear cache
+        app.popup_bg_cache = None;
+        draw_cont3xt_background(f, app);
+    }
+
+    // Render popup overlays on top
+    if app.c3_show_card_popup {
+        draw_card_popup(f, app, area);
+    }
+    if app.c3_show_overview_popup {
+        draw_overview_popup(f, app, area);
+    }
+    if app.c3_show_link_popup {
+        draw_link_popup(f, app, area);
+    }
+    if app.c3_show_integration_popup {
+        draw_integration_popup(f, app, area);
+    }
+    if app.c3_save_json_prompt.is_some() {
+        draw_save_json_prompt(f, app, area);
+    }
+    if app.c3_show_tags_popup {
+        draw_tags_popup(f, app, area);
+    }
+}
+
+fn draw_cont3xt_background(f: &mut Frame, app: &mut App) {
     let status_h = status_bar_height(app);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -43,7 +94,6 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
             }
         }
         Tab::C3Stats => {
-            // Merge search bar and content area for stats
             let stats_area = Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, chunks[1].height + chunks[2].height);
             c3_draw_stats(f, app, stats_area);
         }
@@ -61,30 +111,6 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
     }
 
     draw_status_bar(f, app, chunks[3]);
-
-    if app.c3_show_card_popup {
-        draw_card_popup(f, app, f.area());
-    }
-
-    if app.c3_show_overview_popup {
-        draw_overview_popup(f, app, f.area());
-    }
-
-    if app.c3_show_link_popup {
-        draw_link_popup(f, app, f.area());
-    }
-
-    if app.c3_show_integration_popup {
-        draw_integration_popup(f, app, f.area());
-    }
-
-    if app.c3_save_json_prompt.is_some() {
-        draw_save_json_prompt(f, app, f.area());
-    }
-
-    if app.c3_show_tags_popup {
-        draw_tags_popup(f, app, f.area());
-    }
 }
 
 fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
@@ -1253,59 +1279,77 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
         height: desc_height.min(content_area.height),
     };
 
-    // Scrolling: keep selected in view
+    // Count display lines up to and including selected item to determine scroll
     let visible = list_area.height as usize;
     let selected = app.c3_link_popup_selected;
-    let scroll_offset = if selected >= visible {
-        selected - visible + 1
+
+    // Count total lines up to selected to find its display position
+    let mut last_group = String::new();
+    let mut selected_line_pos = 0usize;
+    for (i, (group, _, _, _)) in app.c3_link_flat.iter().enumerate() {
+        if *group != last_group {
+            if !last_group.is_empty() {
+                selected_line_pos += 1; // spacer
+            }
+            selected_line_pos += 1; // header
+            last_group = group.clone();
+        }
+        if i == selected { break; }
+        selected_line_pos += 1; // item line
+    }
+
+    let scroll_offset = if selected_line_pos >= visible {
+        selected_line_pos - visible + 1
     } else {
         0
     };
 
+    // Render only visible lines starting from scroll_offset
     let mut lines: Vec<Line> = Vec::new();
-    let mut last_group = String::new();
-    for (i, (group, name, url, _info)) in app.c3_link_flat.iter().enumerate().skip(scroll_offset) {
-        if lines.len() >= visible {
-            break;
-        }
-        // Show group header when group changes
+    let mut line_idx = 0usize;
+    last_group = String::new();
+    for (i, (group, name, url, _info)) in app.c3_link_flat.iter().enumerate() {
         if *group != last_group {
-            if !last_group.is_empty() && lines.len() < visible {
-                lines.push(Line::from("")); // spacer between groups
+            if !last_group.is_empty() {
+                if line_idx >= scroll_offset && lines.len() < visible {
+                    lines.push(Line::from(""));
+                }
+                line_idx += 1;
             }
-            if lines.len() < visible {
+            if line_idx >= scroll_offset && lines.len() < visible {
                 lines.push(Line::from(Span::styled(
                     format!("── {} ──", group),
                     Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 )));
             }
+            line_idx += 1;
             last_group = group.clone();
         }
-        if lines.len() >= visible {
-            break;
-        }
-        let style = if i == selected {
-            Style::default().fg(Color::Black).bg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        // Truncate URL display
-        let max_url_len = (popup_width as usize).saturating_sub(name.len() + 6);
-        let url_display = if max_url_len == 0 {
-            String::new()
-        } else if url.len() > max_url_len {
-            format!("{}…", &url[..max_url_len.saturating_sub(1)])
-        } else {
-            url.clone()
-        };
-        lines.push(Line::from(vec![
-            Span::styled(format!("  {name}"), style),
-            Span::styled(format!("  {url_display}"), if i == selected {
+        if lines.len() >= visible { break; }
+        if line_idx >= scroll_offset {
+            let style = if i == selected {
                 Style::default().fg(Color::Black).bg(Color::Yellow)
             } else {
-                Style::default().fg(Color::DarkGray)
-            }),
-        ]));
+                Style::default().fg(Color::White)
+            };
+            let max_url_len = (popup_width as usize).saturating_sub(name.len() + 6);
+            let url_display = if max_url_len == 0 {
+                String::new()
+            } else if url.len() > max_url_len {
+                format!("{}…", &url[..max_url_len.saturating_sub(1)])
+            } else {
+                url.clone()
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {name}"), style),
+                Span::styled(format!("  {url_display}"), if i == selected {
+                    Style::default().fg(Color::Black).bg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                }),
+            ]));
+        }
+        line_idx += 1;
     }
 
     f.render_widget(Paragraph::new(lines), list_area);
