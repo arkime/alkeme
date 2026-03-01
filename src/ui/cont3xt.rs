@@ -327,11 +327,48 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         };
 
         let prefix = " ".repeat(*indent as usize);
+        let w = inner.width as usize;
+
+        // For result rows, extract _cont3xt.count and severity
+        if let Some(idx) = result_idx {
+            if let Some(result) = app.c3_results.get(*idx) {
+                let count_val = result.data.get("_cont3xt")
+                    .and_then(|c| c.get("count"))
+                    .and_then(|v| v.as_u64());
+                let severity = result.data.get("_cont3xt")
+                    .and_then(|c| c.get("severity"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                if let Some(count) = count_val {
+                    let count_str = format!(" {count}");
+                    let name_part = format!("{prefix}{label}");
+                    let pad_len = w.saturating_sub(name_part.len() + count_str.len());
+                    let padded_name = format!("{name_part}{}", " ".repeat(pad_len));
+                    let count_style = if severity == "high" {
+                        if is_selected {
+                            Style::default().fg(Color::Red).bg(if results_focused { Color::Cyan } else { Color::Yellow })
+                        } else {
+                            Style::default().fg(Color::Red)
+                        }
+                    } else {
+                        style
+                    };
+                    let line = Line::from(vec![
+                        Span::styled(padded_name, style),
+                        Span::styled(count_str, count_style),
+                    ]);
+                    f.render_widget(Paragraph::new(line), Rect::new(inner.x, y, inner.width, 1));
+                    continue;
+                }
+            }
+        }
+
         let full_label = format!("{prefix}{label}");
-        let truncated = if full_label.len() > inner.width as usize {
-            format!("{}…", &full_label[..inner.width as usize - 1])
+        let truncated = if full_label.len() > w {
+            format!("{}…", &full_label[..w - 1])
         } else {
-            format!("{:<width$}", full_label, width = inner.width as usize)
+            format!("{:<width$}", full_label, width = w)
         };
 
         let span = Span::styled(truncated, style);
