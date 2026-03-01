@@ -1290,8 +1290,10 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::White)
         };
         // Truncate URL display
-        let max_url_len = popup_width as usize - name.len() - 6;
-        let url_display = if url.len() > max_url_len {
+        let max_url_len = (popup_width as usize).saturating_sub(name.len() + 6);
+        let url_display = if max_url_len == 0 {
+            String::new()
+        } else if url.len() > max_url_len {
             format!("{}…", &url[..max_url_len.saturating_sub(1)])
         } else {
             url.clone()
