@@ -1572,14 +1572,18 @@ fn draw_overview_popup(f: &mut Frame, app: &App, area: Rect) {
         _ => return,
     };
     let itype_lower = itype.to_lowercase();
-    let matching: Vec<&crate::api::Cont3xtOverview> = app.c3_overviews.iter()
+    let filter_lower = app.c3_overview_popup_filter.to_lowercase();
+    let mut matching: Vec<&crate::api::Cont3xtOverview> = app.c3_overviews.iter()
         .filter(|o| o.itype.to_lowercase() == itype_lower)
+        .filter(|o| filter_lower.is_empty() || o.name.to_lowercase().contains(&filter_lower))
         .collect();
+    matching.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     let current_id = app.c3_selected_overviews.get(&itype_lower);
 
+    let filter_row = if app.c3_overview_popup_filtering || !app.c3_overview_popup_filter.is_empty() { 1u16 } else { 0 };
     let popup_w = (area.width - 4).min(60);
-    let popup_h = (matching.len() as u16 + 4).min(area.height - 4);
+    let popup_h = (matching.len() as u16 + 4 + filter_row).min(area.height - 4);
     let popup_area = center_popup(popup_w, popup_h, area);
 
     f.render_widget(Clear, popup_area);
@@ -1590,8 +1594,24 @@ fn draw_overview_popup(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
 
+    let mut y_offset = 0u16;
+
+    if app.c3_overview_popup_filtering || !app.c3_overview_popup_filter.is_empty() {
+        let filter_style = if app.c3_overview_popup_filtering {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        let filter_text = format!(" /{}█", app.c3_overview_popup_filter);
+        f.render_widget(
+            Paragraph::new(Span::styled(filter_text, filter_style)),
+            Rect::new(inner.x, inner.y, inner.width, 1),
+        );
+        y_offset = 1;
+    }
+
     for (i, ov) in matching.iter().enumerate() {
-        if i as u16 >= inner.height { break; }
+        if y_offset + i as u16 >= inner.height { break; }
         let is_selected = i == app.c3_overview_popup_selected;
         let is_active = Some(&ov.id) == current_id
             || (current_id.is_none() && ov.is_default)
@@ -1611,7 +1631,7 @@ fn draw_overview_popup(f: &mut Frame, app: &App, area: Rect) {
 
         f.render_widget(
             Paragraph::new(Span::styled(format!(" {label:<width$}", width = inner.width as usize - 1), style)),
-            Rect::new(inner.x, inner.y + i as u16, inner.width, 1),
+            Rect::new(inner.x, inner.y + y_offset + i as u16, inner.width, 1),
         );
     }
 }

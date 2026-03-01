@@ -80,6 +80,23 @@ impl ArkimeClient {
         Ok(selected)
     }
 
+    /// Save selected overviews to user settings (replaces entire selectedOverviews)
+    /// All itypes must be present; unset ones default to itype name (built-in default)
+    pub async fn c3_save_selected_overviews(&self, selected: &HashMap<String, String>) -> Result<Value> {
+        let url = format!("{}/api/settings", self.base_url);
+        let all_itypes = ["domain", "ip", "url", "email", "phone", "hash", "text"];
+        let overviews: serde_json::Map<String, Value> = all_itypes.iter()
+            .map(|&itype| {
+                let val = selected.get(itype).cloned().unwrap_or_else(|| itype.to_string());
+                (itype.to_string(), Value::String(val))
+            })
+            .collect();
+        let body = serde_json::json!({
+            "selectedOverviews": overviews
+        });
+        self.authenticated_put_json(&url, &body).await
+    }
+
     pub fn cont3xt_search_url(&self) -> String {
         format!("{}/api/integration/search", self.base_url)
     }

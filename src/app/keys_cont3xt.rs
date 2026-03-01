@@ -48,35 +48,82 @@ impl App {
 
         // Overview selector popup handler
         if self.c3_show_overview_popup {
+            if self.c3_overview_popup_filtering {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.c3_overview_popup_filtering = false;
+                        self.c3_overview_popup_filter.clear();
+                        self.c3_overview_popup_selected = 0;
+                    }
+                    KeyCode::Enter => {
+                        self.c3_overview_popup_filtering = false;
+                    }
+                    KeyCode::Backspace => {
+                        self.c3_overview_popup_filter.pop();
+                        self.c3_overview_popup_selected = 0;
+                    }
+                    KeyCode::Char(c) => {
+                        self.c3_overview_popup_filter.push(c);
+                        self.c3_overview_popup_selected = 0;
+                    }
+                    _ => {}
+                }
+                return;
+            }
             match key.code {
                 KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('o') => {
                     self.c3_show_overview_popup = false;
+                }
+                KeyCode::Char('/') => {
+                    self.c3_overview_popup_filtering = true;
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.c3_overview_popup_selected = self.c3_overview_popup_selected.saturating_sub(1);
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    // Get count of overviews for current itype
                     if let Some(C3TreeItem::Indicator(itype, _)) = self.c3_tree_order.get(self.c3_selected) {
                         let itype_lower = itype.to_lowercase();
-                        let count = self.c3_overviews.iter().filter(|o| o.itype.to_lowercase() == itype_lower).count();
+                        let filter_lower = self.c3_overview_popup_filter.to_lowercase();
+                        let count = self.c3_overviews.iter()
+                            .filter(|o| o.itype.to_lowercase() == itype_lower)
+                            .filter(|o| filter_lower.is_empty() || o.name.to_lowercase().contains(&filter_lower))
+                            .count();
                         if count > 0 {
                             self.c3_overview_popup_selected = (self.c3_overview_popup_selected + 1).min(count - 1);
                         }
                     }
                 }
                 KeyCode::Enter => {
-                    if let Some(C3TreeItem::Indicator(itype, _)) = self.c3_tree_order.get(self.c3_selected) {
-                        let itype_lower = itype.to_lowercase();
-                        let matching: Vec<&crate::api::Cont3xtOverview> = self.c3_overviews.iter()
-                            .filter(|o| o.itype.to_lowercase() == itype_lower)
-                            .collect();
-                        if let Some(ov) = matching.get(self.c3_overview_popup_selected) {
-                            self.c3_selected_overviews.insert(itype_lower, ov.id.clone());
-                            self.c3_detail_scroll = 0;
-                        }
+                    if let Some(ov) = self.c3_overview_filtered_get() {
+                        let itype_lower = ov.itype.to_lowercase();
+                        self.c3_selected_overviews.insert(itype_lower, ov.id.clone());
+                        self.c3_detail_scroll = 0;
                     }
                     self.c3_show_overview_popup = false;
+                }
+                KeyCode::Char('d') => {
+                    if let Some(ov) = self.c3_overview_filtered_get() {
+                        let itype_lower = ov.itype.to_lowercase();
+                        let ov_id = ov.id.clone();
+                        let ov_name = ov.name.clone();
+                        self.c3_selected_overviews.insert(itype_lower, ov_id);
+                        self.c3_detail_scroll = 0;
+                        match self.client.c3_save_selected_overviews(&self.c3_selected_overviews).await {
+                            Ok(_) => {
+                                self.status_msg = format!("Default overview set: {ov_name}");
+                                self.c3_fetch_overviews().await;
+                            }
+                            Err(e) => self.status_msg = format!("Error saving default: {e}"),
+                        }
+                        self.c3_show_overview_popup = false;
+                    }
+                }
+                KeyCode::Char('r') => {
+                    self.c3_fetch_overviews().await;
+                    self.status_msg = "Overviews refreshed".into();
+                }
+                KeyCode::Char('h') | KeyCode::Char('?') => {
+                    self.show_help = true;
                 }
                 _ => {}
             }
@@ -590,15 +637,18 @@ impl App {
                 // Overview selector — only when on an indicator
                 if let Some(C3TreeItem::Indicator(itype, _)) = self.c3_tree_order.get(self.c3_selected) {
                     let itype_lower = itype.to_lowercase();
-                    let matching: Vec<&crate::api::Cont3xtOverview> = self.c3_overviews.iter()
+                    let mut matching: Vec<&crate::api::Cont3xtOverview> = self.c3_overviews.iter()
                         .filter(|o| o.itype.to_lowercase() == itype_lower)
                         .collect();
+                    matching.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
                     if !matching.is_empty() {
                         let current_id = self.c3_selected_overviews.get(&itype_lower);
                         self.c3_overview_popup_selected = matching.iter().position(|o| {
                             Some(&o.id) == current_id
                         }).or_else(|| matching.iter().position(|o| o.is_default))
                             .unwrap_or(0);
+                        self.c3_overview_popup_filter.clear();
+                        self.c3_overview_popup_filtering = false;
                         self.c3_show_overview_popup = true;
                     } else {
                         self.status_msg = format!("No overviews for type '{}'", itype);

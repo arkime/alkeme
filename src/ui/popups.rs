@@ -507,6 +507,20 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
+    } else if app.c3_show_overview_popup {
+        ("Select Overview", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate overviews")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Select overview (session only)")]),
+            Line::from(vec![key("d"), Span::raw("Set as default (saves to server)")]),
+            Line::from(vec![key("/"), Span::raw("Filter overviews")]),
+            Line::from(vec![key("r"), Span::raw("Refresh overviews")]),
+            Line::from(vec![key("Esc / q / o"), Span::raw("Close popup")]),
+        ])
     } else if app.c3_show_link_popup {
         ("Link Groups", vec![
             hdr!("Navigation"),

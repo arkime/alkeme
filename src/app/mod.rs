@@ -177,6 +177,8 @@ pub struct App {
     pub c3_card_popup_scroll: u16,    // scroll offset for card popup
     pub c3_show_overview_popup: bool,  // overview selector popup
     pub c3_overview_popup_selected: usize,
+    pub c3_overview_popup_filter: String,
+    pub c3_overview_popup_filtering: bool,
     pub c3_selected_overviews: HashMap<String, String>, // itype -> overview id
     pub c3_disabled_integrations: std::collections::HashSet<String>, // user-toggled off
     pub c3_show_integration_popup: bool,
@@ -416,6 +418,8 @@ impl App {
             c3_card_popup_scroll: 0,
             c3_show_overview_popup: false,
             c3_overview_popup_selected: 0,
+            c3_overview_popup_filter: String::new(),
+            c3_overview_popup_filtering: false,
             c3_selected_overviews: HashMap::new(),
             c3_disabled_integrations: std::collections::HashSet::new(),
             c3_show_integration_popup: false,
@@ -1242,5 +1246,20 @@ impl App {
         self.expression_edit = self.expression.clone();
         self.expression_cursor = self.expression_edit.len();
         self.input_mode = InputMode::Expression;
+    }
+
+    /// Get the currently selected overview from the filtered+sorted list
+    pub fn c3_overview_filtered_get(&self) -> Option<crate::api::Cont3xtOverview> {
+        let itype = match self.c3_tree_order.get(self.c3_selected) {
+            Some(C3TreeItem::Indicator(itype, _)) => itype.to_lowercase(),
+            _ => return None,
+        };
+        let filter_lower = self.c3_overview_popup_filter.to_lowercase();
+        let mut matching: Vec<&crate::api::Cont3xtOverview> = self.c3_overviews.iter()
+            .filter(|o| o.itype.to_lowercase() == itype)
+            .filter(|o| filter_lower.is_empty() || o.name.to_lowercase().contains(&filter_lower))
+            .collect();
+        matching.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        matching.get(self.c3_overview_popup_selected).map(|o| (*o).clone())
     }
 }

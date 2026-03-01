@@ -185,7 +185,7 @@ src/
 | E | Edit search indicator (when in detail panel) |
 | R | Toggle raw JSON / card view; debug mode for overview |
 | C | Card/overview definition popup (detail); s saves to /tmp/alkeme-card.txt |
-| o | Select overview (when on indicator header) |
+| o | Select overview (when on indicator header); d:set default, /:filter, r:refresh, h/?:help |
 | i | Integration filter popup (Space:toggle, a:all, n:none, !:invert, /:filter) |
 | Shift+I | Open views popup (select/create/delete integration views) |
 | r | Re-run search |
@@ -362,7 +362,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - `c3_integrations`, `c3_results`, `c3_selected`, `c3_detail_scroll`, `c3_detail_hscroll`, `c3_detail_filter`
 - `c3_overviews` — Vec<Cont3xtOverview> fetched from `/api/overview`
 - `c3_selected_overviews` — HashMap<String, String> mapping itype → selected overview id
-- `c3_show_overview_popup`, `c3_overview_popup_selected` — overview selector popup state
+- `c3_show_overview_popup`, `c3_overview_popup_selected`, `c3_overview_popup_filter`, `c3_overview_popup_filtering` — overview selector popup state
 - `c3_search_total`, `c3_search_sent`, `c3_search_itype`, `c3_focus`, `c3_raw_view`, `c3_show_card_popup`, `c3_card_popup_scroll`
 - `c3_disabled_integrations`, `show_integration_popup`, `integration_popup_selected`, `integration_popup_filter`, `integration_popup_filtering`
 - `c3_searching`, `pending_c3_search`
