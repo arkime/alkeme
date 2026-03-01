@@ -894,7 +894,16 @@ impl App {
 
     pub async fn c3_fetch_overviews(&mut self) {
         match self.client.c3_get_overviews().await {
-            Ok(overviews) => {
+            Ok(mut overviews) => {
+                // Fetch selectedOverviews from settings to mark correct defaults
+                if let Ok(selected) = self.client.c3_get_selected_overviews().await {
+                    for ov in &mut overviews {
+                        let itype_lower = ov.itype.to_lowercase();
+                        if let Some(default_id) = selected.get(&itype_lower).or_else(|| selected.get(&ov.itype)) {
+                            ov.is_default = ov.id == *default_id;
+                        }
+                    }
+                }
                 self.c3_overviews = overviews;
             }
             Err(e) => {

@@ -2,6 +2,7 @@ use super::*;
 
 use anyhow::Result;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -61,6 +62,22 @@ impl ArkimeClient {
             }
         }
         Ok(overviews)
+    }
+
+    /// Fetch cont3xt settings including selectedOverviews
+    pub async fn c3_get_selected_overviews(&self) -> Result<HashMap<String, String>> {
+        let url = format!("{}/api/settings", self.base_url);
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let mut selected = HashMap::new();
+        if let Some(obj) = parsed.get("selectedOverviews").and_then(|v| v.as_object()) {
+            for (itype, id) in obj {
+                if let Some(id_str) = id.as_str() {
+                    selected.insert(itype.clone(), id_str.to_string());
+                }
+            }
+        }
+        Ok(selected)
     }
 
     pub fn cont3xt_search_url(&self) -> String {
