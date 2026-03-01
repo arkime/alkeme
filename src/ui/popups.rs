@@ -532,6 +532,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             blank(),
             Line::from(vec![key("Enter"), Span::raw("Open link in browser")]),
             Line::from(vec![key("/"), Span::raw("Filter links by name")]),
+            Line::from(vec![key("r"), Span::raw("Refresh link groups")]),
             Line::from(vec![key("Esc / q / l"), Span::raw("Close popup")]),
         ])
     } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::Search && app.c3_focus == Cont3xtFocus::Detail {

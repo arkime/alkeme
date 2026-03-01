@@ -190,6 +190,19 @@ impl App {
                 KeyCode::Char('h') | KeyCode::Char('?') => {
                     self.show_help = true;
                 }
+                KeyCode::Char('r') => {
+                    match self.client.c3_get_link_groups().await {
+                        Ok(groups) => {
+                            self.c3_link_groups = groups;
+                            self.c3_build_link_flat();
+                            self.c3_link_popup_selected = self.c3_link_popup_selected.min(self.c3_link_flat.len().saturating_sub(1));
+                            self.status_msg = format!("Refreshed {} link groups", self.c3_link_groups.len());
+                        }
+                        Err(e) => {
+                            self.status_msg = format!("Error refreshing link groups: {e}");
+                        }
+                    }
+                }
                 _ => {}
             }
             return;

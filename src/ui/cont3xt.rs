@@ -1231,7 +1231,7 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
 
     let block = Block::default()
         .title(title)
-        .title_bottom(Line::from(" / filter  Enter open  q close ").centered())
+        .title_bottom(Line::from(" / filter  r refresh  Enter open  q close ").centered())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
         .style(Style::default().bg(Color::Black));
