@@ -8,6 +8,7 @@ mod keys_wise;
 pub use types::*;
 
 use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats, parse_card};
+use chrono::{Duration, Utc};
 use crossterm::event::KeyCode;
 use ratatui::widgets::TableState;
 use serde_json::Value;
@@ -1088,6 +1089,32 @@ impl App {
             }
             None => (self.c3_search_itype.clone(), self.expression.clone()),
         };
+
+        // Collect indicators by itype for ${array,...}
+        // "top" = indicators from the init packet (what the user searched for)
+        let mut top_indicators_by_itype: HashMap<String, Vec<String>> = HashMap::new();
+        for (it, query) in &self.c3_init_indicators {
+            let entries = top_indicators_by_itype.entry(it.clone()).or_default();
+            if !entries.contains(query) {
+                entries.push(query.clone());
+            }
+        }
+        // "all" = all unique indicators in the results tree (init + discovered children)
+        let mut all_indicators_by_itype: HashMap<String, Vec<String>> = HashMap::new();
+        let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        for (it, query) in &self.c3_init_indicators {
+            if seen.insert((it.clone(), query.clone())) {
+                all_indicators_by_itype.entry(it.clone()).or_default().push(query.clone());
+            }
+        }
+        for result in &self.c3_results {
+            if !result.indicator.is_empty() && seen.insert((result.itype.clone(), result.indicator.clone())) {
+                all_indicators_by_itype.entry(result.itype.clone()).or_default().push(result.indicator.clone());
+            }
+        }
+
+        let now = Utc::now();
+        let start = now - Duration::days(7);
         let filter = self.c3_link_popup_filter.to_lowercase();
         self.c3_link_flat.clear();
         for group in &self.c3_link_groups {
@@ -1102,7 +1129,10 @@ impl App {
                         continue;
                     }
                 }
-                let url = link.url.replace("${indicator}", &indicator);
+                let url = substitute_link_url(
+                    &link.url, &indicator, &itype, start, now,
+                    &all_indicators_by_itype, &top_indicators_by_itype,
+                );
                 self.c3_link_flat.push((group.name.clone(), link.name.clone(), url, link.info.clone()));
             }
         }
@@ -1278,5 +1308,272 @@ impl App {
             .collect();
         matching.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         matching.get(self.c3_overview_popup_selected).map(|o| (*o).clone())
+    }
+}
+
+/// Decode percent-encoded characters in a URL (e.g., %20 → space, %22 → ").
+/// Used on macOS because `open` re-encodes the URL, causing double-encoding.
+pub fn percent_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let hi = chars.next();
+            let lo = chars.next();
+            if let (Some(h), Some(l)) = (hi, lo) {
+                if let (Some(hv), Some(lv)) = (hex_val(h), hex_val(l)) {
+                    out.push((hv << 4 | lv) as char);
+                    continue;
+                }
+                // Not valid hex, keep as-is
+                out.push('%');
+                out.push(h as char);
+                out.push(l as char);
+            } else {
+                out.push('%');
+                if let Some(h) = hi { out.push(h as char); }
+            }
+        } else {
+            out.push(b as char);
+        }
+    }
+    out
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Refang an indicator (reverse of defang: hXXp→http, [.]→.)
+fn refang(s: &str) -> String {
+    s.replace("hXXp", "http").replace("[.]", ".")
+}
+
+/// Convert a YYYY-MM-DD style format string to chrono strftime format
+fn convert_date_format(fmt: &str) -> String {
+    fmt.replace("YYYY", "%Y")
+        .replace("YY", "%y")
+        .replace("MM", "%m")
+        .replace("DD", "%d")
+        .replace("dd", "%d")
+        .replace("HH", "%H")
+        .replace("hh", "%H")
+        .replace("mm", "%M")
+        .replace("ss", "%S")
+}
+
+/// Parse a timeSnap string like "1d", "-1w", "2h" into a chrono Duration
+fn parse_time_snap(snap: &str) -> Option<Duration> {
+    let snap = snap.trim();
+    if snap.is_empty() { return None; }
+    let (negative, rest) = if let Some(s) = snap.strip_prefix('-') { (true, s) } else { (false, snap) };
+    let num_end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let num: i64 = rest[..num_end].parse().ok()?;
+    let unit = &rest[num_end..];
+    let dur = match unit {
+        "s" => Duration::seconds(num),
+        "m" => Duration::minutes(num),
+        "h" => Duration::hours(num),
+        "d" => Duration::days(num),
+        "w" => Duration::weeks(num),
+        _ => return None,
+    };
+    Some(if negative { -dur } else { dur })
+}
+
+/// Substitute all placeholders in a link URL
+fn substitute_link_url(
+    url: &str,
+    indicator: &str,
+    itype: &str,
+    start: chrono::DateTime<Utc>,
+    end: chrono::DateTime<Utc>,
+    indicators_by_itype: &HashMap<String, Vec<String>>,
+    top_indicators_by_itype: &HashMap<String, Vec<String>>,
+) -> String {
+    let refanged = refang(indicator);
+    let num_days = (end - start).num_days();
+    let num_hours = (end - start).num_hours();
+
+    // Simple placeholders
+    let result = url
+        .replace("${indicator}", &refanged)
+        .replace("${type}", itype)
+        .replace("${numDays}", &num_days.to_string())
+        .replace("${numHours}", &num_hours.to_string())
+        .replace("${startDate}", &start.format("%Y-%m-%d").to_string())
+        .replace("${endDate}", &end.format("%Y-%m-%d").to_string())
+        .replace("${startTS}", &start.format("%Y-%m-%dT%H.%M.%SZ").to_string())
+        .replace("${endTS}", &end.format("%Y-%m-%dT%H.%M.%SZ").to_string())
+        .replace("${startEpoch}", &start.timestamp().to_string())
+        .replace("${endEpoch}", &end.timestamp().to_string())
+        .replace("${startSplunk}", &start.format("%m/%d/%Y:%H:%M:%S").to_string())
+        .replace("${endSplunk}", &end.format("%m/%d/%Y:%H:%M:%S").to_string());
+
+    // ${start,...}, ${end,...}, and ${array,...} — scan for remaining ${ placeholders
+    let mut out = String::with_capacity(result.len());
+    let mut rest = result.as_str();
+    while let Some(pos) = rest.find("${") {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + 2..];
+        // Find matching closing brace, accounting for nested JSON braces and escaped chars
+        if let Some(close) = find_matching_brace(after) {
+            let inner = &after[..close];
+            if let Some(replacement) = process_advanced_placeholder(inner, start, end, indicators_by_itype, top_indicators_by_itype) {
+                out.push_str(&replacement);
+            }
+            // On parse failure, placeholder is removed
+            rest = &after[close + 1..];
+        } else {
+            out.push_str("${");
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Find the position of the closing `}` for a `${...}` placeholder,
+/// accounting for nested JSON braces and backslash-escaped characters.
+fn find_matching_brace(s: &str) -> Option<usize> {
+    let mut depth = 1; // we're already inside the opening ${
+    let mut chars = s.char_indices();
+    while let Some((i, ch)) = chars.next() {
+        match ch {
+            '\\' => { chars.next(); } // skip escaped char
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 { return Some(i); }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Process ${start,...}, ${end,...}, and ${array,...} placeholders
+fn process_advanced_placeholder(
+    inner: &str,
+    start: chrono::DateTime<Utc>,
+    end: chrono::DateTime<Utc>,
+    indicators_by_itype: &HashMap<String, Vec<String>>,
+    top_indicators_by_itype: &HashMap<String, Vec<String>>,
+) -> Option<String> {
+    let comma_pos = inner.find(',')?;
+    let keyword = inner[..comma_pos].trim();
+    let json_str = inner[comma_pos + 1..].trim();
+
+    match keyword {
+        "start" | "end" => {
+            let obj: serde_json::Value = serde_json::from_str(json_str).ok()?;
+            let fmt = obj.get("format").and_then(|v| v.as_str()).unwrap_or("YYYY-MM-DD");
+            let chrono_fmt = convert_date_format(fmt);
+            let mut dt = if keyword == "start" { start } else { end };
+            if let Some(snap_str) = obj.get("timeSnap").and_then(|v| v.as_str()) {
+                if let Some(dur) = parse_time_snap(snap_str) {
+                    dt = dt + dur;
+                }
+            }
+            Some(dt.format(&chrono_fmt).to_string())
+        }
+        "array" => {
+            let obj: serde_json::Value = serde_json::from_str(json_str).ok()?;
+            let target_itype = obj.get("iType").and_then(|v| v.as_str())?;
+            let include = obj.get("include").and_then(|v| v.as_str()).unwrap_or("all");
+            let sep = obj.get("sep").and_then(|v| v.as_str()).unwrap_or(",");
+            let quote = obj.get("quote").and_then(|v| v.as_str()).unwrap_or("");
+
+            let source = if include == "top" { top_indicators_by_itype } else { indicators_by_itype };
+            let values = source.get(target_itype)?;
+            let formatted: Vec<String> = values.iter()
+                .map(|v| format!("{quote}{v}{quote}"))
+                .collect();
+            Some(formatted.join(sep))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_substitute_array_with_quotes_and_sep() {
+        let mut all = HashMap::new();
+        all.insert("domain".to_string(), vec!["threathole.com".to_string(), "threattroll.com".to_string()]);
+        let top = all.clone();
+        let now = Utc::now();
+        let start = now - Duration::days(7);
+
+        let url = r#"str_representation:%20(%20${array,{"iType":"domain","include":"all","sep":" OR ","quote":"\""}}%20)"#;
+        let result = substitute_link_url(url, "threathole.com", "domain", start, now, &all, &top);
+        assert_eq!(result, r#"str_representation:%20(%20"threathole.com" OR "threattroll.com"%20)"#);
+    }
+
+    #[test]
+    fn test_substitute_simple_placeholders() {
+        let all = HashMap::new();
+        let top = HashMap::new();
+        let now = Utc::now();
+        let start = now - Duration::days(7);
+
+        let url = "https://example.com?q=${indicator}&t=${type}&d=${numDays}&h=${numHours}";
+        let result = substitute_link_url(url, "test[.]com", "domain", start, now, &all, &top);
+        assert_eq!(result, "https://example.com?q=test.com&t=domain&d=7&h=168");
+    }
+
+    #[test]
+    fn test_substitute_custom_date_format() {
+        let all = HashMap::new();
+        let top = HashMap::new();
+        let end = chrono::DateTime::parse_from_rfc3339("2024-06-15T12:30:00Z").unwrap().with_timezone(&Utc);
+        let start = end - Duration::days(7);
+
+        let url = r#"https://example.com?s=${start,{"format":"DD.MM.YYYY"}}&e=${end,{"format":"YYYY-MM-DDThh:mm:ssZ"}}"#;
+        let result = substitute_link_url(url, "test", "ip", start, end, &all, &top);
+        assert_eq!(result, "https://example.com?s=08.06.2024&e=2024-06-15T12:30:00Z");
+    }
+
+    #[test]
+    fn test_find_matching_brace() {
+        assert_eq!(find_matching_brace("simple}"), Some(6));
+        assert_eq!(find_matching_brace(r#"array,{"iType":"ip"}}"#), Some(20));
+        assert_eq!(find_matching_brace(r#"array,{"quote":"\""}}"#), Some(20));
+        assert_eq!(find_matching_brace("no close"), None);
+    }
+
+    #[test]
+    fn test_refang() {
+        assert_eq!(refang("hXXps://evil[.]com"), "https://evil.com");
+        assert_eq!(refang("normal.com"), "normal.com");
+    }
+
+    #[test]
+    fn test_substitute_array_full_url() {
+        let mut all = HashMap::new();
+        all.insert("domain".to_string(), vec!["threathole.com".to_string(), "threattroll.com".to_string()]);
+        let top = all.clone();
+        let now = Utc::now();
+        let start = now - Duration::days(7);
+
+        let url = r#"https://HOST:9999/app/dashboards#/view/123?_a=(query:(query:'str_representation:%20(%20${array,{"iType":"domain","include":"all","sep":" OR ","quote":"\""}}%20)'))"#;
+        let result = substitute_link_url(url, "threathole.com", "domain", start, now, &all, &top);
+        // %20 in template preserved as-is, quotes and spaces from sep are literal
+        assert_eq!(result, r#"https://HOST:9999/app/dashboards#/view/123?_a=(query:(query:'str_representation:%20(%20"threathole.com" OR "threattroll.com"%20)'))"#);
+    }
+
+    #[test]
+    fn test_parse_time_snap() {
+        assert_eq!(parse_time_snap("1d"), Some(Duration::days(1)));
+        assert_eq!(parse_time_snap("-1w"), Some(Duration::weeks(-1)));
+        assert_eq!(parse_time_snap("2h"), Some(Duration::hours(2)));
+        assert_eq!(parse_time_snap(""), None);
     }
 }

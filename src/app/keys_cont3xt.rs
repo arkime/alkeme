@@ -179,11 +179,15 @@ impl App {
                 }
                 KeyCode::Enter => {
                     if let Some((_, _, url, _)) = self.c3_link_flat.get(self.c3_link_popup_selected) {
-                        let url = url.clone();
+                        // macOS `open` percent-encodes the URL, so decode first to avoid double-encoding
                         #[cfg(target_os = "macos")]
-                        { let _ = std::process::Command::new("open").arg(&url).spawn(); }
+                        let open_url = percent_decode(url);
+                        #[cfg(not(target_os = "macos"))]
+                        let open_url = url.clone();
+                        #[cfg(target_os = "macos")]
+                        { let _ = std::process::Command::new("open").arg(&open_url).spawn(); }
                         #[cfg(target_os = "linux")]
-                        { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+                        { let _ = std::process::Command::new("xdg-open").arg(&open_url).spawn(); }
                         self.status_msg = format!("Opening: {url}");
                     }
                 }

@@ -401,9 +401,22 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 ### Link groups
 - `l` key opens link groups popup filtered by the selected indicator's itype
 - `GET /api/linkGroup` returns `{success, linkGroups: [{name, links: [{name, url, itypes: [], infoField}]}]}`
-- Links filtered by itype match; `${indicator}` substituted in URLs
+- Links filtered by itype match; full placeholder substitution in URLs via `substitute_link_url()`
 - Popup shows grouped links with description panel; Enter opens URL in browser
 - Uses `open` (macOS) or `xdg-open` (Linux) via `std::process::Command`
+
+### Link URL placeholders
+- `${indicator}` — refanged query (hXXp→http, [.]→.)
+- `${type}` — itype (ip, domain, url, email, hash, phone, text)
+- `${numDays}`, `${numHours}` — date range span (defaults: 7 days, 168 hours)
+- `${startDate}`, `${endDate}` — YYYY-MM-DD
+- `${startTS}`, `${endTS}` — YYYY-mm-ddTHH.MM.SSZ
+- `${startEpoch}`, `${endEpoch}` — seconds since epoch
+- `${startSplunk}`, `${endSplunk}` — MM/DD/YYYY:HH:MM:SS
+- `${start,{JSON}}`, `${end,{JSON}}` — custom date format with `format` and optional `timeSnap` (e.g., `${start,{"format":"DD.MM.YYYY","timeSnap":"1w"}}`)
+- `${array,{JSON}}` — array of indicators by iType, with `iType` (required), `include` ("all" = all indicators in results tree including discovered children, "top" = only init packet indicators), `sep`, `quote`
+- Helper functions: `refang()`, `convert_date_format()`, `parse_time_snap()`, `process_advanced_placeholder()`
+- Date defaults: end=now, start=now-7d (no UI for date range yet)
 
 ## Parliament mode
 
