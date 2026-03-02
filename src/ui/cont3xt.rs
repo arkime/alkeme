@@ -51,6 +51,9 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
     if app.c3_show_tags_popup {
         draw_tags_popup(f, app, area);
     }
+    if app.c3_show_date_popup {
+        draw_date_popup(f, app, area);
+    }
 }
 
 fn draw_cont3xt_background(f: &mut Frame, app: &mut App) {
@@ -134,8 +137,11 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
         format!("[tags: {}] ", app.c3_tags.join(","))
     };
 
+    let days = (app.c3_stop_date - app.c3_start_date).num_days();
+    let date_label = format!("[{}: {}d] ", app.c3_date_start_edit, days);
+
     let is_editing = app.input_mode == InputMode::Expression;
-    let title = format!(" Search (/) {integrations_label}{tags_label}");
+    let title = format!(" Search (/) {integrations_label}{tags_label}{date_label}");
     render_text_input(f, expr_display, app.expression_cursor, is_editing, &title, area);
 }
 
@@ -1770,6 +1776,53 @@ fn draw_tags_popup(f: &mut Frame, app: &App, area: Rect) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
                 .title(" Edit Tags "),
+        );
+    f.render_widget(paragraph, popup_area);
+}
+
+fn draw_date_popup(f: &mut Frame, app: &App, area: Rect) {
+    let popup_width = 60u16.min(area.width.saturating_sub(4));
+    let popup_height = 8u16;
+    let popup_area = center_popup(popup_width, popup_height, area);
+
+    f.render_widget(Clear, popup_area);
+
+    let start_style = if app.c3_date_field == 0 { Style::default().fg(Color::White) } else { Style::default().fg(Color::Gray) };
+    let stop_style = if app.c3_date_field == 1 { Style::default().fg(Color::White) } else { Style::default().fg(Color::Gray) };
+    let cursor = Span::styled("█", Style::default().fg(Color::Gray));
+
+    let mut start_spans = vec![
+        Span::styled(" Start: ", Style::default().fg(Color::Yellow)),
+        Span::styled(&app.c3_date_start_edit, start_style),
+    ];
+    if app.c3_date_field == 0 { start_spans.push(cursor.clone()); }
+
+    let mut stop_spans = vec![
+        Span::styled("  Stop: ", Style::default().fg(Color::Yellow)),
+        Span::styled(&app.c3_date_stop_edit, stop_style),
+    ];
+    if app.c3_date_field == 1 { stop_spans.push(cursor); }
+
+    let lines = vec![
+        Line::from(start_spans),
+        Line::from(stop_spans),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Tab/↑↓ switch, Enter set, Esc cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "  now, -7d, -1h, -30m, YYYY-MM-DD",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    let paragraph = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" Date Range "),
         );
     f.render_widget(paragraph, popup_area);
 }

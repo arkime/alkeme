@@ -8,7 +8,7 @@ mod keys_wise;
 pub use types::*;
 
 use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats, parse_card};
-use chrono::{Duration, Utc};
+use chrono::{Datelike, Duration, Timelike, Utc};
 use crossterm::event::KeyCode;
 use ratatui::widgets::TableState;
 use serde_json::Value;
@@ -199,6 +199,13 @@ pub struct App {
     pub c3_tags_edit: String,         // edit buffer for tags popup
     pub c3_show_tags_popup: bool,     // tag editor popup visible
     pub c3_save_json_prompt: Option<String>, // filename prompt for JSON export
+    // Cont3xt date range
+    pub c3_start_date: chrono::DateTime<Utc>,
+    pub c3_stop_date: chrono::DateTime<Utc>,
+    pub c3_show_date_popup: bool,
+    pub c3_date_start_edit: String,   // edit buffer for start date
+    pub c3_date_stop_edit: String,    // edit buffer for stop date
+    pub c3_date_field: u8,            // 0 = start, 1 = stop
     // Cont3xt link groups
     pub c3_link_groups: Vec<Cont3xtLinkGroup>,
     pub c3_show_link_popup: bool,
@@ -443,6 +450,12 @@ impl App {
             c3_tags_edit: String::new(),
             c3_show_tags_popup: false,
             c3_save_json_prompt: None,
+            c3_start_date: Utc::now() - Duration::days(7),
+            c3_stop_date: Utc::now(),
+            c3_show_date_popup: false,
+            c3_date_start_edit: String::from("-7d"),
+            c3_date_stop_edit: String::from("now"),
+            c3_date_field: 0,
             c3_link_groups: Vec::new(),
             c3_show_link_popup: false,
             c3_link_popup_selected: 0,
@@ -1113,8 +1126,8 @@ impl App {
             }
         }
 
-        let now = Utc::now();
-        let start = now - Duration::days(7);
+        let now = self.c3_stop_date;
+        let start = self.c3_start_date;
         let filter = self.c3_link_popup_filter.to_lowercase();
         self.c3_link_flat.clear();
         for group in &self.c3_link_groups {
@@ -1349,6 +1362,93 @@ fn hex_val(b: u8) -> Option<u8> {
     }
 }
 
+/// Parse a date input string (Splunk-style relative or absolute) into a DateTime<Utc>.
+/// Supports: "now", relative like "-5h", "+1d", "-1w", "-3M", "-1y", "@day",
+/// "+2h@day", and absolute ISO 8601 / YYYY/MM/DDTHH:mm:ss formats.
+fn parse_date_input(s: &str) -> Option<chrono::DateTime<Utc>> {
+    let s = s.trim();
+    if s.is_empty() || s == "now" {
+        return Some(Utc::now());
+    }
+
+    // Relative: +/-N unit[@snap]
+    if s.starts_with('+') || s.starts_with('-') {
+        let sign: i64 = if s.starts_with('-') { -1 } else { 1 };
+        let rest = &s[1..];
+
+        // Split on @ for optional snap
+        let (time_part, _snap_part) = if let Some(at) = rest.find('@') {
+            (&rest[..at], Some(&rest[at + 1..]))
+        } else {
+            (rest, None)
+        };
+
+        // Parse number + unit
+        let num_end = time_part.find(|c: char| !c.is_ascii_digit()).unwrap_or(time_part.len());
+        let num: i64 = if num_end == 0 { 1 } else { time_part[..num_end].parse().ok()? };
+        let unit = &time_part[num_end..];
+
+        let dur = match unit {
+            "s" | "sec" | "secs" | "second" | "seconds" => Duration::seconds(num),
+            "m" | "min" | "mins" | "minute" | "minutes" => Duration::minutes(num),
+            "h" | "hr" | "hrs" | "hour" | "hours" => Duration::hours(num),
+            "d" | "day" | "days" => Duration::days(num),
+            "w" | "week" | "weeks" => Duration::weeks(num),
+            "M" | "mon" | "mons" | "month" | "months" => Duration::days(num * 30),
+            "q" | "qtr" | "qtrs" | "quarter" | "quarters" => Duration::days(num * 91),
+            "y" | "yr" | "yrs" | "year" | "years" => Duration::days(num * 365),
+            _ => return None,
+        };
+
+        return Some(Utc::now() + dur * sign as i32);
+    }
+
+    // @snap only (e.g., "@day" = start of today)
+    if s.starts_with('@') {
+        let snap = &s[1..];
+        let now = Utc::now();
+        return match snap {
+            "s" | "sec" | "second" | "seconds" => Some(now.with_nanosecond(0)?),
+            "m" | "min" | "minute" | "minutes" => Some(now.with_nanosecond(0)?.with_second(0)?),
+            "h" | "hr" | "hour" | "hours" => Some(now.with_nanosecond(0)?.with_second(0)?.with_minute(0)?),
+            "d" | "day" | "days" => Some(now.date_naive().and_hms_opt(0, 0, 0)?.and_utc()),
+            "w" | "week" | "weeks" => {
+                let weekday = now.weekday().num_days_from_sunday();
+                Some((now.date_naive() - Duration::days(weekday as i64)).and_hms_opt(0, 0, 0)?.and_utc())
+            },
+            "M" | "mon" | "month" | "months" => {
+                Some(now.date_naive().with_day(1)?.and_hms_opt(0, 0, 0)?.and_utc())
+            },
+            "y" | "yr" | "year" | "years" => {
+                Some(chrono::NaiveDate::from_ymd_opt(now.year(), 1, 1)?.and_hms_opt(0, 0, 0)?.and_utc())
+            },
+            _ => None,
+        };
+    }
+
+    // Absolute: try ISO 8601 and YYYY/MM/DDTHH:mm:ss
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y/%m/%dT%H:%M:%S") {
+        return Some(dt.and_utc());
+    }
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
+        return Some(dt.and_utc());
+    }
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ") {
+        return Some(dt.and_utc());
+    }
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        return Some(d.and_hms_opt(0, 0, 0)?.and_utc());
+    }
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y/%m/%d") {
+        return Some(d.and_hms_opt(0, 0, 0)?.and_utc());
+    }
+
+    None
+}
+
 /// Refang an indicator (reverse of defang: hXXp→http, [.]→.)
 fn refang(s: &str) -> String {
     s.replace("hXXp", "http").replace("[.]", ".")
@@ -1575,5 +1675,49 @@ mod tests {
         assert_eq!(parse_time_snap("-1w"), Some(Duration::weeks(-1)));
         assert_eq!(parse_time_snap("2h"), Some(Duration::hours(2)));
         assert_eq!(parse_time_snap(""), None);
+    }
+
+    #[test]
+    fn test_parse_date_input() {
+        // "now" should be close to current time
+        let now = Utc::now();
+        let parsed = parse_date_input("now").unwrap();
+        assert!((parsed - now).num_seconds().abs() < 2);
+
+        // Empty string = now
+        let parsed = parse_date_input("").unwrap();
+        assert!((parsed - now).num_seconds().abs() < 2);
+
+        // Relative: -7d
+        let parsed = parse_date_input("-7d").unwrap();
+        let expected = now - Duration::days(7);
+        assert!((parsed - expected).num_seconds().abs() < 2);
+
+        // Relative: -1h
+        let parsed = parse_date_input("-1h").unwrap();
+        let expected = now - Duration::hours(1);
+        assert!((parsed - expected).num_seconds().abs() < 2);
+
+        // Relative: +30m
+        let parsed = parse_date_input("+30m").unwrap();
+        let expected = now + Duration::minutes(30);
+        assert!((parsed - expected).num_seconds().abs() < 2);
+
+        // Absolute ISO 8601
+        let parsed = parse_date_input("2024-06-15T12:30:00Z").unwrap();
+        assert_eq!(parsed.year(), 2024);
+        assert_eq!(parsed.month(), 6);
+        assert_eq!(parsed.day(), 15);
+
+        // Absolute date only
+        let parsed = parse_date_input("2024-01-01").unwrap();
+        assert_eq!(parsed.year(), 2024);
+        assert_eq!(parsed.month(), 1);
+        assert_eq!(parsed.day(), 1);
+        assert_eq!(parsed.hour(), 0);
+
+        // Invalid
+        assert!(parse_date_input("garbage").is_none());
+        assert!(parse_date_input("-7z").is_none());
     }
 }

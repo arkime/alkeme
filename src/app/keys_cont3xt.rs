@@ -558,6 +558,47 @@ impl App {
             return;
         }
 
+        // Date range editor popup
+        if self.c3_show_date_popup {
+            match key.code {
+                KeyCode::Esc => {
+                    self.c3_show_date_popup = false;
+                }
+                KeyCode::Tab | KeyCode::Up | KeyCode::Down => {
+                    self.c3_date_field = 1 - self.c3_date_field;
+                }
+                KeyCode::Enter => {
+                    let start_parsed = parse_date_input(&self.c3_date_start_edit);
+                    let stop_parsed = parse_date_input(&self.c3_date_stop_edit);
+                    if let (Some(s), Some(e)) = (start_parsed, stop_parsed) {
+                        self.c3_start_date = s;
+                        self.c3_stop_date = e;
+                        self.c3_show_date_popup = false;
+                        let days = (e - s).num_days();
+                        self.status_msg = format!("Date range set: {} days", days);
+                    } else {
+                        self.status_msg = "Invalid date format. Use: now, -5h, -7d, -1w, -3M, or YYYY-MM-DD".to_string();
+                    }
+                }
+                KeyCode::Backspace => {
+                    if self.c3_date_field == 0 {
+                        self.c3_date_start_edit.pop();
+                    } else {
+                        self.c3_date_stop_edit.pop();
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if self.c3_date_field == 0 {
+                        self.c3_date_start_edit.push(c);
+                    } else {
+                        self.c3_date_stop_edit.push(c);
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // JSON save filename prompt
         if self.c3_save_json_prompt.is_some() {
             match key.code {
@@ -683,6 +724,10 @@ impl App {
             KeyCode::Char('t') if self.active_tab == Tab::Search => {
                 self.c3_tags_edit = self.c3_tags.join(", ");
                 self.c3_show_tags_popup = true;
+            }
+            KeyCode::Char('d') if self.active_tab == Tab::Search => {
+                self.c3_date_field = 0;
+                self.c3_show_date_popup = true;
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) && self.active_tab == Tab::Search => {
                 self.c3_no_cache = true;
