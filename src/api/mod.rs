@@ -253,20 +253,8 @@ impl ArkimeClient {
         self.http_log.clone()
     }
 
-    pub fn auth_mode(&self) -> AuthMode {
-        self.auth_mode
-    }
-
     pub fn base_url(&self) -> &str {
         &self.base_url
-    }
-
-    pub fn username(&self) -> Option<String> {
-        self.username.clone()
-    }
-
-    pub fn password(&self) -> Option<String> {
-        self.password.clone()
     }
 
     pub fn clone_for_fetch(&self) -> FetchClient {
@@ -278,6 +266,22 @@ impl ArkimeClient {
             arkime_cookie: self.arkime_cookie.clone(),
             cookie_header_name: self.cookie_header_name,
             http_log: self.http_log.clone(),
+        }
+    }
+
+    /// Create a new client pointing to a different URL but sharing the same
+    /// reqwest::Client (and its cookie jar). Skips login — reuses existing session.
+    pub fn clone_with_url(&self, base_url: &str) -> Self {
+        Self {
+            client: self.client.clone(),
+            base_url: base_url.trim_end_matches('/').to_string(),
+            auth_mode: self.auth_mode,
+            username: self.username.clone(),
+            password: self.password.clone(),
+            logged_in: self.logged_in,
+            arkime_cookie: None,
+            cookie_header_name: self.cookie_header_name,
+            http_log: new_http_log(),
         }
     }
 

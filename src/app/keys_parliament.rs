@@ -199,19 +199,8 @@ impl App {
         // Save parliament client for Ctrl+P return
         self.pl_saved_client = Some(self.client.clone());
 
-        // Build a new client pointing to the cluster's URL
-        let auth_mode = self.client.auth_mode();
-        let mut new_client = crate::api::ArkimeClient::new(
-            url,
-            auth_mode,
-            self.client.username(),
-            self.client.password(),
-        );
-        if let Err(e) = new_client.login().await {
-            self.status_msg = format!("Failed to connect to {}: {}", url, e);
-            self.pl_saved_client = None;
-            return;
-        }
+        // Reuse the same reqwest client (and its cookie jar) with a new URL
+        let mut new_client = self.client.clone_with_url(url);
         new_client.fetch_cookie().await.ok();
 
         self.status_msg = format!("Connected to cluster: {}", url);
@@ -222,7 +211,7 @@ impl App {
         self.app_mode = AppMode::Viewer;
         self.active_tab = Tab::Sessions;
 
-        // Initialize viewer data
+        // Initialize viewer data — if auth expired, these will fail and user sees error
         self.vr_fetch_fields().await;
         self.vr_fetch_sessions().await;
     }
@@ -243,18 +232,8 @@ impl App {
         // Save parliament client for Ctrl+P return
         self.pl_saved_client = Some(self.client.clone());
 
-        let auth_mode = self.client.auth_mode();
-        let mut new_client = crate::api::ArkimeClient::new(
-            url,
-            auth_mode,
-            self.client.username(),
-            self.client.password(),
-        );
-        if let Err(e) = new_client.login().await {
-            self.status_msg = format!("Failed to connect to Cont3xt at {}: {}", url, e);
-            self.pl_saved_client = None;
-            return;
-        }
+        // Reuse the same reqwest client (and its cookie jar) with a new URL
+        let mut new_client = self.client.clone_with_url(url);
         new_client.fetch_cookie().await.ok();
 
         self.status_msg = format!("Connected to Cont3xt: {}", url);
@@ -276,24 +255,8 @@ impl App {
         // Save parliament client for Ctrl+P return
         self.pl_saved_client = Some(self.client.clone());
 
-        let auth_mode = self.client.auth_mode();
-        let mut new_client = crate::api::ArkimeClient::new(
-            url,
-            auth_mode,
-            self.client.username(),
-            self.client.password(),
-        );
-        // WISE may not require auth — try login but don't fail
-        if let Err(e) = new_client.login().await {
-            // Try without auth
-            new_client = crate::api::ArkimeClient::new(
-                url,
-                crate::api::AuthMode::None,
-                None,
-                None,
-            );
-            self.status_msg = format!("WISE auth failed ({}), trying without auth", e);
-        }
+        // Reuse the same reqwest client (and its cookie jar) with a new URL
+        let mut new_client = self.client.clone_with_url(url);
         new_client.fetch_cookie().await.ok();
 
         self.status_msg = format!("Connected to WISE: {}", url);
