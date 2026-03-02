@@ -30,6 +30,11 @@ Select any field to see top values with a bar chart and sortable table showing s
 
 ![Arkime Tab](assets/arkime-tab.png)
 
+### Cont3xt Search
+Search indicators across integrations with streaming results, card-based rendering, and overview panels.
+
+![Cont3xt Search](assets/cont3xt-search.png)
+
 ## Features
 
 ### Viewer
