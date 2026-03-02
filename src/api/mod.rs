@@ -329,6 +329,27 @@ impl ArkimeClient {
         self.logged_in = true;
         Ok(())
     }
+
+    /// Try to use existing session cookies for a new URL. If the session
+    /// is valid (200 on /api/user/settings), extract the CSRF cookie.
+    /// If not (redirect/4xx), fall back to full login().
+    pub async fn ensure_session(&mut self) -> Result<()> {
+        if self.auth_mode == AuthMode::None || self.auth_mode == AuthMode::Basic || self.auth_mode == AuthMode::Digest {
+            return Ok(()); // these don't use session cookies
+        }
+        let url = format!("{}/api/user/settings", self.base_url);
+        let resp = self.client.get(&url).send().await?;
+        let status = resp.status();
+        if status.is_success() {
+            self.extract_cookie(&resp);
+            self.logged_in = true;
+            return Ok(());
+        }
+        // Session not valid for this host — do full login
+        self.logged_in = false;
+        self.login().await
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn append_view(url: &mut String, view: &Option<String>) {
         if let Some(v) = view {

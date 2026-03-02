@@ -201,6 +201,11 @@ impl App {
 
         // Reuse the same reqwest client (and its cookie jar) with a new URL
         let mut new_client = self.client.clone_with_url(url);
+        if let Err(e) = new_client.ensure_session().await {
+            self.status_msg = format!("Failed to connect to {}: {}", url, e);
+            self.pl_saved_client = None;
+            return;
+        }
         new_client.fetch_cookie().await.ok();
 
         self.status_msg = format!("Connected to cluster: {}", url);
@@ -234,6 +239,11 @@ impl App {
 
         // Reuse the same reqwest client (and its cookie jar) with a new URL
         let mut new_client = self.client.clone_with_url(url);
+        if let Err(e) = new_client.ensure_session().await {
+            self.status_msg = format!("Failed to connect to Cont3xt at {}: {}", url, e);
+            self.pl_saved_client = None;
+            return;
+        }
         new_client.fetch_cookie().await.ok();
 
         self.status_msg = format!("Connected to Cont3xt: {}", url);
@@ -257,6 +267,11 @@ impl App {
 
         // Reuse the same reqwest client (and its cookie jar) with a new URL
         let mut new_client = self.client.clone_with_url(url);
+        if let Err(e) = new_client.ensure_session().await {
+            self.status_msg = format!("Failed to connect to WISE at {}: {}", url, e);
+            self.pl_saved_client = None;
+            return;
+        }
         new_client.fetch_cookie().await.ok();
 
         self.status_msg = format!("Connected to WISE: {}", url);
