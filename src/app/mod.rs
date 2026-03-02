@@ -534,9 +534,19 @@ impl App {
             || self.c3_show_link_popup
             || self.c3_show_integration_popup
             || self.c3_show_tags_popup
+            || self.c3_show_date_popup
             || self.c3_save_json_prompt.is_some()
             || self.show_help
             || self.show_debug
+    }
+
+    /// Returns true if q should close a popup instead of quitting the app
+    pub fn q_closes_popup(&self) -> bool {
+        self.show_help || self.show_debug || self.pl_show_detail
+            || self.vr_show_column_editor || self.vr_show_layout_popup || self.vr_show_view_popup
+            || self.c3_show_integration_popup || self.c3_show_overview_popup
+            || self.c3_show_link_popup || self.c3_show_card_popup
+            || self.c3_show_tags_popup || self.c3_show_date_popup
     }
 
     pub fn tabs(&self) -> &'static [Tab] {

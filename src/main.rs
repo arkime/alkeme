@@ -455,7 +455,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     return Ok(());
                 }
                 if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
-                    && !app.vr_show_column_editor && !app.vr_show_layout_popup && !app.vr_show_view_popup && !app.show_help && !app.show_debug && !app.pl_show_detail {
+                    && !app.q_closes_popup() {
                     return Ok(());
                 }
                 app.handle_key(key).await;
@@ -467,7 +467,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                             return Ok(());
                         }
                         if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
-                            && !app.vr_show_column_editor && !app.vr_show_layout_popup && !app.vr_show_view_popup && !app.show_help && !app.show_debug && !app.pl_show_detail {
+                            && !app.q_closes_popup() {
                             return Ok(());
                         }
                         app.handle_key(key).await;
