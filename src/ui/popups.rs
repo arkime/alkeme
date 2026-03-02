@@ -332,13 +332,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("PgUp / PgDn"), Span::raw("Scroll one page")]),
             Line::from(vec![key("← / Home"), Span::raw("Jump to top")]),
             Line::from(vec![key("→"), Span::raw("Jump to bottom")]),
+            Line::from(vec![key("Esc / p / q"), Span::raw("Close packets view")]),
             blank(),
             hdr!("Options"),
             blank(),
             Line::from(vec![key("r"), Span::raw("Toggle raw packets")]),
             Line::from(vec![key("l"), Span::raw("Cycle line numbers: hex/dec/off")]),
-            blank(),
-            Line::from(vec![key("Esc / p / q"), Span::raw("Close packets view")]),
             blank(),
             hdr!("Colors"),
             blank(),
@@ -355,6 +354,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("PgUp / PgDn"), Span::raw("Page up / down")]),
             Line::from(vec![key("← / Home"), Span::raw("Jump to top")]),
             Line::from(vec![key("→ / End"), Span::raw("Jump to bottom")]),
+            Line::from(vec![key("Esc / q"), Span::raw("Close detail")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -363,7 +363,6 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("E"), Span::raw("Edit expression")]),
             Line::from(vec![key("a"), Span::raw("Session actions")]),
             Line::from(vec![key("A"), Span::raw("All sessions actions")]),
-            Line::from(vec![key("Esc / q"), Span::raw("Close detail")]),
         ])
     } else if app.active_tab == Tab::Stats && app.vr_stats_view == StatsView::Detail {
         ("Stats Detail", vec![
@@ -374,12 +373,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("PgUp / PgDn"), Span::raw("Page up / down")]),
             Line::from(vec![key("← / Home"), Span::raw("Jump to top")]),
             Line::from(vec![key("→ / End"), Span::raw("Jump to bottom")]),
+            Line::from(vec![key("Esc / q"), Span::raw("Close detail")]),
             blank(),
             hdr!("Actions"),
             blank(),
             Line::from(vec![key("/"), Span::raw("Filter fields")]),
             Line::from(vec![key("E"), Span::raw("Edit expression")]),
-            Line::from(vec![key("Esc / q"), Span::raw("Close detail")]),
         ])
     } else if app.active_tab == Tab::Stats {
         ("Stats", vec![
@@ -388,6 +387,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
             Line::from(vec![key("1 / 2 / 3"), Span::raw("Switch sub-tab")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -397,7 +397,6 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("Esc"), Span::raw("Close overlay")]),
-            Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else if app.active_tab == Tab::Arkime {
         ("Arkime Summary", vec![
@@ -409,6 +408,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("PgUp / PgDn"), Span::raw("Page up / down")]),
             Line::from(vec![key("← / Home"), Span::raw("Jump to top")]),
             Line::from(vec![key("→ / End"), Span::raw("Jump to bottom")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -421,7 +421,6 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("t / T"), Span::raw("Cycle time range")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("v"), Span::raw("Views")]),
-            Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else if app.vr_show_column_editor {
         ("Column Editor", vec![
@@ -429,6 +428,8 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             blank(),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate fields")]),
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
+            Line::from(vec![key("q"), Span::raw("Close")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -437,28 +438,28 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("m"), Span::raw("Reorder mode (↑/↓ to move)")]),
             Line::from(vec![key("a"), Span::raw("Apply changes")]),
             Line::from(vec![key("d"), Span::raw("Reset to defaults")]),
-            Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
-            Line::from(vec![key("q"), Span::raw("Close")]),
         ])
     } else if app.vr_show_layout_popup {
         ("Layouts", vec![
             hdr!("Navigation"),
             blank(),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate layouts")]),
+            Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
+            Line::from(vec![key("q"), Span::raw("Close")]),
             blank(),
             hdr!("Actions"),
             blank(),
             Line::from(vec![key("Enter"), Span::raw("Select / save / load layout")]),
             Line::from(vec![key("/"), Span::raw("Filter layouts")]),
             Line::from(vec![key("x / Delete"), Span::raw("Delete selected layout")]),
-            Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
-            Line::from(vec![key("q"), Span::raw("Close")]),
         ])
     } else if app.vr_show_view_popup {
         ("Views", vec![
             hdr!("Navigation"),
             blank(),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate views")]),
+            Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
+            Line::from(vec![key("q"), Span::raw("Close")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -466,8 +467,6 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("/"), Span::raw("Filter views")]),
             Line::from(vec![key("x"), Span::raw("Delete selected view")]),
             Line::from(vec![key("Tab"), Span::raw("Toggle save columns (in save dialog)")]),
-            Line::from(vec![key("Esc"), Span::raw("Close (or clear filter)")]),
-            Line::from(vec![key("q"), Span::raw("Close")]),
         ])
     } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::C3Stats {
         ("Cont3xt Stats", vec![
@@ -476,6 +475,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
             Line::from(vec![key("1 / 2"), Span::raw("Switch sub-tab (Integrations / iTypes)")]),
+        ].into_iter().chain(
+            if app.pl_saved_client.is_some() {
+                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
+            } else { vec![] }
+        ).chain(vec![
+            Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -484,8 +489,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
             Line::from(vec![key("r"), Span::raw("Refresh stats")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
-            Line::from(vec![key("q"), Span::raw("Quit")]),
-        ])
+        ]).collect())
     } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::History {
         ("Cont3xt History", vec![
             hdr!("Navigation"),
@@ -495,6 +499,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
             Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
             Line::from(vec![key("← / →"), Span::raw("Previous / next page")]),
+        ].into_iter().chain(
+            if app.pl_saved_client.is_some() {
+                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
+            } else { vec![] }
+        ).chain(vec![
+            Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -505,13 +515,13 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
             Line::from(vec![key("r"), Span::raw("Refresh history")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
-            Line::from(vec![key("q"), Span::raw("Quit")]),
-        ])
+        ]).collect())
     } else if app.c3_show_overview_popup {
         ("Select Overview", vec![
             hdr!("Navigation"),
             blank(),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate overviews")]),
+            Line::from(vec![key("Esc / q / o"), Span::raw("Close popup")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -519,7 +529,6 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("d"), Span::raw("Set as default (saves to server)")]),
             Line::from(vec![key("/"), Span::raw("Filter overviews")]),
             Line::from(vec![key("r"), Span::raw("Refresh overviews")]),
-            Line::from(vec![key("Esc / q / o"), Span::raw("Close popup")]),
         ])
     } else if app.c3_show_link_popup {
         ("Link Groups", vec![
@@ -527,13 +536,13 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             blank(),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate links")]),
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down (10)")]),
+            Line::from(vec![key("Esc / q / l"), Span::raw("Close popup")]),
             blank(),
             hdr!("Actions"),
             blank(),
             Line::from(vec![key("Enter"), Span::raw("Open link in browser")]),
             Line::from(vec![key("/"), Span::raw("Filter links by name")]),
             Line::from(vec![key("r"), Span::raw("Refresh link groups")]),
-            Line::from(vec![key("Esc / q / l"), Span::raw("Close popup")]),
         ])
     } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::Search && app.c3_focus == Cont3xtFocus::Detail {
         ("Cont3xt Detail", vec![
@@ -547,6 +556,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Shift+← / Shift+→"), Span::raw("Fast scroll left / right")]),
             Line::from(vec![key("Home"), Span::raw("Jump to top, reset scroll")]),
             Line::from(vec![key("End"), Span::raw("Jump to bottom")]),
+        ].into_iter().chain(
+            if app.pl_saved_client.is_some() {
+                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
+            } else { vec![] }
+        ).chain(vec![
+            Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -563,12 +578,6 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("t"), Span::raw("Edit search tags")]),
             Line::from(vec![key("d"), Span::raw("Edit date range for links")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
-        ].into_iter().chain(
-            if app.pl_saved_client.is_some() {
-                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
-            } else { vec![] }
-        ).chain(vec![
-            Line::from(vec![key("q"), Span::raw("Quit")]),
         ]).collect())
     } else if app.app_mode == AppMode::Cont3xt {
         (if app.active_tab == Tab::Search { "Cont3xt Results" } else { "Cont3xt" }, vec![
@@ -578,6 +587,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate results list")]),
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Next / prev top-level indicator")]),
             Line::from(vec![key("← / →"), Span::raw("Jump to top / bottom")]),
+        ].into_iter().chain(
+            if app.pl_saved_client.is_some() {
+                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
+            } else { vec![] }
+        ).chain(vec![
+            Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -591,12 +606,6 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("r"), Span::raw("Re-run search")]),
             Line::from(vec![key("Ctrl+r"), Span::raw("Re-run search (no cache)")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
-        ].into_iter().chain(
-            if app.pl_saved_client.is_some() {
-                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
-            } else { vec![] }
-        ).chain(vec![
-            Line::from(vec![key("q"), Span::raw("Quit")]),
         ]).collect())
     } else if app.app_mode == AppMode::Parliament && app.active_tab == Tab::Dashboard {
         ("Parliament Dashboard", vec![
@@ -604,6 +613,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             blank(),
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate clusters")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -613,7 +623,6 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("w"), Span::raw("Open WISE (if configured)")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
-            Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else if app.app_mode == AppMode::Parliament && app.active_tab == Tab::Issues {
         ("Parliament Issues", vec![
@@ -623,6 +632,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate issues")]),
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
             Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -631,7 +641,6 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
             Line::from(vec![key("r"), Span::raw("Refresh issues")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
-            Line::from(vec![key("q"), Span::raw("Quit")]),
         ])
     } else if app.app_mode == AppMode::Wise && app.active_tab == Tab::WsStats {
         ("WISE Stats", vec![
@@ -641,6 +650,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
             Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
+        ].into_iter().chain(
+            if app.pl_saved_client.is_some() {
+                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
+            } else { vec![] }
+        ).chain(vec![
+            Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -648,8 +663,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("/ / E"), Span::raw("Filter stats")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
-            Line::from(vec![key("q"), Span::raw("Quit")]),
-        ])
+        ]).collect())
     } else if app.app_mode == AppMode::Wise && app.active_tab == Tab::WsQuery {
         ("WISE Query", vec![
             hdr!("Navigation"),
@@ -657,6 +671,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate results")]),
             Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
+        ].into_iter().chain(
+            if app.pl_saved_client.is_some() {
+                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
+            } else { vec![] }
+        ).chain(vec![
+            Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
@@ -665,8 +685,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("/ / E"), Span::raw("Edit query value")]),
             Line::from(vec![key("Enter"), Span::raw("Run query")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
-            Line::from(vec![key("q"), Span::raw("Quit")]),
-        ])
+        ]).collect())
     } else {
         let mut ht = vec![
             hdr!("Navigation"),
@@ -676,6 +695,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("← / →"), Span::raw("Previous / next page")]),
             Line::from(vec![key("Shift+← / Shift+→"), Span::raw("First / last page")]),
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+        ];
+        if app.pl_saved_client.is_some() {
+            ht.push(Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")]));
+        }
+        ht.push(Line::from(vec![key("q"), Span::raw("Quit")]));
+        ht.extend(vec![
             blank(),
             hdr!("Actions"),
             blank(),
@@ -692,11 +717,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("A"), Span::raw("All sessions actions")]),
             Line::from(vec![key("c"), Span::raw("Columns & layouts")]),
             Line::from(vec![key("v"), Span::raw("Views")]),
-        ];
-        if app.pl_saved_client.is_some() {
-            ht.push(Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")]));
-        }
-        ht.push(Line::from(vec![key("q"), Span::raw("Quit")]));
+        ]);
         ("Sessions", ht)
     };
 
