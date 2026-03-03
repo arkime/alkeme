@@ -1,5 +1,5 @@
 use super::*;
-use crate::api::{PlClusterStats, PlIssue};
+use crate::api::PlClusterStats;
 
 pub fn draw_parliament(f: &mut Frame, app: &mut App) {
     let status_h = status_bar_height(app);
@@ -69,7 +69,7 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
             let stats = app.pl_stats.get(cluster_id);
             let issues = app.pl_issues_map.get(cluster_id);
 
-            let line = build_cluster_line(cluster, stats, issues, is_selected);
+            let line = build_cluster_line(cluster, stats, is_selected);
             lines.push(line);
 
             // Show issues as grouped counts (e.g., "2 Out of Date, 1 Low Packets")
@@ -86,7 +86,7 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
                             counts.push((issue.title.clone(), 1, is_red));
                         }
                     }
-                    let mut issue_spans: Vec<Span> = vec![Span::raw("  └─ ")];
+                    let mut issue_spans: Vec<Span> = vec![Span::raw("     └─ ")];
                     for (i, (title, count, is_red)) in counts.iter().enumerate() {
                         if i > 0 {
                             issue_spans.push(Span::raw(", "));
@@ -156,7 +156,6 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
 fn build_cluster_line<'a>(
     cluster: &crate::api::PlCluster,
     stats: Option<&PlClusterStats>,
-    issues: Option<&Vec<PlIssue>>,
     is_selected: bool,
 ) -> Line<'a> {
     let mut spans: Vec<Span> = Vec::new();
@@ -224,7 +223,7 @@ fn build_cluster_line<'a>(
             // Monitoring sessions
             let mon_color = if stats.monitoring == 0 { Color::Yellow } else { Color::Cyan };
             spans.push(Span::styled(
-                format!(" {:>6} sess", stats.monitoring),
+                format!(" {:>11} sess", format_number(stats.monitoring as u64)),
                 Style::default().fg(mon_color),
             ));
 
@@ -255,18 +254,6 @@ fn build_cluster_line<'a>(
             if !stats.stats_error.is_empty() {
                 spans.push(Span::styled(" ⚠stats", Style::default().fg(Color::Red)));
             }
-        }
-    }
-
-    // Issue count
-    if let Some(issues) = issues {
-        if !issues.is_empty() {
-            let has_red = issues.iter().any(|i| i.severity == "red");
-            let color = if has_red { Color::Red } else { Color::Yellow };
-            spans.push(Span::styled(
-                format!(" [{}⚠]", issues.len()),
-                Style::default().fg(color),
-            ));
         }
     }
 
@@ -539,14 +526,15 @@ fn draw_cluster_detail(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn format_human_bps(bps: f64) -> String {
-    if bps >= 1_000_000_000.0 {
-        format!("{:.1} Gbps", bps * 8.0 / 1_000_000_000.0)
-    } else if bps >= 1_000_000.0 {
-        format!("{:.1} Mbps", bps * 8.0 / 1_000_000.0)
-    } else if bps >= 1_000.0 {
-        format!("{:.1} Kbps", bps * 8.0 / 1_000.0)
+    let bits = bps * 8.0;
+    if bits >= 1_000_000_000.0 {
+        format!("{:.1} Gbps", bits / 1_000_000_000.0)
+    } else if bits >= 1_000_000.0 {
+        format!("{:.1} Mbps", bits / 1_000_000.0)
+    } else if bits >= 1_000.0 {
+        format!("{:.1} Kbps", bits / 1_000.0)
     } else {
-        format!("{:.0} bps", bps * 8.0)
+        format!("{:.0} bps", bits)
     }
 }
 
