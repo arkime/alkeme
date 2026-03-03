@@ -14,6 +14,7 @@ pub use types::*;
 use anyhow::Result;
 use reqwest::Client;
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Instant;
 
 pub struct FetchClient {
@@ -224,14 +225,20 @@ pub struct ArkimeClient {
     pub(super) arkime_cookie: Option<String>,
     pub(super) cookie_header_name: &'static str,
     pub(super) http_log: HttpLog,
+    pub(crate) cookie_store: Option<Arc<reqwest_cookie_store::CookieStoreMutex>>,
 }
 
 impl ArkimeClient {
-    pub fn new(base_url: &str, auth_mode: AuthMode, username: Option<String>, password: Option<String>) -> Self {
+    pub fn new(base_url: &str, auth_mode: AuthMode, username: Option<String>, password: Option<String>,
+               cookie_store: Option<Arc<reqwest_cookie_store::CookieStoreMutex>>) -> Self {
         let mut builder = Client::builder()
             .danger_accept_invalid_certs(true);
         if auth_mode == AuthMode::Form || auth_mode == AuthMode::Web || auth_mode == AuthMode::Okta {
-            builder = builder.cookie_store(true).redirect(reqwest::redirect::Policy::none());
+            if let Some(ref store) = cookie_store {
+                builder = builder.cookie_provider(Arc::clone(store)).redirect(reqwest::redirect::Policy::none());
+            } else {
+                builder = builder.cookie_store(true).redirect(reqwest::redirect::Policy::none());
+            }
         }
         if auth_mode == AuthMode::Okta {
             builder = builder.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36");
@@ -246,6 +253,7 @@ impl ArkimeClient {
             arkime_cookie: None,
             cookie_header_name: "x-arkime-cookie",
             http_log: new_http_log(),
+            cookie_store,
         }
     }
 
@@ -255,6 +263,21 @@ impl ArkimeClient {
 
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    /// Save cookies to a file if a cookie store is configured
+    pub fn save_cookies(&self, path: &str) {
+        if let Some(ref store) = self.cookie_store {
+            use std::os::unix::fs::OpenOptionsExt;
+            let file = std::fs::OpenOptions::new()
+                .write(true).create(true).truncate(true).mode(0o600)
+                .open(path);
+            if let Ok(file) = file {
+                let mut writer = std::io::BufWriter::new(file);
+                let store = store.lock().unwrap();
+                cookie_store::serde::json::save(&store, &mut writer).ok();
+            }
+        }
     }
 
     pub fn clone_for_fetch(&self) -> FetchClient {
@@ -282,6 +305,7 @@ impl ArkimeClient {
             arkime_cookie: None,
             cookie_header_name: self.cookie_header_name,
             http_log: new_http_log(),
+            cookie_store: self.cookie_store.clone(),
         }
     }
 

@@ -283,7 +283,7 @@ pub struct App {
 
 impl App {
     pub fn new(base_url: &str, auth_mode: crate::api::AuthMode, username: Option<String>, password: Option<String>, app_mode: AppMode) -> Self {
-        let client = ArkimeClient::new(base_url, auth_mode, username, password);
+        let client = ArkimeClient::new(base_url, auth_mode, username, password, None);
         let http_log = client.http_log();
         let active_tab = app_mode.default_tab();
         Self {

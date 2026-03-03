@@ -12,6 +12,7 @@ use crossterm::{
 };
 use ratatui::prelude::*;
 use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// alkeme - Rust TUI for Arkime
@@ -46,6 +47,10 @@ struct Cli {
     /// Override app mode (viewer, cont3xt, wise, parliament) — skips /api/appversion
     #[arg(long, value_parser = ["viewer", "cont3xt", "wise", "parliament"])]
     app: Option<String>,
+
+    /// Cookie jar file path — persist cookies between sessions (avoids re-login with Okta)
+    #[arg(long)]
+    jar: Option<String>,
 }
 
 #[tokio::main]
@@ -89,9 +94,30 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
+    // Load cookie jar from file if --jar specified
+    let cookie_store = if let Some(ref jar_path) = cli.jar {
+        let store = if let Ok(file) = std::fs::File::open(jar_path).map(std::io::BufReader::new) {
+            cookie_store::serde::json::load(file).unwrap_or_default()
+        } else {
+            reqwest_cookie_store::CookieStore::default()
+        };
+        Some(Arc::new(reqwest_cookie_store::CookieStoreMutex::new(store)))
+    } else {
+        None
+    };
+
     // For web/okta auth, login before entering raw mode (needs interactive stdin for prompts)
-    let mut client = api::ArkimeClient::new(&cli.url, auth_mode, username.clone(), password.clone());
-    if defers_prompts {
+    let mut client = api::ArkimeClient::new(&cli.url, auth_mode, username.clone(), password.clone(), cookie_store);
+
+    // If we have a cookie jar, try to reuse existing session before prompting for login
+    let mut jar_session_valid = false;
+    if cli.jar.is_some() && (auth_mode == api::AuthMode::Form || auth_mode == api::AuthMode::Web || auth_mode == api::AuthMode::Okta) {
+        if let Ok(()) = client.ensure_session().await {
+            jar_session_valid = true;
+        }
+    }
+
+    if !jar_session_valid && defers_prompts {
         client.login().await?;
         client.fetch_cookie().await.ok();
     }
@@ -103,7 +129,7 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Fetch app version to determine mode
-    if !defers_prompts {
+    if !jar_session_valid && !defers_prompts {
         client.login().await?;
         client.fetch_cookie().await.ok();
     }
@@ -175,6 +201,11 @@ async fn main() -> Result<()> {
     }
 
     let result = run_app(&mut terminal, &mut app).await;
+
+    // Save cookies to jar file on exit
+    if let Some(ref jar_path) = cli.jar {
+        app.client.save_cookies(jar_path);
+    }
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;

@@ -17,6 +17,7 @@ cargo run -- URL --auth digest                                 # prompts for bot
 cargo run -- URL --auth digest --user admin                    # prompts for password only
 cargo run -- URL --app cont3xt --auth form --user admin:admin  # force cont3xt mode
 cargo run -- URL --search 1.2.3.4 --cont3xt-tags mytag       # cont3xt with tags
+cargo run -- URL --auth okta --jar cookies.json               # persist cookies between sessions
 ```
 
 ## Architecture

@@ -18,12 +18,14 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "cookie_store 0.21.1",
  "crossterm",
  "digest_auth",
  "futures-util",
  "ratatui",
  "regex",
  "reqwest",
+ "reqwest_cookie_store",
  "rpassword",
  "scraper",
  "serde",
@@ -267,6 +269,24 @@ dependencies = [
  "percent-encoding",
  "time",
  "version_check",
+]
+
+[[package]]
+name = "cookie_store"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2eac901828f88a5241ee0600950ab981148a18f2f756900ffba1b125ca6a3ef9"
+dependencies = [
+ "cookie",
+ "document-features",
+ "idna",
+ "log",
+ "publicsuffix",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "time",
+ "url",
 ]
 
 [[package]]
@@ -1471,7 +1491,7 @@ dependencies = [
  "base64",
  "bytes",
  "cookie",
- "cookie_store",
+ "cookie_store 0.22.1",
  "futures-core",
  "futures-util",
  "http",
@@ -1503,6 +1523,18 @@ dependencies = [
  "wasm-streams",
  "web-sys",
  "webpki-roots",
+]
+
+[[package]]
+name = "reqwest_cookie_store"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2314c325724fea278d44c13a525ebf60074e33c05f13b4345c076eb65b2446b3"
+dependencies = [
+ "bytes",
+ "cookie_store 0.21.1",
+ "reqwest",
+ "url",
 ]
 
 [[package]]

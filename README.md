@@ -151,6 +151,9 @@ alkeme http://viewer.example.com:8005 --auth okta --user admin:password
 # With Okta SSO (prompts using Okta's configured labels)
 alkeme http://viewer.example.com:8005 --auth okta
 
+# Persist cookies to avoid re-login (great for Okta SSO)
+alkeme http://viewer.example.com:8005 --auth okta --jar cookies.json
+
 # With basic authentication (prompts for credentials)
 alkeme http://viewer.example.com:8005 --auth basic
 
@@ -168,6 +171,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `--search <EXPR>` | Default search expression (viewer) or indicator (cont3xt); auto-submits in cont3xt |
 | `--cont3xt-tags <TAGS>` | Comma-separated tags to include with Cont3xt searches |
 | `--app <APP>` | Force application: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appversion` detection) |
+| `--jar <FILE>` | Cookie jar file — persist cookies between sessions to avoid re-login (useful with Okta SSO) |
 
 ## Keybindings
 
