@@ -48,7 +48,7 @@ struct Cli {
     #[arg(long, value_parser = ["viewer", "cont3xt", "wise", "parliament"])]
     app: Option<String>,
 
-    /// Cookie jar file path — persist cookies between sessions (avoids re-login with Okta)
+    /// Cookie jar file path — encrypted session cookies + username between runs. Prompts for jar password each run. (File created with 0600 permissions)
     #[arg(long)]
     jar: Option<String>,
 }
@@ -67,13 +67,14 @@ async fn main() -> Result<()> {
     };
 
     let defers_prompts = auth_mode == api::AuthMode::Web || auth_mode == api::AuthMode::Okta;
+    let has_jar = cli.jar.is_some();
 
     let (username, password) = if let Some(userpass) = &cli.user {
         if let Some((u, p)) = userpass.split_once(':') {
             (Some(u.to_string()), Some(p.to_string()))
         } else {
-            // Username only (no colon) — prompt for password (unless auth defers to login page)
-            if defers_prompts {
+            // Username only (no colon) — prompt for password (unless auth defers or jar will try first)
+            if defers_prompts || has_jar {
                 (Some(userpass.clone()), None)
             } else {
                 let pass = rpassword::prompt_password(format!("Password for {userpass}: "))?;
@@ -84,35 +85,51 @@ async fn main() -> Result<()> {
         // Web/Okta auth will prompt using form labels after fetching the page
         (None, None)
     } else if auth_mode != api::AuthMode::None {
-        eprint!("Username: ");
-        let mut user = String::new();
-        io::stdin().read_line(&mut user)?;
-        let user = user.trim().to_string();
-        let pass = rpassword::prompt_password("Password: ")?;
-        (Some(user), Some(pass))
+        if has_jar {
+            // Defer prompting — jar might have valid session
+            (None, None)
+        } else {
+            eprint!("Username: ");
+            let mut user = String::new();
+            io::stdin().read_line(&mut user)?;
+            let user = user.trim().to_string();
+            let pass = rpassword::prompt_password("Password: ")?;
+            (Some(user), Some(pass))
+        }
     } else {
         (None, None)
     };
 
     // Load cookie jar from file if --jar specified
-    let cookie_store = if let Some(ref jar_path) = cli.jar {
-        let store = if let Ok(file) = std::fs::File::open(jar_path).map(std::io::BufReader::new) {
-            cookie_store::serde::json::load(file).unwrap_or_default()
-        } else {
-            reqwest_cookie_store::CookieStore::default()
-        };
-        Some(Arc::new(reqwest_cookie_store::CookieStoreMutex::new(store)))
+    let jar_password = if cli.jar.is_some() {
+        let pass = rpassword::prompt_password("Cookie jar password: ")?;
+        Some(pass)
     } else {
         None
     };
+
+    let (cookie_store, jar_username) = if let Some(ref jar_path) = cli.jar {
+        match api::load_cookie_store(jar_path, jar_password.as_deref()) {
+            Ok((store, saved_user)) => (Some(Arc::new(reqwest_cookie_store::CookieStoreMutex::new(store))), saved_user),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        (None, None)
+    };
+
+    // Use saved username from jar if no --user was provided
+    let username = username.or(jar_username);
 
     // For web/okta auth, login before entering raw mode (needs interactive stdin for prompts)
     let mut client = api::ArkimeClient::new(&cli.url, auth_mode, username.clone(), password.clone(), cookie_store);
 
     // If we have a cookie jar, try to reuse existing session before prompting for login
     let mut jar_session_valid = false;
-    if cli.jar.is_some() && (auth_mode == api::AuthMode::Form || auth_mode == api::AuthMode::Web || auth_mode == api::AuthMode::Okta) {
-        if let Ok(()) = client.ensure_session().await {
+    if cli.jar.is_some() {
+        if let Ok(true) = client.check_session().await {
             jar_session_valid = true;
         }
     }
@@ -120,6 +137,22 @@ async fn main() -> Result<()> {
     if !jar_session_valid && defers_prompts {
         client.login().await?;
         client.fetch_cookie().await.ok();
+    }
+
+    // If jar was tried and failed for non-deferred auth, prompt for missing credentials (before raw mode)
+    if !jar_session_valid && !defers_prompts && has_jar && auth_mode != api::AuthMode::None {
+        if client.username.is_none() {
+            eprint!("Username: ");
+            let mut user = String::new();
+            io::stdin().read_line(&mut user)?;
+            let user = user.trim().to_string();
+            let pass = rpassword::prompt_password("Password: ")?;
+            client.set_credentials(Some(user), Some(pass));
+        } else if client.password.is_none() {
+            let user = client.username.clone().unwrap();
+            let pass = rpassword::prompt_password(format!("Password for {user}: "))?;
+            client.set_credentials(Some(user), Some(pass));
+        }
     }
 
     enable_raw_mode()?;
@@ -130,7 +163,12 @@ async fn main() -> Result<()> {
 
     // Fetch app version to determine mode
     if !jar_session_valid && !defers_prompts {
-        client.login().await?;
+        if let Err(e) = client.login().await {
+            disable_raw_mode()?;
+            execute!(io::stdout(), LeaveAlternateScreen)?;
+            eprintln!("Error: {e:?}");
+            std::process::exit(1);
+        }
         client.fetch_cookie().await.ok();
     }
 
@@ -204,7 +242,7 @@ async fn main() -> Result<()> {
 
     // Save cookies to jar file on exit
     if let Some(ref jar_path) = cli.jar {
-        app.client.save_cookies(jar_path);
+        app.client.save_cookies(jar_path, jar_password.as_deref());
     }
 
     disable_raw_mode()?;

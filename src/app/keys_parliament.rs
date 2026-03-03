@@ -1,6 +1,28 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::*;
 
+/// Temporarily exit TUI, prompt for credentials, re-enter TUI, and retry login.
+/// Returns Ok(()) if login succeeds, Err if user cancels or login fails again.
+async fn prompt_credentials_and_login(client: &mut crate::api::ArkimeClient, url: &str) -> anyhow::Result<()> {
+    use std::io::Write;
+    crossterm::terminal::disable_raw_mode()?;
+    crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
+
+    println!("Authentication required for {}", url);
+    eprint!("Username: ");
+    std::io::stderr().flush()?;
+    let mut username = String::new();
+    std::io::stdin().read_line(&mut username)?;
+    let username = username.trim().to_string();
+    let password = rpassword::prompt_password("Password: ")?;
+
+    crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
+    crossterm::terminal::enable_raw_mode()?;
+
+    client.set_credentials(Some(username), Some(password));
+    client.login().await
+}
+
 impl App {
     pub async fn handle_parliament_key(&mut self, key: KeyEvent) {
         match self.active_tab {
@@ -201,10 +223,14 @@ impl App {
 
         // Reuse the same reqwest client (and its cookie jar) with a new URL
         let mut new_client = self.client.clone_with_url(url);
-        if let Err(e) = new_client.ensure_session().await {
-            self.status_msg = format!("Failed to connect to {}: {}", url, e);
-            self.pl_saved_client = None;
-            return;
+        if new_client.ensure_session().await.is_err() {
+            // Session cookies didn't work — prompt for credentials
+            self.force_clear = true;
+            if let Err(e) = prompt_credentials_and_login(&mut new_client, url).await {
+                self.status_msg = format!("Failed to connect to {}: {}", url, e);
+                self.pl_saved_client = None;
+                return;
+            }
         }
         new_client.fetch_cookie().await.ok();
 
@@ -254,10 +280,14 @@ impl App {
 
         // Reuse the same reqwest client (and its cookie jar) with a new URL
         let mut new_client = self.client.clone_with_url(url);
-        if let Err(e) = new_client.ensure_session().await {
-            self.status_msg = format!("Failed to connect to Cont3xt at {}: {}", url, e);
-            self.pl_saved_client = None;
-            return;
+        if new_client.ensure_session().await.is_err() {
+            // Session cookies didn't work — prompt for credentials
+            self.force_clear = true;
+            if let Err(e) = prompt_credentials_and_login(&mut new_client, url).await {
+                self.status_msg = format!("Failed to connect to Cont3xt at {}: {}", url, e);
+                self.pl_saved_client = None;
+                return;
+            }
         }
         new_client.fetch_cookie().await.ok();
 
@@ -287,10 +317,14 @@ impl App {
 
         // Reuse the same reqwest client (and its cookie jar) with a new URL
         let mut new_client = self.client.clone_with_url(url);
-        if let Err(e) = new_client.ensure_session().await {
-            self.status_msg = format!("Failed to connect to WISE at {}: {}", url, e);
-            self.pl_saved_client = None;
-            return;
+        if new_client.ensure_session().await.is_err() {
+            // Session cookies didn't work — prompt for credentials
+            self.force_clear = true;
+            if let Err(e) = prompt_credentials_and_login(&mut new_client, url).await {
+                self.status_msg = format!("Failed to connect to WISE at {}: {}", url, e);
+                self.pl_saved_client = None;
+                return;
+            }
         }
         new_client.fetch_cookie().await.ok();
 

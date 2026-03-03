@@ -17,6 +17,12 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
 
+use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
+use aes_gcm::aead::generic_array::GenericArray;
+use pbkdf2::pbkdf2_hmac;
+use sha2::Sha256;
+use rand::RngCore;
+
 pub struct FetchClient {
     pub(super) client: Client,
     pub(super) auth_mode: AuthMode,
@@ -214,6 +220,77 @@ fn digest_auth_header(resp: &reqwest::Response, url: &str, username: &str, passw
     Ok(prompt.respond(&context)?.to_header_string())
 }
 
+const PBKDF2_ITERATIONS: u32 = 100_000;
+const SALT_LEN: usize = 16;
+const NONCE_LEN: usize = 12;
+
+fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
+    let mut key = [0u8; 32];
+    pbkdf2_hmac::<Sha256>(password.as_bytes(), salt, PBKDF2_ITERATIONS, &mut key);
+    key
+}
+
+fn encrypt_data(plaintext: &[u8], password: &str) -> Vec<u8> {
+    let mut salt = [0u8; SALT_LEN];
+    rand::thread_rng().fill_bytes(&mut salt);
+    let mut nonce_bytes = [0u8; NONCE_LEN];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let key = derive_key(password, &salt);
+    let cipher = Aes256Gcm::new(GenericArray::from_slice(&key));
+    let nonce = GenericArray::from_slice(&nonce_bytes);
+    let ciphertext = cipher.encrypt(nonce, plaintext).expect("encryption failed");
+    // Format: salt || nonce || ciphertext
+    let mut out = Vec::with_capacity(SALT_LEN + NONCE_LEN + ciphertext.len());
+    out.extend_from_slice(&salt);
+    out.extend_from_slice(&nonce_bytes);
+    out.extend_from_slice(&ciphertext);
+    out
+}
+
+fn decrypt_data(data: &[u8], password: &str) -> Option<Vec<u8>> {
+    if data.len() < SALT_LEN + NONCE_LEN + 16 { // 16 = GCM tag
+        return None;
+    }
+    let salt = &data[..SALT_LEN];
+    let nonce_bytes = &data[SALT_LEN..SALT_LEN + NONCE_LEN];
+    let ciphertext = &data[SALT_LEN + NONCE_LEN..];
+    let key = derive_key(password, salt);
+    let cipher = Aes256Gcm::new(GenericArray::from_slice(&key));
+    let nonce = GenericArray::from_slice(nonce_bytes);
+    cipher.decrypt(nonce, ciphertext).ok()
+}
+
+/// Load a cookie store from a file, optionally decrypting with a password.
+/// Returns Ok((store, username)) on success, Err if the file exists but decryption fails.
+/// Returns Ok((empty store, None)) if the file doesn't exist yet.
+pub fn load_cookie_store(path: &str, password: Option<&str>) -> Result<(reqwest_cookie_store::CookieStore, Option<String>)> {
+    let data = match std::fs::read(path) {
+        Ok(d) if d.is_empty() => return Ok((reqwest_cookie_store::CookieStore::default(), None)),
+        Ok(d) => d,
+        Err(_) => return Ok((reqwest_cookie_store::CookieStore::default(), None)),
+    };
+    let json = if let Some(pass) = password {
+        match decrypt_data(&data, pass) {
+            Some(d) => d,
+            None => anyhow::bail!("Wrong cookie jar password"),
+        }
+    } else {
+        data
+    };
+    // Try new envelope format: {"username":"...","cookies":[...]}
+    if let Ok(wrapper) = serde_json::from_slice::<serde_json::Value>(&json) {
+        if wrapper.get("cookies").is_some() {
+            let username = wrapper.get("username").and_then(|v| v.as_str()).map(String::from);
+            let cookies_bytes = serde_json::to_vec(wrapper.get("cookies").unwrap()).unwrap_or_default();
+            let reader = std::io::BufReader::new(cookies_bytes.as_slice());
+            return Ok((cookie_store::serde::json::load_all(reader).unwrap_or_default(), username));
+        }
+    }
+    // Fall back to legacy format (raw cookie array)
+    let reader = std::io::BufReader::new(json.as_slice());
+    Ok((cookie_store::serde::json::load_all(reader).unwrap_or_default(), None))
+}
+
 #[derive(Clone)]
 pub struct ArkimeClient {
     pub(super) client: Client,
@@ -265,17 +342,37 @@ impl ArkimeClient {
         &self.base_url
     }
 
+    pub fn set_credentials(&mut self, username: Option<String>, password: Option<String>) {
+        self.username = username;
+        self.password = password;
+    }
+
     /// Save cookies to a file if a cookie store is configured
-    pub fn save_cookies(&self, path: &str) {
+    pub fn save_cookies(&self, path: &str, jar_password: Option<&str>) {
         if let Some(ref store) = self.cookie_store {
             use std::os::unix::fs::OpenOptionsExt;
+            let store = store.lock().unwrap();
+            let mut cookie_buf = Vec::new();
+            if cookie_store::serde::json::save_incl_expired_and_nonpersistent(&store, &mut cookie_buf).is_err() {
+                return;
+            }
+            let cookies_value: serde_json::Value = serde_json::from_slice(&cookie_buf).unwrap_or_default();
+            let wrapper = serde_json::json!({
+                "username": self.username,
+                "cookies": cookies_value,
+            });
+            let json_buf = serde_json::to_vec(&wrapper).unwrap_or_default();
+            let data = if let Some(pass) = jar_password {
+                encrypt_data(&json_buf, pass)
+            } else {
+                json_buf
+            };
             let file = std::fs::OpenOptions::new()
                 .write(true).create(true).truncate(true).mode(0o600)
                 .open(path);
-            if let Ok(file) = file {
-                let mut writer = std::io::BufWriter::new(file);
-                let store = store.lock().unwrap();
-                cookie_store::serde::json::save(&store, &mut writer).ok();
+            if let Ok(mut file) = file {
+                use std::io::Write;
+                file.write_all(&data).ok();
             }
         }
     }
@@ -354,6 +451,20 @@ impl ArkimeClient {
         Ok(())
     }
 
+    /// Check if existing session cookies are valid (200 on /api/user/settings).
+    /// Returns Ok(true) if valid, Ok(false) if not. Does NOT fall back to login.
+    pub async fn check_session(&mut self) -> Result<bool> {
+        let url = format!("{}/api/user/settings", self.base_url);
+        let resp = self.client.get(&url).send().await?;
+        if resp.status().is_success() {
+            self.extract_cookie(&resp);
+            self.logged_in = true;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Try to use existing session cookies for a new URL. If the session
     /// is valid (200 on /api/user/settings), extract the CSRF cookie.
     /// If not (redirect/4xx), fall back to full login().
@@ -361,12 +472,7 @@ impl ArkimeClient {
         if self.auth_mode == AuthMode::None || self.auth_mode == AuthMode::Basic || self.auth_mode == AuthMode::Digest {
             return Ok(()); // these don't use session cookies
         }
-        let url = format!("{}/api/user/settings", self.base_url);
-        let resp = self.client.get(&url).send().await?;
-        let status = resp.status();
-        if status.is_success() {
-            self.extract_cookie(&resp);
-            self.logged_in = true;
+        if let Ok(true) = self.check_session().await {
             return Ok(());
         }
         // Session not valid for this host — do full login

@@ -17,7 +17,7 @@ cargo run -- URL --auth digest                                 # prompts for bot
 cargo run -- URL --auth digest --user admin                    # prompts for password only
 cargo run -- URL --app cont3xt --auth form --user admin:admin  # force cont3xt mode
 cargo run -- URL --search 1.2.3.4 --cont3xt-tags mytag       # cont3xt with tags
-cargo run -- URL --auth okta --jar cookies.json               # persist cookies between sessions
+cargo run -- URL --auth okta --jar cookies.json               # encrypted cookie jar (saves username + cookies)
 ```
 
 ## Architecture
@@ -430,9 +430,10 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Each cluster shows: type icon (⊘ disabled, ⌂ multiviewer, 🔕noAlerts), health indicator (●green/●yellow/●red), title, stats (bps, drops/sec, sessions, nodes, ES info), issue count
 - Navigation: ↑/↓ selects cluster via `pl_cluster_list` flat index (group_idx, cluster_idx pairs); dashboard auto-scrolls to keep selected cluster visible (`pl_dashboard_scroll`)
 - `i` opens detail overlay with full stats and issues for selected cluster
-- `Enter` on a cluster with a URL switches to Viewer mode: creates new `ArkimeClient` with cluster URL, calls `login()`/`fetch_cookie()`, switches `app_mode` to Viewer, loads fields+sessions. Parliament client saved in `pl_saved_client`.
-- `c` on Dashboard switches to Cont3xt mode using `cont3xtUrl` from parliament settings (if configured). Saves parliament client for return.
-- `Ctrl+P` in Viewer or Cont3xt mode (when `pl_saved_client` is Some) restores the parliament client and switches back to Parliament Dashboard
+- `Enter` on a cluster with a URL switches to Viewer mode: creates new `ArkimeClient` with cluster URL, calls `ensure_session()`/`fetch_cookie()`, switches `app_mode` to Viewer, loads fields+sessions. Parliament client saved in `pl_saved_client`. If session cookies don't work, temporarily exits TUI to prompt for username/password.
+- `c` on Dashboard switches to Cont3xt mode using `cont3xtUrl` from parliament settings (if configured). Saves parliament client for return. Prompts for credentials if needed.
+- `w` on Dashboard switches to WISE mode using `wiseUrl` from parliament settings (if configured). Saves parliament client for return. Prompts for credentials if needed.
+- `Ctrl+P` or `q` in Viewer, Cont3xt, or WISE mode (when `pl_saved_client` is Some) restores the parliament client and switches back to Parliament Dashboard
 - Issues tab: filterable, sortable table of all cluster issues with severity color coding; uses `TableState` (`pl_issues_table_state`) for automatic scroll tracking
 - Filter uses expression handler (`/` or `E`), stored in `pl_issues_filter`
 - Sort cycles through: Cluster, Title, Severity, FirstNoticed, LastNoticed via `PlIssueSort`; active sort column shown in Cyan with ▲/▼ arrow, other sortable columns in Yellow
