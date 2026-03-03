@@ -8,7 +8,7 @@ use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle},
 };
 use ratatui::prelude::*;
 use std::io;
@@ -287,12 +287,24 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
     let mut c3_stream_consumed: usize = 0;
 
     let mut needs_redraw = true;
+    let mut last_title = String::new();
 
     loop {
         if app.force_clear {
             app.force_clear = false;
             terminal.clear()?;
             needs_redraw = true;
+        }
+        // Update terminal title when mode changes
+        let title = match app.app_mode {
+            app::AppMode::Viewer => format!("Alkeme - Viewer - {}", app.client.base_url()),
+            app::AppMode::Cont3xt => "Alkeme - Cont3xt".into(),
+            app::AppMode::Wise => "Alkeme - WISE".into(),
+            app::AppMode::Parliament => "Alkeme - Parliament".into(),
+        };
+        if title != last_title {
+            execute!(io::stdout(), SetTitle(&title))?;
+            last_title = title;
         }
         if needs_redraw {
             terminal.draw(|f| ui::draw(f, app))?;

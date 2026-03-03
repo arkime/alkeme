@@ -72,31 +72,32 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
             let line = build_cluster_line(cluster, stats, issues, is_selected);
             lines.push(line);
 
-            // Show issues inline (up to 3)
+            // Show issues as grouped counts (e.g., "2 Out of Date, 1 Low Packets")
             if let Some(issues) = issues {
-                for (i, issue) in issues.iter().take(3).enumerate() {
-                    let severity_color = if issue.severity == "red" { Color::Red } else { Color::Yellow };
-                    let prefix = if i == 0 { "  └─ " } else { "     " };
-                    lines.push(Line::from(vec![
-                        Span::raw(prefix),
-                        Span::styled(
-                            format!("⚠ {}", issue.title),
-                            Style::default().fg(severity_color),
-                        ),
-                        Span::raw(": "),
-                        Span::styled(&issue.message, Style::default().fg(Color::White)),
-                        if !issue.node.is_empty() {
-                            Span::styled(format!(" ({})", issue.node), Style::default().fg(Color::DarkGray))
+                if !issues.is_empty() {
+                    // Count issues by title
+                    let mut counts: Vec<(String, u32, bool)> = Vec::new();
+                    for issue in issues {
+                        let is_red = issue.severity == "red";
+                        if let Some(entry) = counts.iter_mut().find(|(t, _, _)| *t == issue.title) {
+                            entry.1 += 1;
+                            if is_red { entry.2 = true; }
                         } else {
-                            Span::raw("")
-                        },
-                    ]));
-                }
-                if issues.len() > 3 {
-                    lines.push(Line::from(Span::styled(
-                        format!("     ... and {} more", issues.len() - 3),
-                        Style::default().fg(Color::DarkGray),
-                    )));
+                            counts.push((issue.title.clone(), 1, is_red));
+                        }
+                    }
+                    let mut issue_spans: Vec<Span> = vec![Span::raw("  └─ ")];
+                    for (i, (title, count, is_red)) in counts.iter().enumerate() {
+                        if i > 0 {
+                            issue_spans.push(Span::raw(", "));
+                        }
+                        let color = if *is_red { Color::LightRed } else { Color::Yellow };
+                        issue_spans.push(Span::styled(
+                            format!("{} {}", count, title),
+                            Style::default().fg(color),
+                        ));
+                    }
+                    lines.push(Line::from(issue_spans));
                 }
             }
         }
@@ -130,9 +131,8 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
             line_count += 1; // cluster line
             let cluster_id = _cluster.id.as_deref().unwrap_or("");
             if let Some(issues) = app.pl_issues_map.get(cluster_id) {
-                line_count += issues.len().min(3) as u16;
-                if issues.len() > 3 {
-                    line_count += 1;
+                if !issues.is_empty() {
+                    line_count += 1; // single grouped-counts line
                 }
             }
         }
@@ -217,20 +217,20 @@ fn build_cluster_line<'a>(
             // Drops/sec
             let drops_color = if stats.delta_tdps > 0.0 { Color::Red } else { Color::Green };
             spans.push(Span::styled(
-                format!(" {:>6}d/s", stats.delta_tdps as u64),
+                format!(" {:>6} d/s", stats.delta_tdps as u64),
                 Style::default().fg(drops_color),
             ));
 
             // Monitoring sessions
             let mon_color = if stats.monitoring == 0 { Color::Yellow } else { Color::Cyan };
             spans.push(Span::styled(
-                format!(" {:>6}sess", stats.monitoring),
+                format!(" {:>6} sess", stats.monitoring),
                 Style::default().fg(mon_color),
             ));
 
             // Arkime nodes
             spans.push(Span::styled(
-                format!(" {:>3}nodes", stats.arkime_nodes),
+                format!(" {:>3} nodes", stats.arkime_nodes),
                 Style::default().fg(Color::White),
             ));
 
