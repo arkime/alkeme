@@ -35,6 +35,11 @@ Search indicators across integrations with streaming results, card-based renderi
 
 ![Cont3xt Search](assets/cont3xt-search.png)
 
+### Parliament Dashboard
+Monitor all your Arkime clusters at a glance with health status, throughput, and issue tracking. Easily jump to (c)ont3xt, (w)ise, or any viewer by pressing Enter on a cluster — and `q` takes you right back.
+
+![Parliament Dashboard](assets/parliament.png)
+
 ## Features
 
 ### Viewer
