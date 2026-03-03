@@ -257,6 +257,9 @@ pub struct App {
     pub pl_saved_client: Option<ArkimeClient>,
     pub pl_cont3xt_url: String,
     pub pl_wise_url: String,
+    pub pl_saved_viewer_expression: String,
+    pub pl_saved_c3_expression: String,
+    pub force_clear: bool, // force terminal clear after okta redirect
 
     // WISE mode fields (ws_ prefix)
     pub ws_stats: Option<WsStats>,
@@ -502,6 +505,9 @@ impl App {
             pl_saved_client: None,
             pl_cont3xt_url: String::new(),
             pl_wise_url: String::new(),
+            pl_saved_viewer_expression: String::new(),
+            pl_saved_c3_expression: String::new(),
+            force_clear: false,
 
             // WISE state
             ws_stats: None,

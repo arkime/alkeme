@@ -215,6 +215,11 @@ impl App {
         // Switch mode
         self.app_mode = AppMode::Viewer;
         self.active_tab = Tab::Sessions;
+        self.force_clear = true;
+
+        // Restore saved viewer expression
+        self.expression = self.pl_saved_viewer_expression.clone();
+        self.expression_edit = self.expression.clone();
 
         // Initialize viewer data — if auth expired, these will fail and user sees error
         self.vr_fetch_fields().await;
@@ -223,11 +228,21 @@ impl App {
 
     pub(crate) async fn pl_return_to_parliament(&mut self) {
         if let Some(saved) = self.pl_saved_client.take() {
+            // Save current expression for this mode
+            match self.app_mode {
+                AppMode::Viewer => self.pl_saved_viewer_expression = self.expression.clone(),
+                AppMode::Cont3xt => self.pl_saved_c3_expression = self.expression.clone(),
+                _ => {}
+            }
+            self.expression.clear();
+            self.expression_edit.clear();
+
             self.http_log = saved.http_log();
             self.client = saved;
             self.app_mode = AppMode::Parliament;
             self.active_tab = Tab::Dashboard;
             self.status_msg = "Returned to Parliament".into();
+            self.force_clear = true;
             // Refresh data
             self.pl_fetch_data().await;
         }
@@ -253,6 +268,11 @@ impl App {
         // Switch mode
         self.app_mode = AppMode::Cont3xt;
         self.active_tab = Tab::Search;
+        self.force_clear = true;
+
+        // Restore saved cont3xt expression
+        self.expression = self.pl_saved_c3_expression.clone();
+        self.expression_edit = self.expression.clone();
 
         // Initialize cont3xt data
         self.c3_fetch_integrations().await;
@@ -281,6 +301,7 @@ impl App {
         // Switch mode
         self.app_mode = AppMode::Wise;
         self.active_tab = Tab::WsStats;
+        self.force_clear = true;
 
         // Initialize WISE data
         self.ws_fetch_stats().await;

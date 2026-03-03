@@ -220,6 +220,11 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
     let mut needs_redraw = true;
 
     loop {
+        if app.force_clear {
+            app.force_clear = false;
+            terminal.clear()?;
+            needs_redraw = true;
+        }
         if needs_redraw {
             terminal.draw(|f| ui::draw(f, app))?;
             needs_redraw = false;
@@ -456,7 +461,13 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 }
                 if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
                     && !app.q_closes_popup() {
-                    return Ok(());
+                    if app.pl_saved_client.is_some() {
+                        app.pl_return_to_parliament().await;
+                        needs_redraw = true;
+                        break;
+                    } else {
+                        return Ok(());
+                    }
                 }
                 app.handle_key(key).await;
                 needs_redraw = true;
@@ -468,7 +479,13 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                         }
                         if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
                             && !app.q_closes_popup() {
-                            return Ok(());
+                            if app.pl_saved_client.is_some() {
+                                app.pl_return_to_parliament().await;
+                                needs_redraw = true;
+                                break;
+                            } else {
+                                return Ok(());
+                            }
                         }
                         app.handle_key(key).await;
                     } else {
