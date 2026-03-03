@@ -1103,6 +1103,15 @@ impl App {
     }
 
     /// Build the flat list of links filtered by selected result's itype
+    /// Get the integration name of the currently selected tree item (if it's a Result)
+    pub fn c3_current_integration_name(&self) -> Option<String> {
+        if let Some(C3TreeItem::Result(idx)) = self.c3_tree_order.get(self.c3_selected) {
+            self.c3_results.get(*idx).map(|r| r.name.clone())
+        } else {
+            None
+        }
+    }
+
     pub fn c3_build_link_flat(&mut self) {
         // Use the selected result's itype and indicator
         let (itype, indicator) = match self.c3_tree_order.get(self.c3_selected) {

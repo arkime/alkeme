@@ -766,6 +766,38 @@ impl App {
                     self.c3_show_link_popup = true;
                 }
             }
+            KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Results {
+                    if let Some(name) = self.c3_current_integration_name() {
+                        for i in (self.c3_selected + 1)..self.c3_tree_order.len() {
+                            if let Some(idx) = self.c3_tree_order[i].result_idx() {
+                                if self.c3_results.get(idx).map(|r| r.name.as_str()) == Some(&name) {
+                                    self.c3_selected = i;
+                                    self.c3_detail_scroll = 0;
+                                    self.c3_detail_hscroll = 0;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if self.active_tab == Tab::Search && self.c3_focus == Cont3xtFocus::Results {
+                    if let Some(name) = self.c3_current_integration_name() {
+                        for i in (0..self.c3_selected).rev() {
+                            if let Some(idx) = self.c3_tree_order[i].result_idx() {
+                                if self.c3_results.get(idx).map(|r| r.name.as_str()) == Some(&name) {
+                                    self.c3_selected = i;
+                                    self.c3_detail_scroll = 0;
+                                    self.c3_detail_hscroll = 0;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 if self.active_tab == Tab::Search {
                     match self.c3_focus {

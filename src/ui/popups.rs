@@ -586,6 +586,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate results list")]),
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Next / prev top-level indicator")]),
+            Line::from(vec![key("Ctrl+j / Ctrl+k"), Span::raw("Next / prev same integration")]),
             Line::from(vec![key("← / →"), Span::raw("Jump to top / bottom")]),
         ].into_iter().chain(
             if app.pl_saved_client.is_some() {
