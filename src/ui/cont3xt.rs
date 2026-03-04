@@ -504,16 +504,18 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
 
         let max_width = detail_inner.width as usize;
         let hscroll = app.c3_detail_hscroll as usize;
+        let c3_filter_lower = app.c3_detail_filter.to_lowercase();
         let rendered_lines: Vec<Line> = lines.iter().map(|line| {
             let spans = match line {
                 JsonLine::KeyValue(key, value) => {
                     let prefix = format!(" {}: ", key);
                     let remaining = max_width.saturating_sub(prefix.len());
                     let truncated: String = value.chars().take(remaining).collect();
-                    vec![
-                        Span::styled(prefix, Style::default().fg(Color::Yellow)),
-                        Span::styled(truncated, Style::default().fg(Color::White)),
-                    ]
+                    let key_style = Style::default().fg(Color::Yellow);
+                    let val_style = Style::default().fg(Color::White);
+                    let mut s = highlight_filter_spans(&prefix, &c3_filter_lower, key_style);
+                    s.extend(highlight_filter_spans(&truncated, &c3_filter_lower, val_style));
+                    s
                 }
                 JsonLine::Header(key, is_array) => {
                     let suffix = if *is_array { " [" } else { " {" };
@@ -525,18 +527,16 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
                 JsonLine::ArrayValue(value) => {
                     let remaining = max_width.saturating_sub(5);
                     let truncated: String = value.chars().take(remaining).collect();
-                    vec![
-                        Span::styled("   • ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(truncated, Style::default().fg(Color::White)),
-                    ]
+                    let mut s = vec![Span::styled("   • ", Style::default().fg(Color::DarkGray))];
+                    s.extend(highlight_filter_spans(&truncated, &c3_filter_lower, Style::default().fg(Color::White)));
+                    s
                 }
                 JsonLine::TableRow(cells, widths) => {
                     let row_str = format_table_cells(cells, widths, " │ ");
                     let visible: String = row_str.chars().skip(hscroll).take(max_width.saturating_sub(2)).collect();
-                    vec![
-                        Span::raw("  "),
-                        Span::styled(visible, Style::default().fg(Color::White)),
-                    ]
+                    let mut s = vec![Span::raw("  ")];
+                    s.extend(highlight_filter_spans(&visible, &c3_filter_lower, Style::default().fg(Color::White)));
+                    s
                 }
                 JsonLine::TableHeader(cells, widths) => {
                     let row_str = format_table_cells(cells, widths, " │ ");
