@@ -33,6 +33,30 @@ pub(super) fn format_epoch(val: &serde_json::Value, _field_type: &str) -> String
     }
 }
 
+pub(super) fn highlight_filter_spans<'a>(text: &str, filter_lower: &str, base_style: Style) -> Vec<Span<'a>> {
+    if filter_lower.is_empty() {
+        return vec![Span::styled(text.to_string(), base_style)];
+    }
+    let text_lower = text.to_lowercase();
+    let highlight_style = base_style.fg(Color::LightRed);
+    let mut spans = Vec::new();
+    let mut last_end = 0;
+    for (start, _) in text_lower.match_indices(filter_lower) {
+        if start > last_end {
+            spans.push(Span::styled(text[last_end..start].to_string(), base_style));
+        }
+        spans.push(Span::styled(text[start..start + filter_lower.len()].to_string(), highlight_style));
+        last_end = start + filter_lower.len();
+    }
+    if last_end < text.len() {
+        spans.push(Span::styled(text[last_end..].to_string(), base_style));
+    }
+    if spans.is_empty() {
+        spans.push(Span::styled(text.to_string(), base_style));
+    }
+    spans
+}
+
 pub(super) fn format_epoch_short(ms: f64) -> String {
     let secs = (ms / 1000.0) as i64;
     if let Some(dt) = DateTime::from_timestamp(secs, 0) {

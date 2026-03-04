@@ -145,13 +145,12 @@ fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 Style::default()
             };
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("{display_name:>30}: "),
-                    key_style,
-                ),
-                Span::styled(val_str, val_style),
-            ]));
+            let pad_len = 30usize.saturating_sub(display_name.len());
+            let mut spans = vec![Span::styled(" ".repeat(pad_len), key_style)];
+            spans.extend(highlight_filter_spans(display_name, &filter_lower, key_style));
+            spans.push(Span::styled(": ", key_style));
+            spans.extend(highlight_filter_spans(&val_str, &filter_lower, val_style));
+            lines.push(Line::from(spans));
         }
     }
 
