@@ -186,7 +186,7 @@ impl App {
                         let open_url = url.clone();
                         #[cfg(target_os = "macos")]
                         { let _ = std::process::Command::new("open").arg(&open_url).spawn(); }
-                        #[cfg(target_os = "linux")]
+                        #[cfg(not(target_os = "macos"))]
                         { let _ = std::process::Command::new("xdg-open").arg(&open_url).spawn(); }
                         self.status_msg = format!("Opening: {url}");
                     }

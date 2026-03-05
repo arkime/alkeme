@@ -1421,6 +1421,7 @@ impl App {
 
 /// Decode percent-encoded characters in a URL (e.g., %20 → space, %22 → ").
 /// Used on macOS because `open` re-encodes the URL, causing double-encoding.
+#[cfg(target_os = "macos")]
 pub fn percent_decode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.bytes();
@@ -1448,6 +1449,7 @@ pub fn percent_decode(s: &str) -> String {
     out
 }
 
+#[cfg(target_os = "macos")]
 fn hex_val(b: u8) -> Option<u8> {
     match b {
         b'0'..=b'9' => Some(b - b'0'),
