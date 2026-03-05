@@ -1483,7 +1483,17 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
                     let count = view.integrations.len();
                     let shared = if !view.editable { " 🔗" } else { "" };
                     let label = format!(" {} ({count}){shared}", view.name);
-                    f.render_widget(Paragraph::new(Span::styled(label, style)), Rect::new(inner.x, y, inner.width, 1));
+                    let id_str = view.id.as_str();
+                    let w = inner.width as usize;
+                    let label_len = label.chars().count() + if !view.editable { 1 } else { 0 }; // 🔗 is 2 cells wide
+                    let id_len = id_str.len() + 1; // +1 for trailing space
+                    let gap = w.saturating_sub(label_len + id_len);
+                    let line = Line::from(vec![
+                        Span::styled(label, style),
+                        Span::styled(" ".repeat(gap), style),
+                        Span::styled(format!("{id_str} "), style.patch(Style::default().fg(Color::DarkGray))),
+                    ]);
+                    f.render_widget(Paragraph::new(line), Rect::new(inner.x, y, inner.width, 1));
                 }
             }
         }

@@ -6,6 +6,35 @@ fn format_compact_bytes(bytes: usize) -> String {
     format!("{:.1}M", bytes as f64 / (1024.0 * 1024.0))
 }
 
+pub(super) fn draw_confirm_dialog(f: &mut Frame, app: &App, area: Rect) {
+    let dialog = match &app.confirm_dialog {
+        Some(d) => d,
+        None => return,
+    };
+    let title = format!(" {} ", dialog.title);
+    let msg_width = dialog.message.len() as u16 + 4;
+    let popup_width = msg_width.max(title.len() as u16 + 4).max(34).min(area.width.saturating_sub(4));
+    let popup_height = 6u16.min(area.height.saturating_sub(4));
+    let popup_area = center_popup(popup_width, popup_height, area);
+
+    f.render_widget(Clear, popup_area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red))
+        .title(title);
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+    let lines = vec![
+        Line::from(""),
+        Line::from(format!("  {}", dialog.message))
+            .style(Style::default().fg(Color::Yellow)),
+        Line::from(""),
+        Line::from("  y: yes  any other key: cancel")
+            .style(Style::default().fg(Color::DarkGray)),
+    ];
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
 pub(super) fn draw_action_menu(f: &mut Frame, app: &App, area: Rect) {
     let menu = match &app.action_menu {
         Some(m) => m,

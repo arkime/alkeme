@@ -53,6 +53,7 @@ pub struct App {
     pub expression_cursor: usize,
     pub input_mode: InputMode,
     pub show_help: bool,
+    pub confirm_dialog: Option<ConfirmDialog>,
     pub action_menu: Option<ActionMenu>,
     pub action_prompt: Option<ActionPrompt>,
     pub vr_date_fields: HashMap<String, String>, // dbField -> type ("seconds" or "date")
@@ -298,6 +299,7 @@ impl App {
             expression_cursor: 0,
             input_mode: InputMode::Normal,
             show_help: false,
+            confirm_dialog: None,
             action_menu: None,
             action_prompt: None,
             vr_date_fields: HashMap::new(),
@@ -537,7 +539,8 @@ impl App {
 
     /// Returns true if any popup overlay is open that could use background caching
     pub fn has_popup_open(&self) -> bool {
-        self.c3_show_card_popup
+        self.confirm_dialog.is_some()
+            || self.c3_show_card_popup
             || self.c3_show_overview_popup
             || self.c3_show_link_popup
             || self.c3_show_integration_popup
@@ -550,7 +553,8 @@ impl App {
 
     /// Returns true if q should close a popup instead of quitting the app
     pub fn q_closes_popup(&self) -> bool {
-        self.show_help || self.show_debug || self.pl_show_detail
+        self.confirm_dialog.is_some()
+            || self.show_help || self.show_debug || self.pl_show_detail
             || self.vr_show_column_editor || self.vr_show_layout_popup || self.vr_show_view_popup
             || self.c3_show_integration_popup || self.c3_show_overview_popup
             || self.c3_show_link_popup || self.c3_show_card_popup
@@ -571,6 +575,10 @@ impl App {
         let tabs = self.tabs();
         let idx = tabs.iter().position(|&t| t == self.active_tab).unwrap_or(0);
         self.active_tab = tabs[(idx + tabs.len() - 1) % tabs.len()];
+    }
+
+    pub async fn handle_confirm(&mut self, _action: String) {
+        // Match on action identifiers added by future callers
     }
 
     /// Rebuild session_fields from columns

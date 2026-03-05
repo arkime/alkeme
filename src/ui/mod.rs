@@ -158,6 +158,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     // Common overlays (shared across modes)
+    if app.confirm_dialog.is_some() {
+        popups::draw_confirm_dialog(f, app, f.area());
+    }
     if app.show_help {
         popups::draw_help(f, app, f.area());
     }

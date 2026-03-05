@@ -7,6 +7,18 @@ impl App {
             self.show_help = false;
             return;
         }
+        if self.confirm_dialog.is_some() {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    let dialog = self.confirm_dialog.take().unwrap();
+                    self.handle_confirm(dialog.action).await;
+                }
+                _ => {
+                    self.confirm_dialog = None;
+                }
+            }
+            return;
+        }
         if self.show_debug {
             let total = self.http_log.lock().unwrap().len();
             match key.code {

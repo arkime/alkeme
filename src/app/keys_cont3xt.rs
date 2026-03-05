@@ -747,7 +747,7 @@ impl App {
                 self.c3_integration_popup_filter.clear();
                 self.c3_integration_popup_mode = IntegrationPopupMode::Integrations;
             }
-            KeyCode::Char('I') if self.active_tab == Tab::Search => {
+            KeyCode::Char('I') | KeyCode::Char('v') if self.active_tab == Tab::Search => {
                 self.c3_show_integration_popup = true;
                 self.c3_view_selected = 0;
                 self.c3_integration_popup_mode = IntegrationPopupMode::Views;

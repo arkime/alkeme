@@ -32,9 +32,9 @@ struct Cli {
     #[arg(long, value_parser = ["viewer", "cont3xt", "wise", "parliament"])]
     app: Option<String>,
 
-    /// Authentication mode
-    #[arg(long, value_parser = ["basic", "digest", "form", "web", "okta"])]
-    auth: Option<String>,
+    /// Authentication mode (none, basic, digest*, form, web, okta)
+    #[arg(long, value_parser = ["none", "basic", "digest", "form", "web", "okta"], default_value = "digest", hide_default_value = true, hide_possible_values = true)]
+    auth: String,
 
     /// Run a Cont3xt search and save JSON results to a file, then quit
     #[arg(long)]
@@ -47,6 +47,10 @@ struct Cli {
     /// Comma-separated tags to include with Cont3xt searches
     #[arg(long)]
     cont3xt_tags: Option<String>,
+
+    /// Select a Cont3xt integration view by ID or name
+    #[arg(long)]
+    cont3xt_view: Option<String>,
 
     /// Cookie jar file path — encrypted session cookies + username between runs. Prompts for jar password each run. (File created with 0600 permissions)
     #[arg(long)]
@@ -69,12 +73,12 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let auth_mode = match cli.auth.as_deref() {
-        Some("basic") => api::AuthMode::Basic,
-        Some("digest") => api::AuthMode::Digest,
-        Some("form") => api::AuthMode::Form,
-        Some("web") => api::AuthMode::Web,
-        Some("okta") => api::AuthMode::Okta,
+    let auth_mode = match cli.auth.as_str() {
+        "basic" => api::AuthMode::Basic,
+        "digest" => api::AuthMode::Digest,
+        "form" => api::AuthMode::Form,
+        "web" => api::AuthMode::Web,
+        "okta" => api::AuthMode::Okta,
         _ => api::AuthMode::None,
     };
 
@@ -275,6 +279,21 @@ async fn main() -> Result<()> {
         app::AppMode::Cont3xt => {
             app.c3_fetch_integrations().await;
             app.c3_fetch_views().await;
+            if let Some(ref view_arg) = cli.cont3xt_view {
+                // Match by ID first, then by name
+                let found = app.c3_views.iter().find(|v| v.id == *view_arg)
+                    .or_else(|| app.c3_views.iter().find(|v| v.name == *view_arg));
+                if let Some(view) = found {
+                    let integrations = view.integrations.clone();
+                    let name = view.name.clone();
+                    app.c3_active_view_id = Some(view.id.clone());
+                    app.c3_active_view_name = Some(name.clone());
+                    app.c3_apply_view(&integrations);
+                    app.status_msg = format!("Loaded view: {name}");
+                } else {
+                    app.status_msg = format!("View not found: {view_arg}");
+                }
+            }
             app.c3_fetch_overviews().await;
             app.c3_fetch_link_groups().await;
             if !app.expression.is_empty() {

@@ -584,6 +584,12 @@ pub struct SessionDetail {
     pub filter: String,
 }
 
+pub struct ConfirmDialog {
+    pub title: String,
+    pub message: String,
+    pub action: String, // identifier matched by the confirm handler
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum PlIssueSort {
     Cluster,
