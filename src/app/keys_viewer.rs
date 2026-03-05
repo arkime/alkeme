@@ -1437,6 +1437,42 @@ impl App {
                     }
                 }
             }
+            KeyCode::Char('e') if self.vr_stats_tab == StatsTab::DBStats => {
+                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+                    let name = crate::api::str_val(row, "name");
+                    let excluded = row.get("nodeExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !name.is_empty() {
+                        let (action, title, verb) = if excluded {
+                            ("include", "Include Node", "Include")
+                        } else {
+                            ("exclude", "Exclude Node", "Exclude")
+                        };
+                        self.confirm_dialog = Some(ConfirmDialog {
+                            title: title.into(),
+                            message: format!("{verb} node '{name}'?"),
+                            action: format!("esshards:name:{name}:{action}"),
+                        });
+                    }
+                }
+            }
+            KeyCode::Char('x') if self.vr_stats_tab == StatsTab::DBStats => {
+                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+                    let ip = crate::api::str_val(row, "ip");
+                    let excluded = row.get("ipExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !ip.is_empty() {
+                        let (action, title, verb) = if excluded {
+                            ("include", "Include IP", "Include")
+                        } else {
+                            ("exclude", "Exclude IP", "Exclude")
+                        };
+                        self.confirm_dialog = Some(ConfirmDialog {
+                            title: title.into(),
+                            message: format!("{verb} IP '{ip}'?"),
+                            action: format!("esshards:ip:{ip}:{action}"),
+                        });
+                    }
+                }
+            }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
             }
@@ -1497,6 +1533,42 @@ impl App {
                 self.vr_stats_filter_edit = self.vr_stats_filter.clone();
                 self.expression_cursor = self.vr_stats_filter_edit.len();
                 self.input_mode = InputMode::Expression;
+            }
+            KeyCode::Char('e') if self.vr_stats_tab == StatsTab::DBStats => {
+                if let Some(ref detail) = self.vr_stats_detail {
+                    let name = crate::api::str_val(&detail.data, "name");
+                    let excluded = detail.data.get("nodeExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !name.is_empty() {
+                        let (action, title, verb) = if excluded {
+                            ("include", "Include Node", "Include")
+                        } else {
+                            ("exclude", "Exclude Node", "Exclude")
+                        };
+                        self.confirm_dialog = Some(ConfirmDialog {
+                            title: title.into(),
+                            message: format!("{verb} node '{name}'?"),
+                            action: format!("esshards:name:{name}:{action}"),
+                        });
+                    }
+                }
+            }
+            KeyCode::Char('x') if self.vr_stats_tab == StatsTab::DBStats => {
+                if let Some(ref detail) = self.vr_stats_detail {
+                    let ip = crate::api::str_val(&detail.data, "ip");
+                    let excluded = detail.data.get("ipExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !ip.is_empty() {
+                        let (action, title, verb) = if excluded {
+                            ("include", "Include IP", "Include")
+                        } else {
+                            ("exclude", "Exclude IP", "Exclude")
+                        };
+                        self.confirm_dialog = Some(ConfirmDialog {
+                            title: title.into(),
+                            message: format!("{verb} IP '{ip}'?"),
+                            action: format!("esshards:ip:{ip}:{action}"),
+                        });
+                    }
+                }
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;

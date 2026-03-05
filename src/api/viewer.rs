@@ -98,6 +98,13 @@ impl ArkimeClient {
         self.authenticated_post_json(&url, &serde_json::json!({})).await
     }
 
+    /// Exclude or include a node by name or IP
+    /// kind: "name" or "ip", action: "exclude" or "include"
+    pub async fn vr_esshards_toggle(&self, kind: &str, value: &str, action: &str) -> Result<Value> {
+        let url = format!("{}/api/esshards/{}/{}/{}", self.base_url, urlencoding::encode(kind), urlencoding::encode(value), action);
+        self.authenticated_post_json(&url, &serde_json::json!({})).await
+    }
+
     pub async fn vr_get_fields(&self) -> Result<(Vec<ArkimeField>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>)> {
         let url = format!("{}/api/fields?array=true", self.base_url);
         let body = self.authenticated_get(&url).await?;

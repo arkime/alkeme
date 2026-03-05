@@ -436,6 +436,13 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(vec![key("c"), Span::raw("Close index (if open)")]));
             lines.push(Line::from(vec![key("o"), Span::raw("Open index (if closed)")]));
         }
+        if app.vr_stats_tab == StatsTab::DBStats {
+            lines.push(blank());
+            lines.push(hdr!("Node Operations"));
+            lines.push(blank());
+            lines.push(Line::from(vec![key("e"), Span::raw("Exclude/include node")]));
+            lines.push(Line::from(vec![key("x"), Span::raw("Exclude/include IP")]));
+        }
         ("Stats", lines)
     } else if app.active_tab == Tab::Arkime {
         ("Arkime Summary", vec![

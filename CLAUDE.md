@@ -91,7 +91,7 @@ src/
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
 - `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
 - `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
-- `StatsTab` — Enum: `Capture` | `DBStats` | `DBIndices`. Sub-tabs within Stats tab.
+- `StatsTab` — Enum: `Capture` | `DBStats` | `DBIndices`. Sub-tabs within Stats tab. DBStats labeled "DB Nodes".
 - `StatsView` — Enum: `List` | `Detail`. Controls which stats sub-view renders.
 - `StatsDetail` — Holds detail data + scroll position for stats detail overlay.
 - `GraphType` — Enum: `Sessions` | `Packets` | `Bytes`. Selects which histogram to display.
@@ -133,6 +133,7 @@ src/
 - `PlClusterStats` — Cluster stats: status, health_error, stats_error, es_version, delta_bps, delta_tdps, monitoring, arkime_nodes, data_nodes, total_nodes.
 - `PlIssue` — Issue: cluster_id, cluster, issue_type, title, text, message, severity (red/yellow), node, first_noticed, last_noticed, acknowledged, ignore_until.
 - `PlIssueSort` — Enum: `Cluster` | `Title` | `Severity` | `FirstNoticed` | `LastNoticed`. Issue sort field selector.
+- `ConfirmDialog` — Generic confirmation popup: `title` (String), `message` (String), `action` (String). Action string parsed by `handle_confirm()` (e.g., `"delete_esindex:name"`, `"esshards:name:node1:exclude"`). Used for index ops and node exclude/include.
 - Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
 - Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
 
@@ -158,11 +159,17 @@ src/
 | G | Cycle graph type: Sessions → Packets → Bytes (sessions); cycle bar chart metric (arkime) |
 | a | Session action menu (download pcap, add/remove tags) |
 | A | All sessions action menu (download pcap, export csv, add/remove tags) — pcap/csv show Visible/Matching scope selector |
-| 1 / 2 / 3 | Switch stats sub-tab (Capture/DB Stats/DB Indices) |
+| 1 / 2 / 3 | Switch stats sub-tab (Capture/DB Nodes/DB Indices) |
 | f | Open field selector (arkime tab) |
 | p | View packet hex dump (session list or detail) |
 | c | Columns & layouts menu |
 | v | Views (select/create/delete views) |
+| d | Delete index (DB Indices); confirm dialog |
+| f | Force merge index (DB Indices); confirm dialog |
+| c | Close open index (DB Indices); confirm dialog |
+| o | Open closed index (DB Indices); confirm dialog |
+| e | Toggle exclude/include node (DB Nodes); confirm dialog |
+| x | Toggle exclude/include IP (DB Nodes); confirm dialog |
 | D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
 | h / ? | Show context-sensitive help overlay |
 | q | Quit |
@@ -188,7 +195,7 @@ src/
 | C | Card/overview definition popup (detail); s saves to /tmp/alkeme-card.txt |
 | o | Select overview (when on indicator header); d:set default, /:filter, r:refresh, h/?:help |
 | i | Integration filter popup (Space:toggle, a:all, n:none, !:invert, /:filter) |
-| Shift+I | Open views popup (select/create/delete integration views) |
+| v / Shift+I | Open views popup (select/create/delete integration views) |
 | r | Re-run search |
 | l | Link groups for selected indicator (Enter opens in browser, / filter) |
 | s | Next sort column (History/Stats); cycle source (WISE Query) |
@@ -276,7 +283,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ## Stats tab
 
-- Has 3 sub-tabs switchable with `1/2/3` keys: Capture Stats, DB Stats, DB Indices
+- Has 3 sub-tabs switchable with `1/2/3` keys: Capture Stats, DB Nodes, DB Indices
 - Each sub-tab defines its own columns via `StatsTab::columns()` returning `(field, label, width)` tuples
 - Stats tab has its own layout: no time range picker, no graph — just sub-tab bar + filter + table
 - Filter (`/`) is passed as `filter` query param to the API (server-side filtering)
@@ -285,10 +292,16 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Enter opens a detail overlay showing all fields for the selected row
 - Detail overlay supports full navigation: ↑/↓ (line), Shift+↑/↓ and PgUp/PgDn (page), ←/Home (top), →/End (bottom)
 - `/` filters fields in detail overlay; `h`/`?` shows help
+- DB Nodes detail shows exclusion status banner (node/IP excluded state) with `e`/`x` toggle keys
+- DB Indices detail supports `d` (delete), `f` (force merge), `c` (close), `o` (open) operations
+- DB Nodes list and detail support `e` (toggle node exclude/include) and `x` (toggle IP exclude/include) via `POST /api/esshards/:type/:value/:action`
+- DB Indices list supports `d` (delete via `DELETE /api/esindices/:index`), `f` (force merge), `c` (close), `o` (open) via `POST /api/esindices/:index/:action`
+- All operations use `ConfirmDialog` for confirmation and auto-refresh stats after success
+- Node exclude/include operations refresh detail in-place (preserving scroll and filter)
 
 ### Stats columns per sub-tab
 - **Capture Stats**: nodeName, currentTime (formatted date), monitoring (Sessions), freeSpaceM (human-readable + percent), deltaPackets, deltaBytesPerSec (human-readable), deltaSessions, deltaDropped
-- **DB Stats**: name (Node), storeSize (Disk Used, human-readable), docs, searches, searchesTime, version
+- **DB Nodes**: name (Node), storeSize (Disk Used, human-readable), docs, searches, searchesTime, version
 - **DB Indices**: index, status, health, docs.count (nested field), store.size (human-readable), pri (Shards)
 
 ### Human-readable byte formatting

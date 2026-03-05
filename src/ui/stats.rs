@@ -189,6 +189,31 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     let filter_lower = detail.filter.to_lowercase();
 
+    // Show exclusion status banner for DB Nodes
+    if app.vr_stats_tab == crate::app::StatsTab::DBStats {
+        let node_excluded = detail.data.get("nodeExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
+        let ip_excluded = detail.data.get("ipExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
+        let node_style = if node_excluded {
+            Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Green)
+        };
+        let ip_style = if ip_excluded {
+            Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Green)
+        };
+        lines.push(Line::from(vec![
+            Span::styled("  Node: ", Style::default().fg(Color::Yellow)),
+            Span::styled(if node_excluded { "EXCLUDED" } else { "included" }, node_style),
+            Span::raw("  (e) toggle    "),
+            Span::styled("IP: ", Style::default().fg(Color::Yellow)),
+            Span::styled(if ip_excluded { "EXCLUDED" } else { "included" }, ip_style),
+            Span::raw("  (x) toggle"),
+        ]));
+        lines.push(Line::from(""));
+    }
+
     if let Some(obj) = detail.data.as_object() {
         let mut keys: Vec<&String> = obj.keys()
             .filter(|k| {

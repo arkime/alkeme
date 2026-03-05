@@ -610,6 +610,34 @@ impl App {
                 }
                 Err(e) => self.status_msg = format!("Error opening index: {e}"),
             }
+        } else if let Some(rest) = action.strip_prefix("esshards:") {
+            // format: "esshards:kind:value:action" where action is "exclude" or "include"
+            // Use rfind to handle IPv6 colons in value
+            if let Some(last_colon) = rest.rfind(':') {
+                let op = &rest[last_colon+1..];
+                let before_op = &rest[..last_colon];
+                if let Some(first_colon) = before_op.find(':') {
+                    let kind = &before_op[..first_colon];
+                    let value = &before_op[first_colon+1..];
+                    match self.client.vr_esshards_toggle(kind, value, op).await {
+                        Ok(_) => {
+                            let label = if kind == "ip" { "IP" } else { "node" };
+                            self.status_msg = format!("{} {label} '{value}'", if op == "exclude" { "Excluded" } else { "Included" });
+                            let detail_name = self.vr_stats_detail.as_ref()
+                                .map(|d| crate::api::str_val(&d.data, "name"));
+                            let detail_scroll = self.vr_stats_detail.as_ref().map(|d| d.scroll).unwrap_or(0);
+                            let detail_filter = self.vr_stats_detail.as_ref().map(|d| d.filter.clone()).unwrap_or_default();
+                            self.vr_fetch_stats().await;
+                            if let Some(name) = detail_name {
+                                if let Some(row) = self.vr_stats_data.iter().find(|r| crate::api::str_val(r, "name") == name) {
+                                    self.vr_stats_detail = Some(StatsDetail { data: row.clone(), scroll: detail_scroll, filter: detail_filter });
+                                }
+                            }
+                        }
+                        Err(e) => self.status_msg = format!("Error: {e}"),
+                    }
+                }
+            }
         }
     }
 

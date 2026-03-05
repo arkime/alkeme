@@ -56,7 +56,9 @@ Monitor all your Arkime clusters at a glance with health status, throughput, and
 - **Export** — export all matching or visible sessions as CSV
 - **Session detail filter** — press `/` to live-filter fields by name
 - **Packet hex dump** — press `p` to view packet contents as hex in a two-column overlay (source/destination) with timestamps, TCP flags, color-coded display, and hex offsets; `r` toggles raw frames, `l` cycles line number format; animated loading indicator for large sessions
-- **Stats tab** — view capture stats, DB stats, and DB indices with sortable tables, filtering, and detail view
+- **Stats tab** — view capture stats, DB nodes, and DB indices with sortable tables, filtering, and detail view
+- **Index operations** — delete, force merge, close, or open DB indices with confirmation dialogs
+- **Node operations** — toggle node or IP exclusion from DB Nodes list or detail view
 
 ### Cont3xt
 - **Integration search** — search indicators (IPs, domains, emails, hashes) across all configured integrations
@@ -65,7 +67,7 @@ Monitor all your Arkime clusters at a glance with health status, throughput, and
 - **Table alignment** — card tables have properly aligned columns with horizontal scroll support
 - **Raw JSON toggle** — press `R` to switch between card view and raw JSON
 - **Integration filter** — press `i` to toggle integrations on/off with bulk actions (all/none/invert); disabled integrations sent as `doIntegrations` to the search API
-- **Views** — press `Shift+I` to select a saved integration view; loading a view applies its integration settings; manually toggling integrations clears the active view; search bar shows "all", view name, or "custom"
+- **Views** — press `Shift+I` or `v` to select a saved integration view; loading a view applies its integration settings; manually toggling integrations clears the active view; search bar shows "all", view name, or "custom"
 - **Link groups** — press `l` to browse applicable link groups for the selected indicator; Enter opens the link URL in your browser
 - **Indicator navigation** — `Shift+↑`/`Shift+↓` jumps between top-level indicators in the results tree
 - **Detail filter** — press `/` in the detail panel to filter fields by text; section headers shown only when matching data exists
@@ -171,10 +173,14 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | Option | Description |
 |---|---|
 | `<URL>` | Arkime URL (default: `http://localhost:8005`) |
-| `--auth <MODE>` | Authentication mode: `basic`, `digest`, `form`, `web`, or `okta` |
+| `--auth <MODE>` | Authentication mode: `none`, `basic`, `digest`*, `form`, `web`, or `okta` |
 | `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`); `user` without colon prompts for password only |
-| `--search <EXPR>` | Default search expression (viewer) or indicator (cont3xt); auto-submits in cont3xt |
+| `--search <EXPR>` | Default search expression (viewer and cont3xt); auto-submits in cont3xt |
+| `--viewer-search <EXPR>` | Search expression for Viewer only |
+| `--cont3xt-search <EXPR>` | Search indicator for Cont3xt only |
 | `--cont3xt-tags <TAGS>` | Comma-separated tags to include with Cont3xt searches |
+| `--cont3xt-view <ID>` | Select a Cont3xt integration view by ID or name |
+| `--cont3xt-save-json <FILE>` | Run Cont3xt search and save results as JSON (requires `--search` or `--cont3xt-search`) |
 | `--app <APP>` | Force application: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appversion` detection) |
 | `--jar <FILE>` | Encrypted cookie jar file — persist session cookies and username between runs to avoid re-login. Prompts for a jar password each run. (File created with owner-only permissions) |
 
@@ -203,10 +209,16 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `a` | Session actions (download PCAP, add/remove tags) |
 | `A` | All sessions actions (download PCAP, export CSV, add/remove tags) with visible/matching selector |
 | `f` | Open field selector (summary tab) |
-| `1` / `2` / `3` | Switch stats sub-tab (Capture / DB Stats / DB Indices) |
+| `1` / `2` / `3` | Switch stats sub-tab (Capture / DB Nodes / DB Indices) |
 | `p` | View packet hex dump (sessions list or detail) |
 | `c` | Open columns & layouts menu |
 | `v` | Open views menu (select/create/delete views) |
+| `d` | Delete index (DB Indices) |
+| `f` | Force merge index (DB Indices) |
+| `c` | Close open index (DB Indices) |
+| `o` | Open closed index (DB Indices) |
+| `e` | Toggle exclude/include node (DB Nodes, list or detail) |
+| `x` | Toggle exclude/include IP (DB Nodes, list or detail) |
 | `D` | Show HTTP debug log (request timing, status codes) |
 | `h` / `?` | Show context-sensitive help overlay |
 | `q` | Quit |
@@ -230,7 +242,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | `C` | Card/overview definition popup (detail); `s` saves to `/tmp/alkeme-card.txt` |
 | `o` | Select overview (when on indicator header) |
 | `i` | Integration filter (toggle on/off, `a`:all, `n`:none, `!`:invert, `/`:filter) |
-| `Shift+I` | Open views popup (select/create/delete integration views) |
+| `v` / `Shift+I` | Open views popup (select/create/delete integration views) |
 | `l` | Link groups for selected indicator (Enter opens in browser) |
 | `r` | Re-run search; refresh (Stats/History) |
 | `s` / `S` | Next sort column / toggle direction (Stats/History) |

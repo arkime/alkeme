@@ -428,7 +428,7 @@ impl StatsTab {
     pub fn name(&self) -> &'static str {
         match self {
             StatsTab::Capture => "Capture Stats",
-            StatsTab::DBStats => "DB Stats",
+            StatsTab::DBStats => "DB Nodes",
             StatsTab::DBIndices => "DB Indices",
         }
     }
