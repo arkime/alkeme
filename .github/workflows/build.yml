@@ -100,7 +100,7 @@ jobs:
           release: "14.3"
           usesh: true
           run: |
-            pkg install -y curl gcc
+            pkg install -y curl gcc ca_root_nss
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             . $HOME/.cargo/env
             cargo build --release
