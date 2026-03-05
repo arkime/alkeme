@@ -78,6 +78,26 @@ impl ArkimeClient {
         self.vr_get_sorted_filtered("esindices", filter, sort_field, sort_desc).await
     }
 
+    pub async fn vr_delete_esindex(&self, index: &str) -> Result<Value> {
+        let url = format!("{}/api/esindices/{}", self.base_url, urlencoding::encode(index));
+        self.authenticated_delete(&url).await
+    }
+
+    pub async fn vr_close_esindex(&self, index: &str) -> Result<Value> {
+        let url = format!("{}/api/esindices/{}/close", self.base_url, urlencoding::encode(index));
+        self.authenticated_post_json(&url, &serde_json::json!({})).await
+    }
+
+    pub async fn vr_open_esindex(&self, index: &str) -> Result<Value> {
+        let url = format!("{}/api/esindices/{}/open", self.base_url, urlencoding::encode(index));
+        self.authenticated_post_json(&url, &serde_json::json!({})).await
+    }
+
+    pub async fn vr_optimize_esindex(&self, index: &str) -> Result<Value> {
+        let url = format!("{}/api/esindices/{}/optimize", self.base_url, urlencoding::encode(index));
+        self.authenticated_post_json(&url, &serde_json::json!({})).await
+    }
+
     pub async fn vr_get_fields(&self) -> Result<(Vec<ArkimeField>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>)> {
         let url = format!("{}/api/fields?array=true", self.base_url);
         let body = self.authenticated_get(&url).await?;

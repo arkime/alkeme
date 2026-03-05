@@ -577,8 +577,40 @@ impl App {
         self.active_tab = tabs[(idx + tabs.len() - 1) % tabs.len()];
     }
 
-    pub async fn handle_confirm(&mut self, _action: String) {
-        // Match on action identifiers added by future callers
+    pub async fn handle_confirm(&mut self, action: String) {
+        if let Some(index) = action.strip_prefix("delete_esindex:") {
+            match self.client.vr_delete_esindex(index).await {
+                Ok(_) => {
+                    self.status_msg = format!("Deleted index '{index}'");
+                    self.vr_fetch_stats().await;
+                }
+                Err(e) => self.status_msg = format!("Error deleting index: {e}"),
+            }
+        } else if let Some(index) = action.strip_prefix("optimize_esindex:") {
+            match self.client.vr_optimize_esindex(index).await {
+                Ok(_) => {
+                    self.status_msg = format!("Force merge started for '{index}'");
+                    self.vr_fetch_stats().await;
+                }
+                Err(e) => self.status_msg = format!("Error force merging index: {e}"),
+            }
+        } else if let Some(index) = action.strip_prefix("close_esindex:") {
+            match self.client.vr_close_esindex(index).await {
+                Ok(_) => {
+                    self.status_msg = format!("Closed index '{index}'");
+                    self.vr_fetch_stats().await;
+                }
+                Err(e) => self.status_msg = format!("Error closing index: {e}"),
+            }
+        } else if let Some(index) = action.strip_prefix("open_esindex:") {
+            match self.client.vr_open_esindex(index).await {
+                Ok(_) => {
+                    self.status_msg = format!("Opened index '{index}'");
+                    self.vr_fetch_stats().await;
+                }
+                Err(e) => self.status_msg = format!("Error opening index: {e}"),
+            }
+        }
     }
 
     /// Rebuild session_fields from columns

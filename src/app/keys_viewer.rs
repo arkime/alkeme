@@ -1387,6 +1387,56 @@ impl App {
                 self.vr_stats_sort_desc = !self.vr_stats_sort_desc;
                 self.vr_fetch_stats().await;
             }
+            KeyCode::Char('d') if self.vr_stats_tab == StatsTab::DBIndices => {
+                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+                    let index = crate::api::str_val(row, "index");
+                    if !index.is_empty() {
+                        self.confirm_dialog = Some(ConfirmDialog {
+                            title: "Delete Index".into(),
+                            message: format!("Delete index '{index}'?"),
+                            action: format!("delete_esindex:{index}"),
+                        });
+                    }
+                }
+            }
+            KeyCode::Char('f') if self.vr_stats_tab == StatsTab::DBIndices => {
+                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+                    let index = crate::api::str_val(row, "index");
+                    if !index.is_empty() {
+                        self.confirm_dialog = Some(ConfirmDialog {
+                            title: "Force Merge".into(),
+                            message: format!("Force merge index '{index}'?"),
+                            action: format!("optimize_esindex:{index}"),
+                        });
+                    }
+                }
+            }
+            KeyCode::Char('c') if self.vr_stats_tab == StatsTab::DBIndices => {
+                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+                    let index = crate::api::str_val(row, "index");
+                    let status = crate::api::str_val(row, "status");
+                    if !index.is_empty() && status == "open" {
+                        self.confirm_dialog = Some(ConfirmDialog {
+                            title: "Close Index".into(),
+                            message: format!("Close index '{index}'?"),
+                            action: format!("close_esindex:{index}"),
+                        });
+                    }
+                }
+            }
+            KeyCode::Char('o') if self.vr_stats_tab == StatsTab::DBIndices => {
+                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+                    let index = crate::api::str_val(row, "index");
+                    let status = crate::api::str_val(row, "status");
+                    if !index.is_empty() && status == "close" {
+                        self.confirm_dialog = Some(ConfirmDialog {
+                            title: "Open Index".into(),
+                            message: format!("Open index '{index}'?"),
+                            action: format!("open_esindex:{index}"),
+                        });
+                    }
+                }
+            }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
             }

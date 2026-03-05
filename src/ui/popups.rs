@@ -410,7 +410,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("E"), Span::raw("Edit expression")]),
         ])
     } else if app.active_tab == Tab::Stats {
-        ("Stats", vec![
+        let mut lines = vec![
             hdr!("Navigation"),
             blank(),
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
@@ -426,7 +426,17 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("Esc"), Span::raw("Close overlay")]),
-        ])
+        ];
+        if app.vr_stats_tab == StatsTab::DBIndices {
+            lines.push(blank());
+            lines.push(hdr!("Index Operations"));
+            lines.push(blank());
+            lines.push(Line::from(vec![key("d"), Span::raw("Delete index")]));
+            lines.push(Line::from(vec![key("f"), Span::raw("Force merge index")]));
+            lines.push(Line::from(vec![key("c"), Span::raw("Close index (if open)")]));
+            lines.push(Line::from(vec![key("o"), Span::raw("Open index (if closed)")]));
+        }
+        ("Stats", lines)
     } else if app.active_tab == Tab::Arkime {
         ("Arkime Summary", vec![
             hdr!("Navigation"),
