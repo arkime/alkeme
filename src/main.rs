@@ -28,29 +28,41 @@ struct Cli {
     #[arg(default_value = "http://localhost:8005")]
     url: String,
 
+    /// Override app mode (viewer, cont3xt, wise, parliament) — skips /api/appversion
+    #[arg(long, value_parser = ["viewer", "cont3xt", "wise", "parliament"])]
+    app: Option<String>,
+
     /// Authentication mode
     #[arg(long, value_parser = ["basic", "digest", "form", "web", "okta"])]
     auth: Option<String>,
 
-    /// Credentials as user:pass (prompts if omitted with --auth)
+    /// Run a Cont3xt search and save JSON results to a file, then quit
     #[arg(long)]
-    user: Option<String>,
+    cont3xt_save_json: Option<String>,
 
-    /// Default search expression (sessions query for Viewer, indicator for Cont3xt)
+    /// Default search expression for Cont3xt only (overrides --search for Cont3xt)
     #[arg(long)]
-    search: Option<String>,
+    cont3xt_search: Option<String>,
 
     /// Comma-separated tags to include with Cont3xt searches
     #[arg(long)]
     cont3xt_tags: Option<String>,
 
-    /// Override app mode (viewer, cont3xt, wise, parliament) — skips /api/appversion
-    #[arg(long, value_parser = ["viewer", "cont3xt", "wise", "parliament"])]
-    app: Option<String>,
-
     /// Cookie jar file path — encrypted session cookies + username between runs. Prompts for jar password each run. (File created with 0600 permissions)
     #[arg(long)]
     jar: Option<String>,
+
+    /// Default search expression (sessions query for Viewer, indicator for Cont3xt)
+    #[arg(long)]
+    search: Option<String>,
+
+    /// Credentials as user:pass (prompts if omitted with --auth)
+    #[arg(long)]
+    user: Option<String>,
+
+    /// Default search expression for Viewer only (overrides --search for Viewer)
+    #[arg(long)]
+    viewer_search: Option<String>,
 }
 
 #[tokio::main]
@@ -205,12 +217,53 @@ async fn main() -> Result<()> {
     app.http_log = client.http_log(); // sync log before replacing client
     app.client = client; // reuse the already-logged-in client
     app.fetch_user().await;
-    if let Some(search) = cli.search {
-        app.expression = search.clone();
-        app.expression_edit = search;
+    // Resolve search expressions: app-specific flags override --search
+    let viewer_search = cli.viewer_search.or_else(|| cli.search.clone());
+    let cont3xt_search = cli.cont3xt_search.or(cli.search);
+
+    match app_mode {
+        app::AppMode::Viewer => {
+            if let Some(search) = &viewer_search {
+                app.expression = search.clone();
+                app.expression_edit = search.clone();
+            }
+        }
+        app::AppMode::Cont3xt => {
+            if let Some(search) = &cont3xt_search {
+                app.expression = search.clone();
+                app.expression_edit = search.clone();
+            }
+        }
+        app::AppMode::Parliament => {
+            // Seed saved expressions so they're used when switching to Viewer/Cont3xt
+            if let Some(search) = &viewer_search {
+                app.pl_saved_viewer_expression = search.clone();
+            }
+            if let Some(search) = &cont3xt_search {
+                app.pl_saved_c3_expression = search.clone();
+            }
+        }
+        _ => {}
     }
+
     if let Some(tags) = cli.cont3xt_tags {
         app.c3_tags = tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    }
+
+    if let Some(ref path) = cli.cont3xt_save_json {
+        if app_mode != app::AppMode::Cont3xt {
+            disable_raw_mode()?;
+            execute!(io::stdout(), LeaveAlternateScreen)?;
+            eprintln!("Error: --cont3xt-save-json requires Cont3xt mode (use --app cont3xt or connect to a Cont3xt server)");
+            std::process::exit(1);
+        }
+        if app.expression.is_empty() {
+            disable_raw_mode()?;
+            execute!(io::stdout(), LeaveAlternateScreen)?;
+            eprintln!("Error: --cont3xt-save-json requires a search expression (use --search or --cont3xt-search)");
+            std::process::exit(1);
+        }
+        app.c3_save_json_path = Some(path.clone());
     }
 
     // Mode-specific initialization
@@ -506,6 +559,12 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     }
                     app.c3_searching = false;
                     app.popup_bg_cache = None; // background changed
+
+                    // Headless save-json mode: write results and quit
+                    if let Some(path) = app.c3_save_json_path.clone() {
+                        app.c3_save_json(&path);
+                        return Ok(());
+                    }
                     needs_redraw = true;
                     continue;
                 }

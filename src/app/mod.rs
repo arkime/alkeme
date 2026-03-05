@@ -199,6 +199,7 @@ pub struct App {
     pub c3_tags_edit: String,         // edit buffer for tags popup
     pub c3_show_tags_popup: bool,     // tag editor popup visible
     pub c3_save_json_prompt: Option<String>, // filename prompt for JSON export
+    pub c3_save_json_path: Option<String>,   // headless: save JSON to file and quit when search completes
     // Cont3xt date range
     pub c3_start_date: chrono::DateTime<Utc>,
     pub c3_stop_date: chrono::DateTime<Utc>,
@@ -453,6 +454,7 @@ impl App {
             c3_tags_edit: String::new(),
             c3_show_tags_popup: false,
             c3_save_json_prompt: None,
+            c3_save_json_path: None,
             c3_start_date: Utc::now() - Duration::days(7),
             c3_stop_date: Utc::now(),
             c3_show_date_popup: false,
