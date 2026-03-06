@@ -238,6 +238,14 @@ impl App {
         self.http_log = new_client.http_log();
         self.client = new_client;
 
+        // Fetch cluster name for title bar
+        self.title_name = url.to_string();
+        if let Ok(health) = self.client.get_eshealth().await {
+            if let Some(name) = health.get("cluster_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                self.title_name = name.to_string();
+            }
+        }
+
         // Switch mode
         self.app_mode = AppMode::Viewer;
         self.active_tab = Tab::Sessions;
