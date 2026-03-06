@@ -188,6 +188,7 @@ async fn main() -> Result<()> {
         client.fetch_cookie().await.ok();
     }
 
+    let mut cluster_name: Option<String> = None;
     let app_mode = if let Some(ref app_name) = cli.app {
         match app_name.as_str() {
             "cont3xt" => app::AppMode::Cont3xt,
@@ -217,7 +218,18 @@ async fn main() -> Result<()> {
         }
     };
 
+    if app_mode == app::AppMode::Viewer {
+        if let Ok(health) = client.get_eshealth().await {
+            if let Some(name) = health.get("cluster_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                cluster_name = Some(name.to_string());
+            }
+        }
+    }
+
     let mut app = App::new(&cli.url, auth_mode, username, password, app_mode);
+    if let Some(name) = cluster_name {
+        app.title_name = name;
+    }
     app.http_log = client.http_log(); // sync log before replacing client
     app.client = client; // reuse the already-logged-in client
     app.fetch_user().await;
@@ -369,7 +381,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
         }
         // Update terminal title when mode changes
         let title = match app.app_mode {
-            app::AppMode::Viewer => format!("Alkeme - Viewer - {}", app.client.base_url()),
+            app::AppMode::Viewer => format!("Alkeme - Viewer - {}", app.title_name),
             app::AppMode::Cont3xt => "Alkeme - Cont3xt".into(),
             app::AppMode::Wise => "Alkeme - WISE".into(),
             app::AppMode::Parliament => "Alkeme - Parliament".into(),

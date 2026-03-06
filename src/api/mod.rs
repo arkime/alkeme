@@ -503,6 +503,13 @@ impl ArkimeClient {
         Ok(val)
     }
 
+    pub async fn get_eshealth(&self) -> Result<Value> {
+        let url = format!("{}/api/eshealth", self.base_url);
+        let body = self.authenticated_get(&url).await?;
+        let val: Value = serde_json::from_str(&body)?;
+        Ok(val)
+    }
+
     /// Fetch the ARKIME-COOKIE from /api/user/settings (has setCookie middleware).
     /// Must be called once at startup for layout API support.
     pub async fn fetch_cookie(&mut self) -> Result<()> {

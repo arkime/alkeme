@@ -45,6 +45,7 @@ pub fn handle_text_input_key(key: KeyCode, text: &mut String, cursor: &mut usize
 pub struct App {
     pub client: ArkimeClient,
     pub app_mode: AppMode,
+    pub title_name: String,
     pub user: Value,
     pub active_tab: Tab,
     pub time_range: TimeRange,
@@ -291,6 +292,7 @@ impl App {
         Self {
             client,
             app_mode,
+            title_name: base_url.to_string(),
             user: Value::Null,
             active_tab,
             time_range: TimeRange::Hours1,
