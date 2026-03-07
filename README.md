@@ -75,6 +75,7 @@ Monitor all your Arkime clusters at a glance with health status, throughput, and
 - **Overviews** — indicator headers are selectable in the results tree and show a cross-integration overview in the detail pane; press `o` to choose from available overviews; `R` toggles debug mode showing all fields including missing data
 - **History** — browse search audit history with sortable, filterable table; server-side pagination with `←`/`→`; `Enter` re-runs a past search; `d` deletes an entry
 - **JSON export** — press `J` to save all search results as a combined JSON file with a filename prompt
+- **JSON import** — `--cont3xt-read-json` loads previously saved results for browsing without re-running searches; search bar shows `[file: ...]` indicator; cleared on new search
 - **Search tags** — press `t` to set comma-separated tags sent with search queries; also settable via `--cont3xt-tags` CLI option; shown in the search bar title
 
 ### Parliament
@@ -161,11 +162,17 @@ alkeme http://viewer.example.com:8005 --auth okta
 # Persist cookies to avoid re-login (encrypted, prompts for jar password)
 alkeme http://viewer.example.com:8005 --auth okta --jar cookies.json
 
+# Persist cookies with password from a command (e.g. password manager)
+alkeme http://viewer.example.com:8005 --auth okta --jar cookies.json --jar-password '|pass show mykey'
+
 # With basic authentication (prompts for credentials)
 alkeme http://viewer.example.com:8005 --auth basic
 
 # Skip app detection and force a specific application
 alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3xt
+
+# Load previously saved Cont3xt results from a JSON file
+alkeme http://cont3xt.example.com --auth form --user admin:password --cont3xt-read-json results.json
 ```
 
 ### Options
@@ -173,16 +180,18 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --app cont3x
 | Option | Description |
 |---|---|
 | `<URL>` | Arkime URL (default: `http://localhost:8005`) |
+| `--app <APP>` | Force application: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appversion` detection) |
 | `--auth <MODE>` | Authentication mode: `none`, `basic`, `digest`*, `form`, `web`, or `okta` |
-| `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`); `user` without colon prompts for password only |
-| `--search <EXPR>` | Default search expression (viewer and cont3xt); auto-submits in cont3xt |
-| `--viewer-search <EXPR>` | Search expression for Viewer only |
+| `--cont3xt-read-json <FILE>` | Load Cont3xt results from a saved JSON file without running a search |
+| `--cont3xt-save-json <FILE>` | Run Cont3xt search and save results as JSON (requires `--search` or `--cont3xt-search`) |
 | `--cont3xt-search <EXPR>` | Search indicator for Cont3xt only |
 | `--cont3xt-tags <TAGS>` | Comma-separated tags to include with Cont3xt searches |
 | `--cont3xt-view <ID>` | Select a Cont3xt integration view by ID or name |
-| `--cont3xt-save-json <FILE>` | Run Cont3xt search and save results as JSON (requires `--search` or `--cont3xt-search`) |
-| `--app <APP>` | Force application: `viewer`, `cont3xt`, `wise`, or `parliament` (skips `/api/appversion` detection) |
 | `--jar <FILE>` | Encrypted cookie jar file — persist session cookies and username between runs to avoid re-login. Prompts for a jar password each run. (File created with owner-only permissions) |
+| `--jar-password <PASS>` | Cookie jar password. If prefixed with `\|`, runs the rest as a command and uses the first line of output |
+| `--search <EXPR>` | Default search expression (viewer and cont3xt); auto-submits in cont3xt |
+| `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`); `user` without colon prompts for password only |
+| `--viewer-search <EXPR>` | Search expression for Viewer only |
 
 ## Keybindings
 

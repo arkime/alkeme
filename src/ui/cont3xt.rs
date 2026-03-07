@@ -141,7 +141,12 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
     let date_label = format!("[{}: {}d] ", app.c3_date_start_edit, days);
 
     let is_editing = app.input_mode == InputMode::Expression;
-    let title = format!(" Search (/) {integrations_label}{tags_label}{date_label}");
+    let file_label = if let Some(ref path) = app.c3_loaded_file {
+        format!("[file: {path}] ")
+    } else {
+        String::new()
+    };
+    let title = format!(" Search (/) {integrations_label}{tags_label}{date_label}{file_label}");
     render_text_input(f, expr_display, app.expression_cursor, is_editing, &title, area);
 }
 

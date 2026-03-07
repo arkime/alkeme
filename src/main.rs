@@ -36,6 +36,10 @@ struct Cli {
     #[arg(long, value_parser = ["none", "basic", "digest", "form", "web", "okta"], default_value = "digest", hide_default_value = true, hide_possible_values = true)]
     auth: String,
 
+    /// Load Cont3xt results from a JSON file (saved by --cont3xt-save-json or J key) without running a search
+    #[arg(long)]
+    cont3xt_read_json: Option<String>,
+
     /// Run a Cont3xt search and save JSON results to a file, then quit
     #[arg(long)]
     cont3xt_save_json: Option<String>,
@@ -334,7 +338,14 @@ async fn main() -> Result<()> {
             }
             app.c3_fetch_overviews().await;
             app.c3_fetch_link_groups().await;
-            if !app.expression.is_empty() {
+            if let Some(ref path) = cli.cont3xt_read_json {
+                if let Err(e) = app.c3_load_json(path) {
+                    disable_raw_mode()?;
+                    execute!(io::stdout(), LeaveAlternateScreen)?;
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            } else if !app.expression.is_empty() {
                 app.c3_request_search();
             }
         }

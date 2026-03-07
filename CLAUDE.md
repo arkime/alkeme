@@ -18,6 +18,9 @@ cargo run -- URL --auth digest --user admin                    # prompts for pas
 cargo run -- URL --app cont3xt --auth form --user admin:admin  # force cont3xt mode
 cargo run -- URL --search 1.2.3.4 --cont3xt-tags mytag       # cont3xt with tags
 cargo run -- URL --auth okta --jar cookies.json               # encrypted cookie jar (saves username + cookies)
+cargo run -- URL --auth okta --jar cookies.json --jar-password secret  # jar with literal password
+cargo run -- URL --auth okta --jar cookies.json --jar-password '|pass show key'  # jar password from command
+cargo run -- URL --cont3xt-read-json results.json --app cont3xt  # load saved cont3xt results from file
 ```
 
 ## Architecture

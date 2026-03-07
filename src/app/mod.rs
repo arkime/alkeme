@@ -202,6 +202,7 @@ pub struct App {
     pub c3_show_tags_popup: bool,     // tag editor popup visible
     pub c3_save_json_prompt: Option<String>, // filename prompt for JSON export
     pub c3_save_json_path: Option<String>,   // headless: save JSON to file and quit when search completes
+    pub c3_loaded_file: Option<String>,      // file path when results loaded from --cont3xt-read-json or similar
     // Cont3xt date range
     pub c3_start_date: chrono::DateTime<Utc>,
     pub c3_stop_date: chrono::DateTime<Utc>,
@@ -459,6 +460,7 @@ impl App {
             c3_show_tags_popup: false,
             c3_save_json_prompt: None,
             c3_save_json_path: None,
+            c3_loaded_file: None,
             c3_start_date: Utc::now() - Duration::days(7),
             c3_stop_date: Utc::now(),
             c3_show_date_popup: false,
@@ -1001,6 +1003,7 @@ impl App {
         if self.expression.is_empty() {
             return;
         }
+        self.c3_loaded_file = None;
         self.c3_pending_search = true;
     }
 
@@ -1143,11 +1146,39 @@ impl App {
     pub fn c3_save_json(&mut self, filename: &str) {
         // Build a combined JSON object from all results
         let mut combined = serde_json::Map::new();
+
+        // Add _cont3xt metadata
+        let mut meta = serde_json::Map::new();
+        meta.insert("query".to_string(), serde_json::Value::String(self.expression.clone()));
+        meta.insert("itype".to_string(), serde_json::Value::String(self.c3_search_itype.clone()));
+        if !self.c3_tags.is_empty() {
+            meta.insert("tags".to_string(), serde_json::json!(self.c3_tags));
+        }
+        meta.insert("init_indicators".to_string(), serde_json::Value::Array(
+            self.c3_init_indicators.iter()
+                .map(|(itype, query)| serde_json::json!([itype, query]))
+                .collect(),
+        ));
+        // Parent-child relationships: key="indicator\titype", value=[[parent_query, parent_itype], ...]
+        let mut parents = serde_json::Map::new();
+        for ((indicator, itype), parent_list) in &self.c3_indicator_parents {
+            let key = format!("{}\t{}", indicator, itype);
+            parents.insert(key, serde_json::Value::Array(
+                parent_list.iter()
+                    .map(|(pq, pi)| serde_json::json!([pq, pi]))
+                    .collect(),
+            ));
+        }
+        meta.insert("parents".to_string(), serde_json::Value::Object(parents));
+        combined.insert("_cont3xt".to_string(), serde_json::Value::Object(meta));
+
         for result in &self.c3_results {
             if result.data.is_null() { continue; }
             let indicator_obj = combined.entry(&result.indicator)
                 .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
             if let serde_json::Value::Object(map) = indicator_obj {
+                // Store itype alongside integration data
+                map.insert(format!("_cont3xt_itype"), serde_json::Value::String(result.itype.clone()));
                 map.insert(result.name.clone(), result.data.clone());
             }
         }
@@ -1161,6 +1192,90 @@ impl App {
             }
             Err(e) => self.status_msg = format!("Error serializing JSON: {e}"),
         }
+    }
+
+    /// Load cont3xt results from a JSON file saved by c3_save_json
+    pub fn c3_load_json(&mut self, filename: &str) -> Result<(), String> {
+        let text = std::fs::read_to_string(filename)
+            .map_err(|e| format!("Error reading {filename}: {e}"))?;
+        let root: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| format!("Error parsing JSON: {e}"))?;
+        let obj = root.as_object()
+            .ok_or_else(|| "JSON root is not an object".to_string())?;
+
+        // Parse _cont3xt metadata
+        if let Some(meta) = obj.get("_cont3xt").and_then(|v| v.as_object()) {
+            if let Some(query) = meta.get("query").and_then(|v| v.as_str()) {
+                self.expression = query.to_string();
+                self.expression_edit = query.to_string();
+            }
+            if let Some(itype) = meta.get("itype").and_then(|v| v.as_str()) {
+                self.c3_search_itype = itype.to_string();
+            }
+            if let Some(tags) = meta.get("tags").and_then(|v| v.as_array()) {
+                self.c3_tags = tags.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect();
+            }
+            if let Some(inits) = meta.get("init_indicators").and_then(|v| v.as_array()) {
+                self.c3_init_indicators = inits.iter()
+                    .filter_map(|v| v.as_array())
+                    .filter_map(|arr| {
+                        let itype = arr.first()?.as_str()?;
+                        let query = arr.get(1)?.as_str()?;
+                        Some((itype.to_string(), query.to_string()))
+                    })
+                    .collect();
+            }
+            if let Some(parents_obj) = meta.get("parents").and_then(|v| v.as_object()) {
+                for (key, val) in parents_obj {
+                    if let Some((indicator, itype)) = key.split_once('\t') {
+                        let parent_list: Vec<(String, String)> = val.as_array()
+                            .map(|arr| arr.iter()
+                                .filter_map(|v| v.as_array())
+                                .filter_map(|a| {
+                                    let pq = a.first()?.as_str()?;
+                                    let pi = a.get(1)?.as_str()?;
+                                    Some((pq.to_string(), pi.to_string()))
+                                })
+                                .collect())
+                            .unwrap_or_default();
+                        self.c3_indicator_parents.insert(
+                            (indicator.to_string(), itype.to_string()),
+                            parent_list,
+                        );
+                    }
+                }
+            }
+        }
+
+        // Parse results: each top-level key (except _cont3xt) is an indicator
+        for (indicator, indicator_val) in obj {
+            if indicator == "_cont3xt" { continue; }
+            if let Some(integ_map) = indicator_val.as_object() {
+                let itype = integ_map.get("_cont3xt_itype")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                for (integ_name, data) in integ_map {
+                    if integ_name.starts_with("_cont3xt") { continue; }
+                    self.c3_results.push(crate::api::Cont3xtResult {
+                        name: integ_name.clone(),
+                        indicator: indicator.clone(),
+                        itype: itype.clone(),
+                        data: data.clone(),
+                        has_data: !data.is_null(),
+                    });
+                }
+            }
+        }
+
+        self.c3_focus = Cont3xtFocus::Results;
+        self.c3_loaded_file = Some(filename.to_string());
+        let count = self.c3_results.len();
+        self.status_msg = format!("Loaded {count} results from {filename}");
+        Ok(())
     }
 
     pub async fn c3_fetch_link_groups(&mut self) {
