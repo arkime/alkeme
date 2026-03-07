@@ -56,6 +56,10 @@ struct Cli {
     #[arg(long)]
     jar: Option<String>,
 
+    /// Cookie jar password. If prefixed with |, runs the rest as a command and uses the first line of output.
+    #[arg(long)]
+    jar_password: Option<String>,
+
     /// Default search expression (sessions query for Viewer, indicator for Cont3xt)
     #[arg(long)]
     search: Option<String>,
@@ -118,8 +122,30 @@ async fn main() -> Result<()> {
 
     // Load cookie jar from file if --jar specified
     let jar_password = if cli.jar.is_some() {
-        let pass = rpassword::prompt_password("Cookie jar password: ")?;
-        Some(pass)
+        if let Some(ref jp) = cli.jar_password {
+            if let Some(cmd) = jp.strip_prefix('|') {
+                let output = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(cmd)
+                    .output()
+                    .map_err(|e| anyhow::anyhow!("Failed to run jar-password command: {e}"))?;
+                if !output.status.success() {
+                    eprintln!("jar-password command failed with exit code {}", output.status);
+                    std::process::exit(1);
+                }
+                let line = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                Some(line)
+            } else {
+                Some(jp.clone())
+            }
+        } else {
+            let pass = rpassword::prompt_password("Cookie jar password: ")?;
+            Some(pass)
+        }
     } else {
         None
     };
