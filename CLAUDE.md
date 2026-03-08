@@ -15,6 +15,8 @@ cargo run -- URL --auth okta --user admin:admin                # okta auth (Iden
 cargo run -- URL --auth okta                                   # okta auth (prompts with Okta's labels)
 cargo run -- URL --auth digest                                 # prompts for both user+pass
 cargo run -- URL --auth digest --user admin                    # prompts for password only
+cargo run -- URL --auth digest --user admin --password secret  # password from flag
+cargo run -- URL --auth digest --user admin --password '|pass show key'  # password from command
 cargo run -- URL --app cont3xt --auth form --user admin:admin  # force cont3xt mode
 cargo run -- URL --search 1.2.3.4 --cont3xt-tags mytag       # cont3xt with tags
 cargo run -- URL --auth okta --jar cookies.json               # encrypted cookie jar (saves username + cookies)

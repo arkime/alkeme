@@ -64,6 +64,10 @@ struct Cli {
     #[arg(long)]
     jar_password: Option<String>,
 
+    /// Authentication password. If prefixed with |, runs the rest as a command and uses the first line of output. Overrides the password portion of --user.
+    #[arg(long)]
+    password: Option<String>,
+
     /// Default search expression (sessions query for Viewer, indicator for Cont3xt)
     #[arg(long)]
     search: Option<String>,
@@ -75,6 +79,29 @@ struct Cli {
     /// Default search expression for Viewer only (overrides --search for Viewer)
     #[arg(long)]
     viewer_search: Option<String>,
+}
+
+/// Resolve a value that may be a `|command` pipe. If prefixed with `|`, runs the
+/// rest as a shell command and returns the first line of stdout.
+fn resolve_pipe_value(val: &str, label: &str) -> Result<String> {
+    if let Some(cmd) = val.strip_prefix('|') {
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .output()
+            .map_err(|e| anyhow::anyhow!("Failed to run {label} command: {e}"))?;
+        if !output.status.success() {
+            eprintln!("{label} command failed with exit code {}", output.status);
+            std::process::exit(1);
+        }
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string())
+    } else {
+        Ok(val.to_string())
+    }
 }
 
 #[tokio::main]
@@ -93,12 +120,21 @@ async fn main() -> Result<()> {
     let defers_prompts = auth_mode == api::AuthMode::Web || auth_mode == api::AuthMode::Okta;
     let has_jar = cli.jar.is_some();
 
+    // Resolve --password (supports |command)
+    let cli_password = if let Some(ref p) = cli.password {
+        Some(resolve_pipe_value(p, "password")?)
+    } else {
+        None
+    };
+
     let (username, password) = if let Some(userpass) = &cli.user {
         if let Some((u, p)) = userpass.split_once(':') {
-            (Some(u.to_string()), Some(p.to_string()))
+            (Some(u.to_string()), Some(cli_password.unwrap_or_else(|| p.to_string())))
         } else {
-            // Username only (no colon) — prompt for password (unless auth defers or jar will try first)
-            if defers_prompts || has_jar {
+            // Username only (no colon) — use --password if provided, else prompt/defer
+            if let Some(p) = cli_password {
+                (Some(userpass.clone()), Some(p))
+            } else if defers_prompts || has_jar {
                 (Some(userpass.clone()), None)
             } else {
                 let pass = rpassword::prompt_password(format!("Password for {userpass}: "))?;
@@ -107,11 +143,17 @@ async fn main() -> Result<()> {
         }
     } else if defers_prompts {
         // Web/Okta auth will prompt using form labels after fetching the page
-        (None, None)
+        (None, cli_password)
     } else if auth_mode != api::AuthMode::None {
         if has_jar {
             // Defer prompting — jar might have valid session
-            (None, None)
+            (None, cli_password)
+        } else if let Some(p) = cli_password {
+            eprint!("Username: ");
+            let mut user = String::new();
+            io::stdin().read_line(&mut user)?;
+            let user = user.trim().to_string();
+            (Some(user), Some(p))
         } else {
             eprint!("Username: ");
             let mut user = String::new();
@@ -127,25 +169,7 @@ async fn main() -> Result<()> {
     // Load cookie jar from file if --jar specified
     let jar_password = if cli.jar.is_some() {
         if let Some(ref jp) = cli.jar_password {
-            if let Some(cmd) = jp.strip_prefix('|') {
-                let output = std::process::Command::new("sh")
-                    .arg("-c")
-                    .arg(cmd)
-                    .output()
-                    .map_err(|e| anyhow::anyhow!("Failed to run jar-password command: {e}"))?;
-                if !output.status.success() {
-                    eprintln!("jar-password command failed with exit code {}", output.status);
-                    std::process::exit(1);
-                }
-                let line = String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
-                Some(line)
-            } else {
-                Some(jp.clone())
-            }
+            Some(resolve_pipe_value(jp, "jar-password")?)
         } else {
             let pass = rpassword::prompt_password("Cookie jar password: ")?;
             Some(pass)

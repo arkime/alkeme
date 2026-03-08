@@ -165,6 +165,11 @@ alkeme http://viewer.example.com:8005 --auth okta --jar cookies.json
 # Persist cookies with password from a command (e.g. password manager)
 alkeme http://viewer.example.com:8005 --auth okta --jar cookies.json --jar-password '|pass show mykey'
 
+# Full example: Okta auth + password manager for both login and cookie jar
+alkeme http://localhost:8123/arkime/ --auth okta --user admin \
+  --password '|lpass show --password okta-password' \
+  --jar ~/alkeme.jar --jar-password '|lpass show --password jar-password'
+
 # With basic authentication (prompts for credentials)
 alkeme http://viewer.example.com:8005 --auth basic
 
@@ -189,6 +194,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --cont3xt-re
 | `--cont3xt-view <ID>` | Select a Cont3xt integration view by ID or name |
 | `--jar <FILE>` | Encrypted cookie jar file — persist session cookies and username between runs to avoid re-login. Prompts for a jar password each run. (File created with owner-only permissions) |
 | `--jar-password <PASS>` | Cookie jar password. If prefixed with `\|`, runs the rest as a command and uses the first line of output |
+| `--password <PASS>` | Authentication password. If prefixed with `\|`, runs the rest as a command and uses the first line of output. Overrides the password portion of `--user` |
 | `--search <EXPR>` | Default search expression (viewer and cont3xt); auto-submits in cont3xt |
 | `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`); `user` without colon prompts for password only |
 | `--viewer-search <EXPR>` | Search expression for Viewer only |
