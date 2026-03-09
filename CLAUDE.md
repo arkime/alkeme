@@ -171,8 +171,8 @@ src/
 | v | Views (select/create/delete views) |
 | d | Delete index (DB Indices); confirm dialog |
 | f | Force merge index (DB Indices); confirm dialog |
-| c | Close open index (DB Indices); confirm dialog |
-| o | Open closed index (DB Indices); confirm dialog |
+| C | Close open index (DB Indices); confirm dialog |
+| O | Open closed index (DB Indices); confirm dialog |
 | e | Toggle exclude/include node (DB Nodes); confirm dialog |
 | x | Toggle exclude/include IP (DB Nodes); confirm dialog |
 | D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
@@ -300,7 +300,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - DB Nodes detail shows exclusion status banner (node/IP excluded state) with `e`/`x` toggle keys
 - DB Indices detail supports `d` (delete), `f` (force merge), `c` (close), `o` (open) operations
 - DB Nodes list and detail support `e` (toggle node exclude/include) and `x` (toggle IP exclude/include) via `POST /api/esshards/:type/:value/:action`
-- DB Indices list supports `d` (delete via `DELETE /api/esindices/:index`), `f` (force merge), `c` (close), `o` (open) via `POST /api/esindices/:index/:action`
+- DB Indices list supports `d` (delete via `DELETE /api/esindices/:index`), `f` (force merge), `C` (close), `O` (open) via `POST /api/esindices/:index/:action`
 - All operations use `ConfirmDialog` for confirmation and auto-refresh stats after success
 - Node exclude/include operations refresh detail in-place (preserving scroll and filter)
 

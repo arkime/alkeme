@@ -230,8 +230,8 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --cont3xt-re
 | `v` | Open views menu (select/create/delete views) |
 | `d` | Delete index (DB Indices) |
 | `f` | Force merge index (DB Indices) |
-| `c` | Close open index (DB Indices) |
-| `o` | Open closed index (DB Indices) |
+| `C` | Close open index (DB Indices) |
+| `O` | Open closed index (DB Indices) |
 | `e` | Toggle exclude/include node (DB Nodes, list or detail) |
 | `x` | Toggle exclude/include IP (DB Nodes, list or detail) |
 | `D` | Show HTTP debug log (request timing, status codes) |

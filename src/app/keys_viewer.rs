@@ -1411,7 +1411,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('c') if self.vr_stats_tab == StatsTab::DBIndices => {
+            KeyCode::Char('C') if self.vr_stats_tab == StatsTab::DBIndices => {
                 if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
                     let index = crate::api::str_val(row, "index");
                     let status = crate::api::str_val(row, "status");
@@ -1424,7 +1424,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('o') if self.vr_stats_tab == StatsTab::DBIndices => {
+            KeyCode::Char('O') if self.vr_stats_tab == StatsTab::DBIndices => {
                 if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
                     let index = crate::api::str_val(row, "index");
                     let status = crate::api::str_val(row, "status");

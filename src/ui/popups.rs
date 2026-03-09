@@ -433,8 +433,8 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             lines.push(blank());
             lines.push(Line::from(vec![key("d"), Span::raw("Delete index")]));
             lines.push(Line::from(vec![key("f"), Span::raw("Force merge index")]));
-            lines.push(Line::from(vec![key("c"), Span::raw("Close index (if open)")]));
-            lines.push(Line::from(vec![key("o"), Span::raw("Open index (if closed)")]));
+            lines.push(Line::from(vec![key("C"), Span::raw("Close index (if open)")]));
+            lines.push(Line::from(vec![key("O"), Span::raw("Open index (if closed)")]));
         }
         if app.vr_stats_tab == StatsTab::DBStats {
             lines.push(blank());
