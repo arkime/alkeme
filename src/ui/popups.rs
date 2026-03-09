@@ -911,15 +911,26 @@ pub(super) fn draw_packets(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
-pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
-    let popup_width = 60u16.min(area.width.saturating_sub(4));
+// --- Generic column editor rendering ---
+
+struct ColumnEditorRenderData<'a> {
+    title: String,
+    filter: &'a str,
+    items: &'a [(&'a str, &'a str, bool)], // (primary, secondary, enabled)
+    selected: usize,
+    mode: ColumnEditorMode,
+    popup_width: u16,
+}
+
+fn draw_column_editor_core(f: &mut Frame, area: Rect, data: &ColumnEditorRenderData) {
+    let popup_width = data.popup_width.min(area.width.saturating_sub(4));
     let popup_height = (area.height as f32 * 0.8) as u16;
     let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
-    let mode_label = if app.vr_column_editor_mode == ColumnEditorMode::Reorder { " [REORDER] " } else { "" };
-    let bottom = if app.vr_column_editor_filter.is_empty() {
+    let mode_label = if data.mode == ColumnEditorMode::Reorder { " [REORDER] " } else { "" };
+    let bottom = if data.filter.is_empty() {
         " space:toggle /:filter m:move a:apply d:default Esc:close "
     } else {
         " space:toggle ↑↓:navigate Esc:clear filter "
@@ -927,19 +938,18 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(format!(" Columns{mode_label}"))
+        .title(format!("{}{mode_label}", data.title))
         .title_bottom(Line::from(bottom).fg(Color::DarkGray));
 
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
 
-    // Filter bar at top
     let filter_height = 1u16;
     let filter_area = Rect::new(inner.x, inner.y, inner.width, filter_height);
     let list_area = Rect::new(inner.x, inner.y + filter_height, inner.width, inner.height.saturating_sub(filter_height));
 
-    let filter_active = !app.vr_column_editor_filter.is_empty();
-    let filter_text = app.vr_column_editor_filter.trim_matches('\0');
+    let filter_active = !data.filter.is_empty();
+    let filter_text = data.filter.trim_matches('\0');
     let filter_display = if !filter_active {
         Line::from(vec![
             Span::styled("  / to filter", Style::default().fg(Color::DarkGray)),
@@ -953,15 +963,14 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
     };
     f.render_widget(Paragraph::new(vec![filter_display]), filter_area);
 
-    // Build filtered view
     let filter_lower = filter_text.to_lowercase();
     let filtered: Vec<usize> = if filter_lower.is_empty() {
-        (0..app.vr_column_editor_available.len()).collect()
+        (0..data.items.len()).collect()
     } else {
-        app.vr_column_editor_available.iter().enumerate()
-            .filter(|(_, item)| {
-                item.exp.to_lowercase().contains(&filter_lower)
-                    || item.friendly_name.to_lowercase().contains(&filter_lower)
+        data.items.iter().enumerate()
+            .filter(|(_, (a, b, _))| {
+                a.to_lowercase().contains(&filter_lower)
+                    || b.to_lowercase().contains(&filter_lower)
             })
             .map(|(i, _)| i)
             .collect()
@@ -969,9 +978,7 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
     let visible_rows = list_area.height as usize;
     let total = filtered.len();
-
-    // Find position of selected in filtered list
-    let sel_pos = filtered.iter().position(|&i| i == app.vr_column_editor_selected).unwrap_or(0);
+    let sel_pos = filtered.iter().position(|&i| i == data.selected).unwrap_or(0);
 
     let scroll_offset = if sel_pos >= visible_rows {
         sel_pos - visible_rows + 1
@@ -981,25 +988,25 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
     let mut lines: Vec<Line> = Vec::new();
     for &idx in filtered.iter().skip(scroll_offset).take(visible_rows) {
-        let item = &app.vr_column_editor_available[idx];
-        let is_selected = idx == app.vr_column_editor_selected;
-        let checkbox = if item.enabled { "[x] " } else { "[ ] " };
-        let marker = if is_selected && app.vr_column_editor_mode == ColumnEditorMode::Reorder {
+        let (primary, secondary, enabled) = &data.items[idx];
+        let is_selected = idx == data.selected;
+        let checkbox = if *enabled { "[x] " } else { "[ ] " };
+        let marker = if is_selected && data.mode == ColumnEditorMode::Reorder {
             "≡ "
         } else if is_selected {
             "► "
         } else {
             "  "
         };
-        let display = if item.friendly_name.is_empty() || item.friendly_name == item.exp {
-            item.exp.clone()
+        let display = if secondary.is_empty() || *secondary == *primary {
+            primary.to_string()
         } else {
-            format!("{} ({})", item.exp, item.friendly_name)
+            format!("{primary} ({secondary})")
         };
         let text = format!("{marker}{checkbox}{display}");
         let style = if is_selected {
             Style::default().fg(Color::Black).bg(Color::Yellow)
-        } else if item.enabled {
+        } else if *enabled {
             Style::default().fg(Color::Green)
         } else {
             Style::default().fg(Color::DarkGray)
@@ -1007,7 +1014,6 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(Line::from(text).style(style));
     }
 
-    // Show scroll indicator
     if total > visible_rows && !lines.is_empty() {
         let pct = if total > 1 { (sel_pos * 100) / (total - 1).max(1) } else { 0 };
         let indicator = format!(" ↕ {}/{} ({}%) ", sel_pos + 1, total, pct);
@@ -1019,257 +1025,62 @@ pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(paragraph, list_area);
 }
 
-pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
-    let popup_width = 44u16.min(area.width.saturating_sub(4));
-    let popup_height = (app.vr_saved_layouts.len() as u16 + 9).min(area.height.saturating_sub(4));
-    let popup_area = center_popup(popup_width, popup_height, area);
-
-    f.render_widget(Clear, popup_area);
-
-    match app.vr_layout_popup_mode {
-        LayoutPopupMode::ConfirmDelete => {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Red))
-                .title(" Confirm Delete ");
-            let inner = block.inner(popup_area);
-            f.render_widget(block, popup_area);
-            let lines = vec![
-                Line::from(""),
-                Line::from(format!("  Delete layout '{}'?", app.vr_layout_delete_name))
-                    .style(Style::default().fg(Color::Yellow)),
-                Line::from(""),
-                Line::from("  y: yes  any other key: cancel")
-                    .style(Style::default().fg(Color::DarkGray)),
-            ];
-            f.render_widget(Paragraph::new(lines), inner);
-        }
-        LayoutPopupMode::List => {
-            let filter_active = !app.vr_layout_filter.is_empty();
-            let bottom = if filter_active {
-                " Enter:select ↑↓:navigate Esc:clear "
-            } else {
-                " Enter:select /:filter x:delete Esc:close "
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan))
-                .title(" Layouts ")
-                .title_bottom(Line::from(bottom).fg(Color::DarkGray));
-
-            let inner = block.inner(popup_area);
-            f.render_widget(block, popup_area);
-
-            let mut lines: Vec<Line> = Vec::new();
-
-            if !filter_active {
-                // "Edit Columns" option
-                let style = if app.vr_layout_popup_selected == 0 {
-                    Style::default().fg(Color::Black).bg(Color::Yellow)
-                } else {
-                    Style::default().fg(Color::Magenta)
-                };
-                lines.push(Line::from("  ⚙ Edit Columns").style(style));
-
-                // "Save Current" option
-                let style = if app.vr_layout_popup_selected == 1 {
-                    Style::default().fg(Color::Black).bg(Color::Yellow)
-                } else {
-                    Style::default().fg(Color::Cyan)
-                };
-                lines.push(Line::from("  [+] Save Current Layout").style(style));
-
-                // "Default" option
-                let style = if app.vr_layout_popup_selected == 2 {
-                    Style::default().fg(Color::Black).bg(Color::Yellow)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                lines.push(Line::from("  ↺ Default Columns").style(style));
-
-                // Separator
-                lines.push(Line::from("  ────────────────────────────────").style(Style::default().fg(Color::DarkGray)));
-            } else {
-                // Filter bar
-                let filter_text = app.vr_layout_filter.trim_matches('\0');
-                lines.push(Line::from(vec![
-                    Span::styled("  /", Style::default().fg(Color::Yellow)),
-                    Span::raw(filter_text),
-                    Span::styled("█", Style::default().fg(Color::White)),
-                ]));
-            }
-
-            // Saved layouts (filtered if filter active)
-            let filter_text = app.vr_layout_filter.trim_matches('\0').to_lowercase();
-            let mut any_shown = false;
-            for (i, layout) in app.vr_saved_layouts.iter().enumerate() {
-                if !filter_text.is_empty() && !layout.name.to_lowercase().contains(&filter_text) {
-                    continue;
-                }
-                any_shown = true;
-                let is_selected = app.vr_layout_popup_selected == i + 3;
-                let style = if is_selected {
-                    Style::default().fg(Color::Black).bg(Color::Yellow)
-                } else {
-                    Style::default().fg(Color::Green)
-                };
-                let col_count = layout.columns.len();
-                lines.push(Line::from(format!("  {} ({} cols)", layout.name, col_count)).style(style));
-            }
-
-            if !any_shown {
-                lines.push(Line::from("  (no saved layouts)").style(Style::default().fg(Color::DarkGray)));
-            }
-
-            let paragraph = Paragraph::new(lines);
-            f.render_widget(paragraph, inner);
-        }
-        LayoutPopupMode::SaveInput => {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan))
-                .title(" Save Layout ");
-
-            let inner = block.inner(popup_area);
-            f.render_widget(block, popup_area);
-
-            let mut lines: Vec<Line> = Vec::new();
-            lines.push(Line::from("  Layout name:").style(Style::default().fg(Color::Yellow)));
-
-            // Input field with cursor
-            let name = &app.vr_layout_save_name;
-            let cursor = app.vr_layout_save_cursor;
-            let mut spans = vec![Span::raw("  ")];
-            if cursor < name.len() {
-                spans.push(Span::raw(&name[..cursor]));
-                spans.push(Span::styled(&name[cursor..cursor+1], Style::default().bg(Color::White).fg(Color::Black)));
-                spans.push(Span::raw(&name[cursor+1..]));
-            } else {
-                spans.push(Span::raw(name.as_str()));
-                spans.push(Span::styled(" ", Style::default().bg(Color::White)));
-            }
-            lines.push(Line::from(spans));
-
-            lines.push(Line::from(""));
-            lines.push(Line::from("  Enter: save  Esc: cancel").style(Style::default().fg(Color::DarkGray)));
-
-            let paragraph = Paragraph::new(lines);
-            f.render_widget(paragraph, inner);
-        }
-    }
+pub(super) fn draw_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
+    let items: Vec<(&str, &str, bool)> = app.vr_column_editor_available.iter()
+        .map(|i| (i.exp.as_str(), i.friendly_name.as_str(), i.enabled))
+        .collect();
+    draw_column_editor_core(f, area, &ColumnEditorRenderData {
+        title: " Columns".to_string(),
+        filter: &app.vr_column_editor_filter,
+        items: &items,
+        selected: app.vr_column_editor_selected,
+        mode: app.vr_column_editor_mode,
+        popup_width: 60,
+    });
 }
 
 pub(super) fn draw_stats_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
-    let popup_width = 50u16.min(area.width.saturating_sub(4));
-    let popup_height = (area.height as f32 * 0.8) as u16;
-    let popup_area = center_popup(popup_width, popup_height, area);
-
-    f.render_widget(Clear, popup_area);
-
-    let mode_label = if app.vr_stats_column_editor_mode == ColumnEditorMode::Reorder { " [REORDER] " } else { "" };
-    let bottom = if app.vr_stats_column_editor_filter.is_empty() {
-        " space:toggle /:filter m:move a:apply d:default Esc:close "
-    } else {
-        " space:toggle ↑↓:navigate Esc:clear filter "
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(format!(" {} Columns{mode_label}", app.vr_stats_tab.name()))
-        .title_bottom(Line::from(bottom).fg(Color::DarkGray));
-
-    let inner = block.inner(popup_area);
-    f.render_widget(block, popup_area);
-
-    let filter_height = 1u16;
-    let filter_area = Rect::new(inner.x, inner.y, inner.width, filter_height);
-    let list_area = Rect::new(inner.x, inner.y + filter_height, inner.width, inner.height.saturating_sub(filter_height));
-
-    let filter_active = !app.vr_stats_column_editor_filter.is_empty();
-    let filter_text = app.vr_stats_column_editor_filter.trim_matches('\0');
-    let filter_display = if !filter_active {
-        Line::from(vec![
-            Span::styled("  / to filter", Style::default().fg(Color::DarkGray)),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled("  /", Style::default().fg(Color::Yellow)),
-            Span::raw(filter_text),
-            Span::styled("█", Style::default().fg(Color::White)),
-        ])
-    };
-    f.render_widget(Paragraph::new(vec![filter_display]), filter_area);
-
-    let filter_lower = filter_text.to_lowercase();
-    let filtered: Vec<usize> = if filter_lower.is_empty() {
-        (0..app.vr_stats_column_editor_items.len()).collect()
-    } else {
-        app.vr_stats_column_editor_items.iter().enumerate()
-            .filter(|(_, item)| {
-                item.field.to_lowercase().contains(&filter_lower)
-                    || item.label.to_lowercase().contains(&filter_lower)
-            })
-            .map(|(i, _)| i)
-            .collect()
-    };
-
-    let visible_rows = list_area.height as usize;
-    let total = filtered.len();
-    let sel_pos = filtered.iter().position(|&i| i == app.vr_stats_column_editor_selected).unwrap_or(0);
-
-    let scroll_offset = if sel_pos >= visible_rows {
-        sel_pos - visible_rows + 1
-    } else {
-        0
-    };
-
-    let mut lines: Vec<Line> = Vec::new();
-    for &idx in filtered.iter().skip(scroll_offset).take(visible_rows) {
-        let item = &app.vr_stats_column_editor_items[idx];
-        let is_selected = idx == app.vr_stats_column_editor_selected;
-        let checkbox = if item.enabled { "[x] " } else { "[ ] " };
-        let marker = if is_selected && app.vr_stats_column_editor_mode == ColumnEditorMode::Reorder {
-            "≡ "
-        } else if is_selected {
-            "► "
-        } else {
-            "  "
-        };
-        let display = if item.label.is_empty() || item.label == item.field {
-            item.field.clone()
-        } else {
-            format!("{} ({})", item.label, item.field)
-        };
-        let text = format!("{marker}{checkbox}{display}");
-        let style = if is_selected {
-            Style::default().fg(Color::Black).bg(Color::Yellow)
-        } else if item.enabled {
-            Style::default().fg(Color::Green)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        lines.push(Line::from(text).style(style));
-    }
-
-    if total > visible_rows && !lines.is_empty() {
-        let pct = if total > 1 { (sel_pos * 100) / (total - 1).max(1) } else { 0 };
-        let indicator = format!(" ↕ {}/{} ({}%) ", sel_pos + 1, total, pct);
-        let last = lines.len() - 1;
-        lines[last] = Line::from(indicator).style(Style::default().fg(Color::DarkGray));
-    }
-
-    let paragraph = Paragraph::new(lines);
-    f.render_widget(paragraph, list_area);
+    let items: Vec<(&str, &str, bool)> = app.vr_stats_column_editor_items.iter()
+        .map(|i| (i.label.as_str(), i.field.as_str(), i.enabled))
+        .collect();
+    draw_column_editor_core(f, area, &ColumnEditorRenderData {
+        title: format!(" {} Columns", app.vr_stats_tab.name()),
+        filter: &app.vr_stats_column_editor_filter,
+        items: &items,
+        selected: app.vr_stats_column_editor_selected,
+        mode: app.vr_stats_column_editor_mode,
+        popup_width: 50,
+    });
 }
 
-pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
+// --- Generic layout popup rendering ---
+
+struct LayoutRenderItem<'a> {
+    name: &'a str,
+    col_count: usize,
+    shared: bool,
+}
+
+struct LayoutRenderData<'a> {
+    popup_title: String,
+    save_title: String,
+    delete_name: &'a str,
+    mode: LayoutPopupMode,
+    selected: usize,
+    filter: &'a str,
+    save_name: &'a str,
+    save_cursor: usize,
+    items: Vec<LayoutRenderItem<'a>>,
+}
+
+fn draw_layout_popup_core(f: &mut Frame, area: Rect, data: &LayoutRenderData) {
     let popup_width = 44u16.min(area.width.saturating_sub(4));
-    let popup_height = (app.vr_stats_saved_shareables.len() as u16 + 9).min(area.height.saturating_sub(4));
+    let popup_height = (data.items.len() as u16 + 9).min(area.height.saturating_sub(4));
     let popup_area = center_popup(popup_width, popup_height, area);
 
     f.render_widget(Clear, popup_area);
 
-    match app.vr_stats_layout_popup_mode {
+    match data.mode {
         LayoutPopupMode::ConfirmDelete => {
             let block = Block::default()
                 .borders(Borders::ALL)
@@ -1279,7 +1090,7 @@ pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) 
             f.render_widget(block, popup_area);
             let lines = vec![
                 Line::from(""),
-                Line::from(format!("  Delete layout '{}'?", app.vr_stats_layout_delete_name))
+                Line::from(format!("  Delete layout '{}'?", data.delete_name))
                     .style(Style::default().fg(Color::Yellow)),
                 Line::from(""),
                 Line::from("  y: yes  any other key: cancel")
@@ -1288,7 +1099,7 @@ pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) 
             f.render_widget(Paragraph::new(lines), inner);
         }
         LayoutPopupMode::List => {
-            let filter_active = !app.vr_stats_layout_filter.is_empty();
+            let filter_active = !data.filter.is_empty();
             let bottom = if filter_active {
                 " Enter:select ↑↓:navigate Esc:clear "
             } else {
@@ -1297,7 +1108,7 @@ pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) 
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
-                .title(format!(" {} Layouts ", app.vr_stats_tab.name()))
+                .title(data.popup_title.as_str())
                 .title_bottom(Line::from(bottom).fg(Color::DarkGray));
 
             let inner = block.inner(popup_area);
@@ -1306,21 +1117,21 @@ pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) 
             let mut lines: Vec<Line> = Vec::new();
 
             if !filter_active {
-                let style = if app.vr_stats_layout_popup_selected == 0 {
+                let style = if data.selected == 0 {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
                     Style::default().fg(Color::Magenta)
                 };
                 lines.push(Line::from("  ⚙ Edit Columns").style(style));
 
-                let style = if app.vr_stats_layout_popup_selected == 1 {
+                let style = if data.selected == 1 {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
                     Style::default().fg(Color::Cyan)
                 };
                 lines.push(Line::from("  [+] Save Current Layout").style(style));
 
-                let style = if app.vr_stats_layout_popup_selected == 2 {
+                let style = if data.selected == 2 {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
                     Style::default().fg(Color::White)
@@ -1329,7 +1140,7 @@ pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) 
 
                 lines.push(Line::from("  ────────────────────────────────").style(Style::default().fg(Color::DarkGray)));
             } else {
-                let filter_text = app.vr_stats_layout_filter.trim_matches('\0');
+                let filter_text = data.filter.trim_matches('\0');
                 lines.push(Line::from(vec![
                     Span::styled("  /", Style::default().fg(Color::Yellow)),
                     Span::raw(filter_text),
@@ -1337,22 +1148,21 @@ pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) 
                 ]));
             }
 
-            let filter_text = app.vr_stats_layout_filter.trim_matches('\0').to_lowercase();
+            let filter_text = data.filter.trim_matches('\0').to_lowercase();
             let mut any_shown = false;
-            for (i, shareable) in app.vr_stats_saved_shareables.iter().enumerate() {
-                if !filter_text.is_empty() && !shareable.name.to_lowercase().contains(&filter_text) {
+            for (i, item) in data.items.iter().enumerate() {
+                if !filter_text.is_empty() && !item.name.to_lowercase().contains(&filter_text) {
                     continue;
                 }
                 any_shown = true;
-                let is_selected = app.vr_stats_layout_popup_selected == i + 3;
+                let is_selected = data.selected == i + 3;
                 let style = if is_selected {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
                     Style::default().fg(Color::Green)
                 };
-                let shared_icon = if shareable.shared { " 🔗" } else { "" };
-                let col_count = shareable.columns.len();
-                lines.push(Line::from(format!("  {}{} ({} cols)", shareable.name, shared_icon, col_count)).style(style));
+                let shared_icon = if item.shared { " 🔗" } else { "" };
+                lines.push(Line::from(format!("  {}{} ({} cols)", item.name, shared_icon, item.col_count)).style(style));
             }
 
             if !any_shown && filter_text.is_empty() {
@@ -1366,7 +1176,7 @@ pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) 
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
-                .title(format!(" Save {} Layout ", app.vr_stats_tab.name()));
+                .title(data.save_title.as_str());
 
             let inner = block.inner(popup_area);
             f.render_widget(block, popup_area);
@@ -1374,15 +1184,15 @@ pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) 
             let mut lines: Vec<Line> = Vec::new();
             lines.push(Line::from("  Layout name:").style(Style::default().fg(Color::Yellow)));
 
-            let name = &app.vr_stats_layout_save_name;
-            let cursor = app.vr_stats_layout_save_cursor;
+            let name = data.save_name;
+            let cursor = data.save_cursor;
             let mut spans = vec![Span::raw("  ")];
             if cursor < name.len() {
                 spans.push(Span::raw(&name[..cursor]));
                 spans.push(Span::styled(&name[cursor..cursor+1], Style::default().bg(Color::White).fg(Color::Black)));
                 spans.push(Span::raw(&name[cursor+1..]));
             } else {
-                spans.push(Span::raw(name.as_str()));
+                spans.push(Span::raw(name));
                 spans.push(Span::styled(" ", Style::default().bg(Color::White)));
             }
             lines.push(Line::from(spans));
@@ -1394,6 +1204,40 @@ pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) 
             f.render_widget(paragraph, inner);
         }
     }
+}
+
+pub(super) fn draw_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
+    let items: Vec<LayoutRenderItem> = app.vr_saved_layouts.iter()
+        .map(|l| LayoutRenderItem { name: &l.name, col_count: l.columns.len(), shared: false })
+        .collect();
+    draw_layout_popup_core(f, area, &LayoutRenderData {
+        popup_title: " Layouts ".to_string(),
+        save_title: " Save Layout ".to_string(),
+        delete_name: &app.vr_layout_delete_name,
+        mode: app.vr_layout_popup_mode,
+        selected: app.vr_layout_popup_selected,
+        filter: &app.vr_layout_filter,
+        save_name: &app.vr_layout_save_name,
+        save_cursor: app.vr_layout_save_cursor,
+        items,
+    });
+}
+
+pub(super) fn draw_stats_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
+    let items: Vec<LayoutRenderItem> = app.vr_stats_saved_shareables.iter()
+        .map(|s| LayoutRenderItem { name: &s.name, col_count: s.columns.len(), shared: s.shared })
+        .collect();
+    draw_layout_popup_core(f, area, &LayoutRenderData {
+        popup_title: format!(" {} Layouts ", app.vr_stats_tab.name()),
+        save_title: format!(" Save {} Layout ", app.vr_stats_tab.name()),
+        delete_name: &app.vr_stats_layout_delete_name,
+        mode: app.vr_stats_layout_popup_mode,
+        selected: app.vr_stats_layout_popup_selected,
+        filter: &app.vr_stats_layout_filter,
+        save_name: &app.vr_stats_layout_save_name,
+        save_cursor: app.vr_stats_layout_save_cursor,
+        items,
+    });
 }
 
 pub(super) fn draw_view_popup(f: &mut Frame, app: &mut App, area: Rect) {

@@ -217,26 +217,34 @@ impl App {
         url.to_string()
     }
 
-    async fn pl_switch_to_viewer(&mut self, url: &str) {
-        // Save parliament client for Ctrl+P return
+    /// Common setup for switching from Parliament to another mode.
+    /// Saves current client, connects to the new URL, handles auth.
+    /// Returns false if connection failed (caller should abort).
+    async fn pl_connect_to(&mut self, url: &str, label: &str) -> bool {
         self.pl_saved_client = Some(self.client.clone());
 
-        // Reuse the same reqwest client (and its cookie jar) with a new URL
         let mut new_client = self.client.clone_with_url(url);
         if new_client.ensure_session().await.is_err() {
-            // Session cookies didn't work — prompt for credentials
             self.force_clear = true;
             if let Err(e) = prompt_credentials_and_login(&mut new_client, url).await {
-                self.status_msg = format!("Failed to connect to {}: {}", url, e);
+                self.status_msg = format!("Failed to connect to {} at {}: {}", label, url, e);
                 self.pl_saved_client = None;
-                return;
+                return false;
             }
         }
         new_client.fetch_cookie().await.ok();
 
-        self.status_msg = format!("Connected to cluster: {}", url);
+        self.status_msg = format!("Connected to {}: {}", label, url);
         self.http_log = new_client.http_log();
         self.client = new_client;
+        self.force_clear = true;
+        true
+    }
+
+    async fn pl_switch_to_viewer(&mut self, url: &str) {
+        if !self.pl_connect_to(url, "cluster").await {
+            return;
+        }
 
         // Fetch cluster name for title bar
         self.title_name = url.to_string();
@@ -246,16 +254,13 @@ impl App {
             }
         }
 
-        // Switch mode
         self.app_mode = AppMode::Viewer;
         self.active_tab = Tab::Sessions;
-        self.force_clear = true;
 
         // Restore saved viewer expression
         self.expression = self.pl_saved_viewer_expression.clone();
         self.expression_edit = self.expression.clone();
 
-        // Initialize viewer data — if auth expired, these will fail and user sees error
         self.vr_fetch_fields().await;
         self.vr_fetch_sessions().await;
     }
@@ -283,36 +288,17 @@ impl App {
     }
 
     async fn pl_switch_to_cont3xt(&mut self, url: &str) {
-        // Save parliament client for Ctrl+P return
-        self.pl_saved_client = Some(self.client.clone());
-
-        // Reuse the same reqwest client (and its cookie jar) with a new URL
-        let mut new_client = self.client.clone_with_url(url);
-        if new_client.ensure_session().await.is_err() {
-            // Session cookies didn't work — prompt for credentials
-            self.force_clear = true;
-            if let Err(e) = prompt_credentials_and_login(&mut new_client, url).await {
-                self.status_msg = format!("Failed to connect to Cont3xt at {}: {}", url, e);
-                self.pl_saved_client = None;
-                return;
-            }
+        if !self.pl_connect_to(url, "Cont3xt").await {
+            return;
         }
-        new_client.fetch_cookie().await.ok();
 
-        self.status_msg = format!("Connected to Cont3xt: {}", url);
-        self.http_log = new_client.http_log();
-        self.client = new_client;
-
-        // Switch mode
         self.app_mode = AppMode::Cont3xt;
         self.active_tab = Tab::Search;
-        self.force_clear = true;
 
         // Restore saved cont3xt expression
         self.expression = self.pl_saved_c3_expression.clone();
         self.expression_edit = self.expression.clone();
 
-        // Initialize cont3xt data
         self.c3_fetch_integrations().await;
         self.c3_fetch_views().await;
         self.c3_fetch_overviews().await;
@@ -320,32 +306,13 @@ impl App {
     }
 
     async fn pl_switch_to_wise(&mut self, url: &str) {
-        // Save parliament client for Ctrl+P return
-        self.pl_saved_client = Some(self.client.clone());
-
-        // Reuse the same reqwest client (and its cookie jar) with a new URL
-        let mut new_client = self.client.clone_with_url(url);
-        if new_client.ensure_session().await.is_err() {
-            // Session cookies didn't work — prompt for credentials
-            self.force_clear = true;
-            if let Err(e) = prompt_credentials_and_login(&mut new_client, url).await {
-                self.status_msg = format!("Failed to connect to WISE at {}: {}", url, e);
-                self.pl_saved_client = None;
-                return;
-            }
+        if !self.pl_connect_to(url, "WISE").await {
+            return;
         }
-        new_client.fetch_cookie().await.ok();
 
-        self.status_msg = format!("Connected to WISE: {}", url);
-        self.http_log = new_client.http_log();
-        self.client = new_client;
-
-        // Switch mode
         self.app_mode = AppMode::Wise;
         self.active_tab = Tab::WsStats;
-        self.force_clear = true;
 
-        // Initialize WISE data
         self.ws_fetch_stats().await;
         self.ws_fetch_sources_types().await;
     }

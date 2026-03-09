@@ -153,7 +153,6 @@ pub struct App {
     pub vr_stats_layout_save_name: String,
     pub vr_stats_layout_save_cursor: usize,
     pub vr_stats_layout_delete_name: String,
-    pub vr_stats_layout_delete_id: String,
     pub vr_stats_layout_filter: String,
     pub visible_rows: usize,
     // Arkime (Summary) tab state
@@ -432,7 +431,6 @@ impl App {
             vr_stats_layout_save_name: String::new(),
             vr_stats_layout_save_cursor: 0,
             vr_stats_layout_delete_name: String::new(),
-            vr_stats_layout_delete_id: String::new(),
             vr_stats_layout_filter: String::new(),
             visible_rows: 20,
             // Arkime (Summary) tab state
@@ -629,7 +627,7 @@ impl App {
                 Err(e) => self.status_msg = format!("Error deleting index: {e}"),
             }
         } else if let Some(index) = action.strip_prefix("optimize_esindex:") {
-            match self.client.vr_optimize_esindex(index).await {
+            match self.client.vr_esindex_action(index, "optimize").await {
                 Ok(_) => {
                     self.status_msg = format!("Force merge started for '{index}'");
                     self.vr_fetch_stats().await;
@@ -637,7 +635,7 @@ impl App {
                 Err(e) => self.status_msg = format!("Error force merging index: {e}"),
             }
         } else if let Some(index) = action.strip_prefix("close_esindex:") {
-            match self.client.vr_close_esindex(index).await {
+            match self.client.vr_esindex_action(index, "close").await {
                 Ok(_) => {
                     self.status_msg = format!("Closed index '{index}'");
                     self.vr_fetch_stats().await;
@@ -645,7 +643,7 @@ impl App {
                 Err(e) => self.status_msg = format!("Error closing index: {e}"),
             }
         } else if let Some(index) = action.strip_prefix("open_esindex:") {
-            match self.client.vr_open_esindex(index).await {
+            match self.client.vr_esindex_action(index, "open").await {
                 Ok(_) => {
                     self.status_msg = format!("Opened index '{index}'");
                     self.vr_fetch_stats().await;

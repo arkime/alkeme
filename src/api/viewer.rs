@@ -31,10 +31,7 @@ impl ArkimeClient {
         if facets {
             url.push_str("&facets=1");
         }
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
+        Self::append_expr_view(&mut url, expression, view);
 
         let body = self.authenticated_get(&url).await?;
         let parsed: SessionsResponse = serde_json::from_str(&body)?;
@@ -83,18 +80,8 @@ impl ArkimeClient {
         self.authenticated_delete(&url).await
     }
 
-    pub async fn vr_close_esindex(&self, index: &str) -> Result<Value> {
-        let url = format!("{}/api/esindices/{}/close", self.base_url, urlencoding::encode(index));
-        self.authenticated_post_json(&url, &serde_json::json!({})).await
-    }
-
-    pub async fn vr_open_esindex(&self, index: &str) -> Result<Value> {
-        let url = format!("{}/api/esindices/{}/open", self.base_url, urlencoding::encode(index));
-        self.authenticated_post_json(&url, &serde_json::json!({})).await
-    }
-
-    pub async fn vr_optimize_esindex(&self, index: &str) -> Result<Value> {
-        let url = format!("{}/api/esindices/{}/optimize", self.base_url, urlencoding::encode(index));
+    pub async fn vr_esindex_action(&self, index: &str, action: &str) -> Result<Value> {
+        let url = format!("{}/api/esindices/{}/{}", self.base_url, urlencoding::encode(index), action);
         self.authenticated_post_json(&url, &serde_json::json!({})).await
     }
 
@@ -137,10 +124,7 @@ impl ArkimeClient {
 
     pub async fn vr_download_sessions_pcap(&self, expression: &str, date: &str, view: &Option<String>) -> Result<Vec<u8>> {
         let mut url = format!("{}/api/sessions.pcap?date={}", self.base_url, urlencoding::encode(date));
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
+        Self::append_expr_view(&mut url, expression, view);
         self.authenticated_get_bytes(&url).await
     }
 
@@ -153,10 +137,7 @@ impl ArkimeClient {
     pub async fn vr_export_sessions_csv(&self, expression: &str, date: &str, fields: &[String], view: &Option<String>) -> Result<Vec<u8>> {
         let fields_str = fields.join(",");
         let mut url = format!("{}/api/sessions/csv?date={}&fields={}", self.base_url, urlencoding::encode(date), urlencoding::encode(&fields_str));
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
+        Self::append_expr_view(&mut url, expression, view);
         self.authenticated_get_bytes(&url).await
     }
 
@@ -179,10 +160,7 @@ impl ArkimeClient {
 
     async fn vr_bulk_tag_op(&self, endpoint: &str, expression: &str, date: &str, tags: &str, view: &Option<String>) -> Result<String> {
         let mut url = format!("{}/api/sessions/{}?date={}", self.base_url, endpoint, urlencoding::encode(date));
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
+        Self::append_expr_view(&mut url, expression, view);
         self.authenticated_post(&url, &[("tags", tags)]).await
     }
 
@@ -196,10 +174,7 @@ impl ArkimeClient {
 
     pub fn vr_summary_url(&self, expression: &str, date: &str, view: &Option<String>) -> String {
         let mut url = format!("{}/api/sessions/summary?date={}", self.base_url, urlencoding::encode(date));
-        if !expression.is_empty() {
-            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
-        }
-        Self::append_view(&mut url, view);
+        Self::append_expr_view(&mut url, expression, view);
         url
     }
 

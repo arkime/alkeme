@@ -1,6 +1,370 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::*;
 
+// --- Generic column editor helpers ---
+
+/// Mutable state references for column editor key handling.
+/// Abstracts the difference between session and stats column editors.
+struct ColumnEditorState<'a> {
+    filter: &'a mut String,
+    selected: &'a mut usize,
+    mode: &'a mut ColumnEditorMode,
+    show: &'a mut bool,
+}
+
+/// Items in the column editor — abstracted as (name1, name2, enabled).
+trait EditorItemTrait {
+    fn search_text_a(&self) -> &str;
+    fn search_text_b(&self) -> &str;
+    fn enabled(&self) -> bool;
+    fn set_enabled(&mut self, val: bool);
+}
+
+impl EditorItemTrait for crate::app::types::ColumnEditorItem {
+    fn search_text_a(&self) -> &str { &self.exp }
+    fn search_text_b(&self) -> &str { &self.friendly_name }
+    fn enabled(&self) -> bool { self.enabled }
+    fn set_enabled(&mut self, val: bool) { self.enabled = val; }
+}
+
+impl EditorItemTrait for StatsColumnEditorItem {
+    fn search_text_a(&self) -> &str { &self.field }
+    fn search_text_b(&self) -> &str { &self.label }
+    fn enabled(&self) -> bool { self.enabled }
+    fn set_enabled(&mut self, val: bool) { self.enabled = val; }
+}
+
+fn filtered_indices<T: EditorItemTrait>(filter: &str, items: &[T]) -> Vec<usize> {
+    let filter_text = filter.trim_matches('\0');
+    if filter_text.is_empty() {
+        return (0..items.len()).collect();
+    }
+    let f = filter_text.to_lowercase();
+    items.iter().enumerate()
+        .filter(|(_, item)| {
+            item.search_text_a().to_lowercase().contains(&f)
+                || item.search_text_b().to_lowercase().contains(&f)
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Handle keys for a column editor (works for both session and stats).
+/// Returns true if the caller should also run a post-action (apply/default).
+fn handle_column_editor_key_generic<T: EditorItemTrait>(
+    key: KeyEvent,
+    state: &mut ColumnEditorState,
+    items: &mut Vec<T>,
+    show_help: &mut bool,
+) -> Option<&'static str> {
+    let filtered = filtered_indices(state.filter, items);
+    let cur_pos = filtered.iter().position(|&i| i == *state.selected);
+
+    // Filter mode active
+    if !state.filter.is_empty() {
+        match key.code {
+            KeyCode::Esc => {
+                state.filter.clear();
+                *state.selected = 0;
+            }
+            KeyCode::Backspace => {
+                state.filter.pop();
+                let filtered = filtered_indices(state.filter, items);
+                if !filtered.is_empty() {
+                    *state.selected = filtered[0];
+                }
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                if let Some(item) = items.get_mut(*state.selected) {
+                    let v = !item.enabled();
+                    item.set_enabled(v);
+                }
+            }
+            KeyCode::Down => {
+                if let Some(pos) = cur_pos {
+                    if pos + 1 < filtered.len() {
+                        *state.selected = filtered[pos + 1];
+                    }
+                } else if !filtered.is_empty() {
+                    *state.selected = filtered[0];
+                }
+            }
+            KeyCode::Up => {
+                if let Some(pos) = cur_pos {
+                    if pos > 0 {
+                        *state.selected = filtered[pos - 1];
+                    }
+                } else if !filtered.is_empty() {
+                    *state.selected = filtered[0];
+                }
+            }
+            KeyCode::Char(c) => {
+                state.filter.push(c);
+                let filtered = filtered_indices(state.filter, items);
+                if !filtered.is_empty() {
+                    *state.selected = filtered[0];
+                }
+            }
+            _ => {}
+        }
+        return None;
+    }
+
+    // Normal mode
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => {
+            *state.show = false;
+        }
+        KeyCode::Char('h') | KeyCode::Char('?') => {
+            *show_help = !*show_help;
+        }
+        KeyCode::Char('/') => {
+            *state.filter = "\0".to_string();
+        }
+        KeyCode::Enter => {
+            if *state.mode == ColumnEditorMode::Reorder {
+                *state.mode = ColumnEditorMode::Browse;
+            } else if let Some(item) = items.get_mut(*state.selected) {
+                let v = !item.enabled();
+                item.set_enabled(v);
+            }
+        }
+        KeyCode::Char(' ') => {
+            if let Some(item) = items.get_mut(*state.selected) {
+                let v = !item.enabled();
+                item.set_enabled(v);
+            }
+        }
+        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            if let Some(pos) = cur_pos {
+                let new_pos = (pos + 10).min(filtered.len().saturating_sub(1));
+                *state.selected = filtered[new_pos];
+            }
+        }
+        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            if let Some(pos) = cur_pos {
+                let new_pos = pos.saturating_sub(10);
+                *state.selected = filtered[new_pos];
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if *state.mode == ColumnEditorMode::Reorder {
+                let len = items.len();
+                if *state.selected + 1 < len {
+                    items.swap(*state.selected, *state.selected + 1);
+                    *state.selected += 1;
+                }
+            } else if let Some(pos) = cur_pos {
+                if pos + 1 < filtered.len() {
+                    *state.selected = filtered[pos + 1];
+                }
+            }
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if *state.mode == ColumnEditorMode::Reorder {
+                if *state.selected > 0 {
+                    items.swap(*state.selected, *state.selected - 1);
+                    *state.selected -= 1;
+                }
+            } else if let Some(pos) = cur_pos {
+                if pos > 0 {
+                    *state.selected = filtered[pos - 1];
+                }
+            }
+        }
+        KeyCode::Char('m') => {
+            if *state.mode == ColumnEditorMode::Reorder {
+                *state.mode = ColumnEditorMode::Browse;
+            } else {
+                *state.mode = ColumnEditorMode::Reorder;
+            }
+        }
+        KeyCode::Char('a') => return Some("apply"),
+        KeyCode::Char('d') => return Some("default"),
+        _ => {}
+    }
+    None
+}
+
+// --- Generic layout popup helpers ---
+
+struct LayoutPopupState<'a> {
+    mode: &'a mut LayoutPopupMode,
+    selected: &'a mut usize,
+    filter: &'a mut String,
+    save_name: &'a mut String,
+    save_cursor: &'a mut usize,
+    show: &'a mut bool,
+    delete_name: &'a mut String,
+}
+
+struct LayoutItem {
+    name: String,
+    shared: bool,
+}
+
+/// Compute filtered indices for a layout item list
+fn layout_filtered_indices(filter: &str, items: &[LayoutItem]) -> Vec<usize> {
+    let filter_text = filter.trim_matches('\0');
+    if filter_text.is_empty() {
+        return (0..items.len()).collect();
+    }
+    let f = filter_text.to_lowercase();
+    items.iter().enumerate()
+        .filter(|(_, item)| item.name.to_lowercase().contains(&f))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Handle keys for a layout popup (works for both session and stats).
+/// Returns a command string: "edit", "save:{name}", "default", "select:{idx}", "delete:{idx}", or None.
+fn handle_layout_popup_key_generic(
+    key: KeyEvent,
+    state: &mut LayoutPopupState,
+    items: &[LayoutItem],
+    show_help: &mut bool,
+) -> Option<String> {
+    match state.mode {
+        LayoutPopupMode::ConfirmDelete => {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    let name = state.delete_name.clone();
+                    *state.mode = LayoutPopupMode::List;
+                    return Some(format!("confirm_delete:{name}"));
+                }
+                _ => {
+                    *state.mode = LayoutPopupMode::List;
+                }
+            }
+        }
+        LayoutPopupMode::List => {
+            // Filter mode
+            if !state.filter.is_empty() {
+                let filtered = layout_filtered_indices(state.filter, items);
+                let cur_pos = filtered.iter().position(|&i| i + 3 == *state.selected);
+                match key.code {
+                    KeyCode::Esc => {
+                        state.filter.clear();
+                        *state.selected = 0;
+                    }
+                    KeyCode::Backspace => {
+                        state.filter.pop();
+                        if state.filter.is_empty() || *state.filter == "\0" {
+                            state.filter.clear();
+                            *state.selected = 0;
+                        } else {
+                            let filtered = layout_filtered_indices(state.filter, items);
+                            if let Some(&first) = filtered.first() {
+                                *state.selected = first + 3;
+                            }
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if let Some(&idx) = filtered.iter().find(|&&i| i + 3 == *state.selected) {
+                            *state.show = false;
+                            state.filter.clear();
+                            return Some(format!("select:{idx}"));
+                        }
+                    }
+                    KeyCode::Down => {
+                        if let Some(pos) = cur_pos {
+                            if pos + 1 < filtered.len() {
+                                *state.selected = filtered[pos + 1] + 3;
+                            }
+                        } else if let Some(&first) = filtered.first() {
+                            *state.selected = first + 3;
+                        }
+                    }
+                    KeyCode::Up => {
+                        if let Some(pos) = cur_pos {
+                            if pos > 0 {
+                                *state.selected = filtered[pos - 1] + 3;
+                            }
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        state.filter.push(c);
+                        let filtered = layout_filtered_indices(state.filter, items);
+                        if let Some(&first) = filtered.first() {
+                            *state.selected = first + 3;
+                        }
+                    }
+                    _ => {}
+                }
+                return None;
+            }
+
+            // Normal list mode
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    *state.show = false;
+                }
+                KeyCode::Char('h') | KeyCode::Char('?') => {
+                    *show_help = !*show_help;
+                }
+                KeyCode::Char('/') => {
+                    *state.filter = "\0".to_string();
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = items.len() + 3;
+                    if *state.selected + 1 < max {
+                        *state.selected += 1;
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    *state.selected = state.selected.saturating_sub(1);
+                }
+                KeyCode::Enter => {
+                    if *state.selected == 0 {
+                        return Some("edit".to_string());
+                    } else if *state.selected == 1 {
+                        *state.mode = LayoutPopupMode::SaveInput;
+                        state.save_name.clear();
+                        *state.save_cursor = 0;
+                    } else if *state.selected == 2 {
+                        *state.show = false;
+                        return Some("default".to_string());
+                    } else {
+                        let idx = *state.selected - 3;
+                        *state.show = false;
+                        return Some(format!("select:{idx}"));
+                    }
+                }
+                KeyCode::Char('x') | KeyCode::Delete => {
+                    if let Some(idx) = state.selected.checked_sub(3) {
+                        if let Some(item) = items.get(idx) {
+                            if !item.shared {
+                                *state.delete_name = item.name.clone();
+                                *state.mode = LayoutPopupMode::ConfirmDelete;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        LayoutPopupMode::SaveInput => {
+            match key.code {
+                KeyCode::Esc => {
+                    *state.mode = LayoutPopupMode::List;
+                }
+                KeyCode::Enter => {
+                    if !state.save_name.is_empty() {
+                        let name = state.save_name.clone();
+                        *state.show = false;
+                        return Some(format!("save:{name}"));
+                    }
+                }
+                KeyCode::Backspace | KeyCode::Left | KeyCode::Right | KeyCode::Char(_) => {
+                    handle_text_input_key(key.code, state.save_name, state.save_cursor);
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
 impl App {
     pub(crate) fn open_action_menu(&mut self, target: ActionTarget) {
         let (session_id, session_node) = match target {
@@ -173,164 +537,24 @@ impl App {
         }
     }
 
-    fn column_editor_filtered_indices(&self) -> Vec<usize> {
-        let filter_text = self.vr_column_editor_filter.trim_matches('\0');
-        if filter_text.is_empty() {
-            return (0..self.vr_column_editor_available.len()).collect();
-        }
-        let filter = filter_text.to_lowercase();
-        self.vr_column_editor_available.iter().enumerate()
-            .filter(|(_, item)| {
-                item.exp.to_lowercase().contains(&filter)
-                    || item.friendly_name.to_lowercase().contains(&filter)
-            })
-            .map(|(i, _)| i)
-            .collect()
-    }
-
     pub(crate) async fn handle_column_editor_key(&mut self, key: KeyEvent) {
-        let filtered = self.column_editor_filtered_indices();
-        let cur_pos = filtered.iter().position(|&i| i == self.vr_column_editor_selected);
-
-        // When filter is active, route typing keys to filter input
-        if !self.vr_column_editor_filter.is_empty() {
-            match key.code {
-                KeyCode::Esc => {
-                    self.vr_column_editor_filter.clear();
-                    self.vr_column_editor_selected = 0;
-                    return;
-                }
-                KeyCode::Backspace => {
-                    self.vr_column_editor_filter.pop();
-                    let filtered = self.column_editor_filtered_indices();
-                    if !filtered.is_empty() {
-                        self.vr_column_editor_selected = filtered[0];
-                    }
-                    return;
-                }
-                KeyCode::Enter => {
-                    // Toggle selected field
-                    if let Some(item) = self.vr_column_editor_available.get_mut(self.vr_column_editor_selected) {
-                        item.enabled = !item.enabled;
-                    }
-                    return;
-                }
-                KeyCode::Char(' ') => {
-                    if let Some(item) = self.vr_column_editor_available.get_mut(self.vr_column_editor_selected) {
-                        item.enabled = !item.enabled;
-                    }
-                    return;
-                }
-                KeyCode::Down => {
-                    if let Some(pos) = cur_pos {
-                        if pos + 1 < filtered.len() {
-                            self.vr_column_editor_selected = filtered[pos + 1];
-                        }
-                    } else if !filtered.is_empty() {
-                        self.vr_column_editor_selected = filtered[0];
-                    }
-                    return;
-                }
-                KeyCode::Up => {
-                    if let Some(pos) = cur_pos {
-                        if pos > 0 {
-                            self.vr_column_editor_selected = filtered[pos - 1];
-                        }
-                    } else if !filtered.is_empty() {
-                        self.vr_column_editor_selected = filtered[0];
-                    }
-                    return;
-                }
-                KeyCode::Char(c) => {
-                    self.vr_column_editor_filter.push(c);
-                    let filtered = self.column_editor_filtered_indices();
-                    if !filtered.is_empty() {
-                        self.vr_column_editor_selected = filtered[0];
-                    }
-                    return;
-                }
-                _ => { return; }
-            }
-        }
-
-        // Normal mode (no filter active)
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => {
-                self.vr_show_column_editor = false;
-            }
-            KeyCode::Char('h') | KeyCode::Char('?') => {
-                self.show_help = !self.show_help;
-            }
-            KeyCode::Char('/') => {
-                self.vr_column_editor_filter = String::new();
-                // Set filter to empty string — but we need a sentinel to indicate "filter mode active"
-                // Use a special state: push empty and check in the filter-active branch above
-                // Actually, just set it to a placeholder that gets replaced on first char
-                self.vr_column_editor_filter = "\0".to_string(); // sentinel for "filter mode on, no chars yet"
-            }
-            KeyCode::Enter => {
-                if self.vr_column_editor_mode == ColumnEditorMode::Reorder {
-                    self.vr_column_editor_mode = ColumnEditorMode::Browse;
-                } else if let Some(item) = self.vr_column_editor_available.get_mut(self.vr_column_editor_selected) {
-                    item.enabled = !item.enabled;
-                }
-            }
-            KeyCode::Char(' ') => {
-                if let Some(item) = self.vr_column_editor_available.get_mut(self.vr_column_editor_selected) {
-                    item.enabled = !item.enabled;
-                }
-            }
-            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if let Some(pos) = cur_pos {
-                    let new_pos = (pos + 10).min(filtered.len().saturating_sub(1));
-                    self.vr_column_editor_selected = filtered[new_pos];
-                }
-            }
-            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if let Some(pos) = cur_pos {
-                    let new_pos = pos.saturating_sub(10);
-                    self.vr_column_editor_selected = filtered[new_pos];
-                }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if self.vr_column_editor_mode == ColumnEditorMode::Reorder {
-                    let len = self.vr_column_editor_available.len();
-                    if self.vr_column_editor_selected + 1 < len {
-                        self.vr_column_editor_available.swap(self.vr_column_editor_selected, self.vr_column_editor_selected + 1);
-                        self.vr_column_editor_selected += 1;
-                    }
-                } else if let Some(pos) = cur_pos {
-                    if pos + 1 < filtered.len() {
-                        self.vr_column_editor_selected = filtered[pos + 1];
-                    }
-                }
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.vr_column_editor_mode == ColumnEditorMode::Reorder {
-                    if self.vr_column_editor_selected > 0 {
-                        self.vr_column_editor_available.swap(self.vr_column_editor_selected, self.vr_column_editor_selected - 1);
-                        self.vr_column_editor_selected -= 1;
-                    }
-                } else if let Some(pos) = cur_pos {
-                    if pos > 0 {
-                        self.vr_column_editor_selected = filtered[pos - 1];
-                    }
-                }
-            }
-            KeyCode::Char('m') => {
-                if self.vr_column_editor_mode == ColumnEditorMode::Reorder {
-                    self.vr_column_editor_mode = ColumnEditorMode::Browse;
-                } else {
-                    self.vr_column_editor_mode = ColumnEditorMode::Reorder;
-                }
-            }
-            KeyCode::Char('a') => {
+        let mut state = ColumnEditorState {
+            filter: &mut self.vr_column_editor_filter,
+            selected: &mut self.vr_column_editor_selected,
+            mode: &mut self.vr_column_editor_mode,
+            show: &mut self.vr_show_column_editor,
+        };
+        let action = handle_column_editor_key_generic(
+            key, &mut state, &mut self.vr_column_editor_available, &mut self.show_help,
+        );
+        match action.as_deref() {
+            Some("apply") => {
                 self.vr_apply_column_editor();
                 self.vr_show_column_editor = false;
                 self.vr_page_start = 0;
                 self.vr_fetch_sessions().await;
             }
-            KeyCode::Char('d') => {
+            Some("default") => {
                 self.vr_columns = default_columns();
                 self.vr_sync_session_fields();
                 self.vr_show_column_editor = false;
@@ -341,198 +565,73 @@ impl App {
         }
     }
 
-    fn layout_filtered_indices(&self) -> Vec<usize> {
-        let filter_text = self.vr_layout_filter.trim_matches('\0');
-        if filter_text.is_empty() {
-            return (0..self.vr_saved_layouts.len()).collect();
-        }
-        let filter = filter_text.to_lowercase();
-        self.vr_saved_layouts.iter().enumerate()
-            .filter(|(_, l)| l.name.to_lowercase().contains(&filter))
-            .map(|(i, _)| i)
-            .collect()
-    }
-
     pub(crate) async fn handle_layout_popup_key(&mut self, key: KeyEvent) {
-        match self.vr_layout_popup_mode {
-            LayoutPopupMode::ConfirmDelete => {
-                match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => {
-                        let name = self.vr_layout_delete_name.clone();
-                        match self.client.vr_delete_layout(&name).await {
-                            Ok(_) => {
-                                self.vr_saved_layouts.retain(|l| l.name != name);
-                                self.status_msg = format!("Deleted layout '{name}'");
-                                let max = self.vr_saved_layouts.len() + 3;
-                                if self.vr_layout_popup_selected >= max {
-                                    self.vr_layout_popup_selected = max.saturating_sub(1);
-                                }
-                            }
-                            Err(e) => self.status_msg = format!("Error deleting layout: {e}"),
-                        }
-                        self.vr_layout_popup_mode = LayoutPopupMode::List;
-                    }
-                    _ => {
-                        self.vr_layout_popup_mode = LayoutPopupMode::List;
-                    }
-                }
-            }
-            LayoutPopupMode::List => {
-                // Filter mode active
-                if !self.vr_layout_filter.is_empty() {
-                    let filtered = self.layout_filtered_indices();
-                    let cur_pos = filtered.iter().position(|&i| i + 3 == self.vr_layout_popup_selected);
-                    match key.code {
-                        KeyCode::Esc => {
-                            self.vr_layout_filter.clear();
-                            self.vr_layout_popup_selected = 0;
-                        }
-                        KeyCode::Backspace => {
-                            self.vr_layout_filter.pop();
-                            if self.vr_layout_filter.is_empty() || self.vr_layout_filter == "\0" {
-                                self.vr_layout_filter.clear();
-                                self.vr_layout_popup_selected = 0;
-                            } else {
-                                let filtered = self.layout_filtered_indices();
-                                if let Some(&first) = filtered.first() {
-                                    self.vr_layout_popup_selected = first + 3;
-                                }
-                            }
-                        }
-                        KeyCode::Enter => {
-                            if let Some(&idx) = filtered.iter().find(|&&i| i + 3 == self.vr_layout_popup_selected) {
-                                if let Some(layout) = self.vr_saved_layouts.get(idx).cloned() {
-                                    self.vr_apply_layout(&layout);
-                                    self.vr_show_layout_popup = false;
-                                    self.vr_layout_filter.clear();
-                                    self.vr_page_start = 0;
-                                    self.vr_fetch_sessions().await;
-                                }
-                            }
-                        }
-                        KeyCode::Down => {
-                            if let Some(pos) = cur_pos {
-                                if pos + 1 < filtered.len() {
-                                    self.vr_layout_popup_selected = filtered[pos + 1] + 3;
-                                }
-                            } else if let Some(&first) = filtered.first() {
-                                self.vr_layout_popup_selected = first + 3;
-                            }
-                        }
-                        KeyCode::Up => {
-                            if let Some(pos) = cur_pos {
-                                if pos > 0 {
-                                    self.vr_layout_popup_selected = filtered[pos - 1] + 3;
-                                }
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            self.vr_layout_filter.push(c);
-                            let filtered = self.layout_filtered_indices();
-                            if let Some(&first) = filtered.first() {
-                                self.vr_layout_popup_selected = first + 3;
-                            }
-                        }
-                        _ => {}
-                    }
-                    return;
-                }
+        let items: Vec<LayoutItem> = self.vr_saved_layouts.iter()
+            .map(|l| LayoutItem { name: l.name.clone(), shared: false })
+            .collect();
+        let mut state = LayoutPopupState {
+            mode: &mut self.vr_layout_popup_mode,
+            selected: &mut self.vr_layout_popup_selected,
+            filter: &mut self.vr_layout_filter,
+            save_name: &mut self.vr_layout_save_name,
+            save_cursor: &mut self.vr_layout_save_cursor,
+            show: &mut self.vr_show_layout_popup,
+            delete_name: &mut self.vr_layout_delete_name,
+        };
+        let action = handle_layout_popup_key_generic(key, &mut state, &items, &mut self.show_help);
 
-                // Normal list mode
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') => {
-                        self.vr_show_layout_popup = false;
-                    }
-                    KeyCode::Char('h') | KeyCode::Char('?') => {
-                        self.show_help = !self.show_help;
-                    }
-                    KeyCode::Char('/') => {
-                        self.vr_layout_filter = "\0".to_string();
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
+        if let Some(cmd) = action {
+            if cmd == "edit" {
+                self.vr_build_column_editor();
+                self.vr_show_layout_popup = false;
+                self.vr_show_column_editor = true;
+            } else if cmd == "default" {
+                self.vr_columns = default_columns();
+                self.vr_sync_session_fields();
+                self.vr_page_start = 0;
+                self.vr_fetch_sessions().await;
+            } else if let Some(name) = cmd.strip_prefix("confirm_delete:") {
+                match self.client.vr_delete_layout(name).await {
+                    Ok(_) => {
+                        self.vr_saved_layouts.retain(|l| l.name != name);
+                        self.status_msg = format!("Deleted layout '{name}'");
                         let max = self.vr_saved_layouts.len() + 3;
-                        if self.vr_layout_popup_selected + 1 < max {
-                            self.vr_layout_popup_selected += 1;
+                        if self.vr_layout_popup_selected >= max {
+                            self.vr_layout_popup_selected = max.saturating_sub(1);
                         }
                     }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.vr_layout_popup_selected = self.vr_layout_popup_selected.saturating_sub(1);
-                    }
-                    KeyCode::Enter => {
-                        if self.vr_layout_popup_selected == 0 {
-                            // Edit Columns
-                            self.vr_build_column_editor();
-                            self.vr_show_layout_popup = false;
-                            self.vr_show_column_editor = true;
-                        } else if self.vr_layout_popup_selected == 1 {
-                            self.vr_layout_popup_mode = LayoutPopupMode::SaveInput;
-                            self.vr_layout_save_name.clear();
-                            self.vr_layout_save_cursor = 0;
-                        } else if self.vr_layout_popup_selected == 2 {
-                            self.vr_columns = default_columns();
-                            self.vr_sync_session_fields();
-                            self.vr_show_layout_popup = false;
-                            self.vr_page_start = 0;
-                            self.vr_fetch_sessions().await;
-                        } else {
-                            let idx = self.vr_layout_popup_selected - 3;
-                            if let Some(layout) = self.vr_saved_layouts.get(idx).cloned() {
-                                self.vr_apply_layout(&layout);
-                                self.vr_show_layout_popup = false;
-                                self.vr_page_start = 0;
-                                self.vr_fetch_sessions().await;
-                            }
-                        }
-                    }
-                    KeyCode::Char('x') | KeyCode::Delete => {
-                        if let Some(idx) = self.vr_layout_popup_selected.checked_sub(3) {
-                            if let Some(layout) = self.vr_saved_layouts.get(idx) {
-                                self.vr_layout_delete_name = layout.name.clone();
-                                self.vr_layout_popup_mode = LayoutPopupMode::ConfirmDelete;
-                            }
-                        }
-                    }
-                    _ => {}
+                    Err(e) => self.status_msg = format!("Error deleting layout: {e}"),
                 }
-            }
-            LayoutPopupMode::SaveInput => {
-                match key.code {
-                    KeyCode::Esc => {
-                        self.vr_layout_popup_mode = LayoutPopupMode::List;
+            } else if let Some(name) = cmd.strip_prefix("save:") {
+                let columns: Vec<String> = self.vr_columns.iter()
+                    .enumerate()
+                    .filter(|(i, c)| !(*i == 0 && c.field == "ipProtocol"))
+                    .map(|(_, c)| c.field.clone()).collect();
+                let sort_field = self.vr_columns.get(self.vr_sort_column)
+                    .map(|c| c.field.clone())
+                    .unwrap_or_default();
+                let sort_dir = if self.vr_sort_desc { "desc" } else { "asc" };
+                self.status_msg = format!("Saving layout '{name}' with {} columns...", columns.len());
+                let exists = self.vr_saved_layouts.iter().any(|l| l.name == name);
+                let result = if exists {
+                    self.client.vr_update_layout(name, &columns, &sort_field, sort_dir).await
+                } else {
+                    self.client.vr_create_layout(name, &columns, &sort_field, sort_dir).await
+                };
+                match result {
+                    Ok(_) => {
+                        self.status_msg = format!("Saved layout '{name}'");
+                        self.vr_fetch_layouts().await;
                     }
-                    KeyCode::Enter => {
-                        if !self.vr_layout_save_name.is_empty() {
-                            let name = self.vr_layout_save_name.clone();
-                            let columns: Vec<String> = self.vr_columns.iter()
-                                .enumerate()
-                                .filter(|(i, c)| !(*i == 0 && c.field == "ipProtocol"))
-                                .map(|(_, c)| c.field.clone()).collect();
-                            let sort_field = self.vr_columns.get(self.vr_sort_column)
-                                .map(|c| c.field.clone())
-                                .unwrap_or_default();
-                            let sort_dir = if self.vr_sort_desc { "desc" } else { "asc" };
-                            self.status_msg = format!("Saving layout '{name}' with {} columns...", columns.len());
-                            // Check if layout name already exists → update, else create
-                            let exists = self.vr_saved_layouts.iter().any(|l| l.name == name);
-                            let result = if exists {
-                                self.client.vr_update_layout(&name, &columns, &sort_field, sort_dir).await
-                            } else {
-                                self.client.vr_create_layout(&name, &columns, &sort_field, sort_dir).await
-                            };
-                            match result {
-                                Ok(_) => {
-                                    self.status_msg = format!("Saved layout '{name}'");
-                                    self.vr_fetch_layouts().await;
-                                }
-                                Err(e) => self.status_msg = format!("Error saving layout: {e}"),
-                            }
-                            self.vr_show_layout_popup = false;
-                        }
+                    Err(e) => self.status_msg = format!("Error saving layout: {e}"),
+                }
+            } else if let Some(idx_str) = cmd.strip_prefix("select:") {
+                if let Ok(idx) = idx_str.parse::<usize>() {
+                    if let Some(layout) = self.vr_saved_layouts.get(idx).cloned() {
+                        self.vr_apply_layout(&layout);
+                        self.vr_page_start = 0;
+                        self.vr_fetch_sessions().await;
                     }
-                    KeyCode::Backspace | KeyCode::Left | KeyCode::Right | KeyCode::Char(_) => {
-                        handle_text_input_key(key.code, &mut self.vr_layout_save_name, &mut self.vr_layout_save_cursor);
-                    }
-                    _ => {}
                 }
             }
         }
@@ -1487,152 +1586,23 @@ impl App {
         }
     }
 
-    fn stats_column_editor_filtered_indices(&self) -> Vec<usize> {
-        let filter_text = self.vr_stats_column_editor_filter.trim_matches('\0');
-        if filter_text.is_empty() {
-            return (0..self.vr_stats_column_editor_items.len()).collect();
-        }
-        let filter = filter_text.to_lowercase();
-        self.vr_stats_column_editor_items.iter().enumerate()
-            .filter(|(_, item)| {
-                item.field.to_lowercase().contains(&filter)
-                    || item.label.to_lowercase().contains(&filter)
-            })
-            .map(|(i, _)| i)
-            .collect()
-    }
-
     pub(crate) async fn handle_stats_column_editor_key(&mut self, key: KeyEvent) {
-        let filtered = self.stats_column_editor_filtered_indices();
-        let cur_pos = filtered.iter().position(|&i| i == self.vr_stats_column_editor_selected);
-
-        // When filter is active, route keys to filter input
-        if !self.vr_stats_column_editor_filter.is_empty() {
-            match key.code {
-                KeyCode::Esc => {
-                    self.vr_stats_column_editor_filter.clear();
-                    self.vr_stats_column_editor_selected = 0;
-                    return;
-                }
-                KeyCode::Backspace => {
-                    self.vr_stats_column_editor_filter.pop();
-                    let filtered = self.stats_column_editor_filtered_indices();
-                    if !filtered.is_empty() {
-                        self.vr_stats_column_editor_selected = filtered[0];
-                    }
-                    return;
-                }
-                KeyCode::Enter | KeyCode::Char(' ') => {
-                    if let Some(item) = self.vr_stats_column_editor_items.get_mut(self.vr_stats_column_editor_selected) {
-                        item.enabled = !item.enabled;
-                    }
-                    return;
-                }
-                KeyCode::Down => {
-                    if let Some(pos) = cur_pos {
-                        if pos + 1 < filtered.len() {
-                            self.vr_stats_column_editor_selected = filtered[pos + 1];
-                        }
-                    } else if !filtered.is_empty() {
-                        self.vr_stats_column_editor_selected = filtered[0];
-                    }
-                    return;
-                }
-                KeyCode::Up => {
-                    if let Some(pos) = cur_pos {
-                        if pos > 0 {
-                            self.vr_stats_column_editor_selected = filtered[pos - 1];
-                        }
-                    } else if !filtered.is_empty() {
-                        self.vr_stats_column_editor_selected = filtered[0];
-                    }
-                    return;
-                }
-                KeyCode::Char(c) => {
-                    self.vr_stats_column_editor_filter.push(c);
-                    let filtered = self.stats_column_editor_filtered_indices();
-                    if !filtered.is_empty() {
-                        self.vr_stats_column_editor_selected = filtered[0];
-                    }
-                    return;
-                }
-                _ => { return; }
-            }
-        }
-
-        // Normal mode
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => {
-                self.vr_stats_show_column_editor = false;
-            }
-            KeyCode::Char('h') | KeyCode::Char('?') => {
-                self.show_help = !self.show_help;
-            }
-            KeyCode::Char('/') => {
-                self.vr_stats_column_editor_filter = "\0".to_string();
-            }
-            KeyCode::Enter => {
-                if self.vr_stats_column_editor_mode == ColumnEditorMode::Reorder {
-                    self.vr_stats_column_editor_mode = ColumnEditorMode::Browse;
-                } else if let Some(item) = self.vr_stats_column_editor_items.get_mut(self.vr_stats_column_editor_selected) {
-                    item.enabled = !item.enabled;
-                }
-            }
-            KeyCode::Char(' ') => {
-                if let Some(item) = self.vr_stats_column_editor_items.get_mut(self.vr_stats_column_editor_selected) {
-                    item.enabled = !item.enabled;
-                }
-            }
-            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if let Some(pos) = cur_pos {
-                    let new_pos = (pos + 10).min(filtered.len().saturating_sub(1));
-                    self.vr_stats_column_editor_selected = filtered[new_pos];
-                }
-            }
-            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if let Some(pos) = cur_pos {
-                    let new_pos = pos.saturating_sub(10);
-                    self.vr_stats_column_editor_selected = filtered[new_pos];
-                }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if self.vr_stats_column_editor_mode == ColumnEditorMode::Reorder {
-                    let len = self.vr_stats_column_editor_items.len();
-                    if self.vr_stats_column_editor_selected + 1 < len {
-                        self.vr_stats_column_editor_items.swap(self.vr_stats_column_editor_selected, self.vr_stats_column_editor_selected + 1);
-                        self.vr_stats_column_editor_selected += 1;
-                    }
-                } else if let Some(pos) = cur_pos {
-                    if pos + 1 < filtered.len() {
-                        self.vr_stats_column_editor_selected = filtered[pos + 1];
-                    }
-                }
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.vr_stats_column_editor_mode == ColumnEditorMode::Reorder {
-                    if self.vr_stats_column_editor_selected > 0 {
-                        self.vr_stats_column_editor_items.swap(self.vr_stats_column_editor_selected, self.vr_stats_column_editor_selected - 1);
-                        self.vr_stats_column_editor_selected -= 1;
-                    }
-                } else if let Some(pos) = cur_pos {
-                    if pos > 0 {
-                        self.vr_stats_column_editor_selected = filtered[pos - 1];
-                    }
-                }
-            }
-            KeyCode::Char('m') => {
-                if self.vr_stats_column_editor_mode == ColumnEditorMode::Reorder {
-                    self.vr_stats_column_editor_mode = ColumnEditorMode::Browse;
-                } else {
-                    self.vr_stats_column_editor_mode = ColumnEditorMode::Reorder;
-                }
-            }
-            KeyCode::Char('a') => {
+        let mut state = ColumnEditorState {
+            filter: &mut self.vr_stats_column_editor_filter,
+            selected: &mut self.vr_stats_column_editor_selected,
+            mode: &mut self.vr_stats_column_editor_mode,
+            show: &mut self.vr_stats_show_column_editor,
+        };
+        let action = handle_column_editor_key_generic(
+            key, &mut state, &mut self.vr_stats_column_editor_items, &mut self.show_help,
+        );
+        match action.as_deref() {
+            Some("apply") => {
                 self.vr_stats_apply_column_editor();
                 self.vr_stats_show_column_editor = false;
                 self.vr_fetch_stats().await;
             }
-            KeyCode::Char('d') => {
+            Some("default") => {
                 self.vr_stats_reset_default_columns();
                 self.vr_stats_show_column_editor = false;
                 self.vr_fetch_stats().await;
@@ -1641,172 +1611,54 @@ impl App {
         }
     }
 
-    fn stats_layout_filtered_indices(&self) -> Vec<usize> {
-        let filter_text = self.vr_stats_layout_filter.trim_matches('\0');
-        if filter_text.is_empty() {
-            return (0..self.vr_stats_saved_shareables.len()).collect();
-        }
-        let filter = filter_text.to_lowercase();
-        self.vr_stats_saved_shareables.iter().enumerate()
-            .filter(|(_, s)| s.name.to_lowercase().contains(&filter))
-            .map(|(i, _)| i)
-            .collect()
-    }
-
     pub(crate) async fn handle_stats_layout_popup_key(&mut self, key: KeyEvent) {
-        match self.vr_stats_layout_popup_mode {
-            LayoutPopupMode::ConfirmDelete => {
-                match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => {
-                        let id = self.vr_stats_layout_delete_id.clone();
-                        self.vr_stats_delete_shareable(&id).await;
-                        self.vr_stats_layout_popup_mode = LayoutPopupMode::List;
-                        let max = self.vr_stats_saved_shareables.len() + 3;
-                        if self.vr_stats_layout_popup_selected >= max {
-                            self.vr_stats_layout_popup_selected = max.saturating_sub(1);
-                        }
-                    }
-                    _ => {
-                        self.vr_stats_layout_popup_mode = LayoutPopupMode::List;
-                    }
-                }
-            }
-            LayoutPopupMode::List => {
-                // Filter mode
-                if !self.vr_stats_layout_filter.is_empty() {
-                    let filtered = self.stats_layout_filtered_indices();
-                    let cur_pos = filtered.iter().position(|&i| i + 3 == self.vr_stats_layout_popup_selected);
-                    match key.code {
-                        KeyCode::Esc => {
-                            self.vr_stats_layout_filter.clear();
-                            self.vr_stats_layout_popup_selected = 0;
-                        }
-                        KeyCode::Backspace => {
-                            self.vr_stats_layout_filter.pop();
-                            if self.vr_stats_layout_filter.is_empty() || self.vr_stats_layout_filter == "\0" {
-                                self.vr_stats_layout_filter.clear();
-                                self.vr_stats_layout_popup_selected = 0;
-                            } else {
-                                let filtered = self.stats_layout_filtered_indices();
-                                if let Some(&first) = filtered.first() {
-                                    self.vr_stats_layout_popup_selected = first + 3;
-                                }
-                            }
-                        }
-                        KeyCode::Enter => {
-                            if let Some(&idx) = filtered.iter().find(|&&i| i + 3 == self.vr_stats_layout_popup_selected) {
-                                if let Some(shareable) = self.vr_stats_saved_shareables.get(idx).cloned() {
-                                    self.vr_stats_apply_shareable(&shareable);
-                                    self.vr_stats_show_layout_popup = false;
-                                    self.vr_stats_layout_filter.clear();
-                                    self.vr_fetch_stats().await;
-                                }
-                            }
-                        }
-                        KeyCode::Down => {
-                            if let Some(pos) = cur_pos {
-                                if pos + 1 < filtered.len() {
-                                    self.vr_stats_layout_popup_selected = filtered[pos + 1] + 3;
-                                }
-                            } else if let Some(&first) = filtered.first() {
-                                self.vr_stats_layout_popup_selected = first + 3;
-                            }
-                        }
-                        KeyCode::Up => {
-                            if let Some(pos) = cur_pos {
-                                if pos > 0 {
-                                    self.vr_stats_layout_popup_selected = filtered[pos - 1] + 3;
-                                }
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            self.vr_stats_layout_filter.push(c);
-                            let filtered = self.stats_layout_filtered_indices();
-                            if let Some(&first) = filtered.first() {
-                                self.vr_stats_layout_popup_selected = first + 3;
-                            }
-                        }
-                        _ => {}
-                    }
-                    return;
-                }
+        let items: Vec<LayoutItem> = self.vr_stats_saved_shareables.iter()
+            .map(|s| LayoutItem { name: s.name.clone(), shared: s.shared })
+            .collect();
+        // We need to stash the delete_id separately since LayoutPopupState uses delete_name
+        let mut delete_name_for_id = String::new();
+        let mut state = LayoutPopupState {
+            mode: &mut self.vr_stats_layout_popup_mode,
+            selected: &mut self.vr_stats_layout_popup_selected,
+            filter: &mut self.vr_stats_layout_filter,
+            save_name: &mut self.vr_stats_layout_save_name,
+            save_cursor: &mut self.vr_stats_layout_save_cursor,
+            show: &mut self.vr_stats_show_layout_popup,
+            delete_name: &mut delete_name_for_id,
+        };
+        let action = handle_layout_popup_key_generic(key, &mut state, &items, &mut self.show_help);
 
-                // Normal list mode
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') => {
-                        self.vr_stats_show_layout_popup = false;
+        if let Some(cmd) = action {
+            if cmd == "edit" {
+                self.vr_stats_build_column_editor();
+                self.vr_stats_show_layout_popup = false;
+                self.vr_stats_show_column_editor = true;
+            } else if cmd == "default" {
+                self.vr_stats_reset_default_columns();
+                self.vr_fetch_stats().await;
+            } else if cmd.starts_with("confirm_delete:") {
+                // For stats, we need the shareable ID, which we find by name
+                if let Some(s) = self.vr_stats_saved_shareables.iter().find(|s| s.name == delete_name_for_id) {
+                    let id = s.id.clone();
+                    self.vr_stats_delete_shareable(&id).await;
+                    let max = self.vr_stats_saved_shareables.len() + 3;
+                    if self.vr_stats_layout_popup_selected >= max {
+                        self.vr_stats_layout_popup_selected = max.saturating_sub(1);
                     }
-                    KeyCode::Char('h') | KeyCode::Char('?') => {
-                        self.show_help = !self.show_help;
-                    }
-                    KeyCode::Char('/') => {
-                        self.vr_stats_layout_filter = "\0".to_string();
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        let max = self.vr_stats_saved_shareables.len() + 3;
-                        if self.vr_stats_layout_popup_selected + 1 < max {
-                            self.vr_stats_layout_popup_selected += 1;
-                        }
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.vr_stats_layout_popup_selected = self.vr_stats_layout_popup_selected.saturating_sub(1);
-                    }
-                    KeyCode::Enter => {
-                        if self.vr_stats_layout_popup_selected == 0 {
-                            // Edit Columns
-                            self.vr_stats_build_column_editor();
-                            self.vr_stats_show_layout_popup = false;
-                            self.vr_stats_show_column_editor = true;
-                        } else if self.vr_stats_layout_popup_selected == 1 {
-                            self.vr_stats_layout_popup_mode = LayoutPopupMode::SaveInput;
-                            self.vr_stats_layout_save_name.clear();
-                            self.vr_stats_layout_save_cursor = 0;
-                        } else if self.vr_stats_layout_popup_selected == 2 {
-                            self.vr_stats_reset_default_columns();
-                            self.vr_stats_show_layout_popup = false;
-                            self.vr_fetch_stats().await;
-                        } else {
-                            let idx = self.vr_stats_layout_popup_selected - 3;
-                            if let Some(shareable) = self.vr_stats_saved_shareables.get(idx).cloned() {
-                                self.vr_stats_apply_shareable(&shareable);
-                                self.vr_stats_show_layout_popup = false;
-                                self.vr_fetch_stats().await;
-                            }
-                        }
-                    }
-                    KeyCode::Char('x') | KeyCode::Delete => {
-                        if let Some(idx) = self.vr_stats_layout_popup_selected.checked_sub(3) {
-                            if let Some(shareable) = self.vr_stats_saved_shareables.get(idx) {
-                                if !shareable.shared {
-                                    self.vr_stats_layout_delete_name = shareable.name.clone();
-                                    self.vr_stats_layout_delete_id = shareable.id.clone();
-                                    self.vr_stats_layout_popup_mode = LayoutPopupMode::ConfirmDelete;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
                 }
-            }
-            LayoutPopupMode::SaveInput => {
-                match key.code {
-                    KeyCode::Esc => {
-                        self.vr_stats_layout_popup_mode = LayoutPopupMode::List;
+            } else if let Some(name) = cmd.strip_prefix("save:") {
+                self.vr_stats_save_shareable(name).await;
+            } else if let Some(idx_str) = cmd.strip_prefix("select:") {
+                if let Ok(idx) = idx_str.parse::<usize>() {
+                    if let Some(shareable) = self.vr_stats_saved_shareables.get(idx).cloned() {
+                        self.vr_stats_apply_shareable(&shareable);
+                        self.vr_fetch_stats().await;
                     }
-                    KeyCode::Enter => {
-                        if !self.vr_stats_layout_save_name.is_empty() {
-                            let name = self.vr_stats_layout_save_name.clone();
-                            self.vr_stats_save_shareable(&name).await;
-                            self.vr_stats_show_layout_popup = false;
-                        }
-                    }
-                    KeyCode::Backspace | KeyCode::Left | KeyCode::Right | KeyCode::Char(_) => {
-                        handle_text_input_key(key.code, &mut self.vr_stats_layout_save_name, &mut self.vr_stats_layout_save_cursor);
-                    }
-                    _ => {}
                 }
             }
         }
+        // Sync delete name back for UI display
+        self.vr_stats_layout_delete_name = delete_name_for_id;
     }
 
     pub(crate) fn handle_stats_detail_key(&mut self, key: KeyEvent) {

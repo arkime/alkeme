@@ -489,6 +489,14 @@ impl ArkimeClient {
         }
     }
 
+    /// Append expression and view query params (common to most session-related endpoints)
+    pub(super) fn append_expr_view(url: &mut String, expression: &str, view: &Option<String>) {
+        if !expression.is_empty() {
+            url.push_str(&format!("&expression={}", urlencoding::encode(expression)));
+        }
+        Self::append_view(url, view);
+    }
+
     pub async fn get_user(&self) -> Result<Value> {
         let url = format!("{}/api/user", self.base_url);
         let body = self.authenticated_get(&url).await?;
