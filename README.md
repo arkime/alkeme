@@ -56,7 +56,7 @@ Monitor all your Arkime clusters at a glance with health status, throughput, and
 - **Export** — export all matching or visible sessions as CSV
 - **Session detail filter** — press `/` to live-filter fields by name
 - **Packet hex dump** — press `p` to view packet contents as hex in a two-column overlay (source/destination) with timestamps, TCP flags, color-coded display, and hex offsets; `r` toggles raw frames, `l` cycles line number format; animated loading indicator for large sessions
-- **Stats tab** — view capture stats, DB nodes, and DB indices with sortable tables, filtering, and detail view
+- **Stats tab** — view capture stats, DB nodes, and DB indices with sortable tables, filtering, detail view, and configurable columns; press `c` to toggle/reorder columns, save/load named layouts via the shareable API
 - **Index operations** — delete, force merge, close, or open DB indices with confirmation dialogs
 - **Node operations** — toggle node or IP exclusion from DB Nodes list or detail view
 

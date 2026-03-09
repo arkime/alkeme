@@ -137,6 +137,24 @@ pub struct App {
     pub vr_stats_sort_column: usize,
     pub vr_stats_sort_desc: bool,
     pub vr_stats_last_refresh: std::time::Instant,
+    // Per-tab dynamic stats columns
+    pub vr_stats_columns: [Vec<StatsColumnDef>; 3],
+    // Stats column editor
+    pub vr_stats_show_column_editor: bool,
+    pub vr_stats_column_editor_selected: usize,
+    pub vr_stats_column_editor_mode: ColumnEditorMode,
+    pub vr_stats_column_editor_items: Vec<StatsColumnEditorItem>,
+    pub vr_stats_column_editor_filter: String,
+    // Stats layout popup (shareables)
+    pub vr_stats_show_layout_popup: bool,
+    pub vr_stats_layout_popup_mode: LayoutPopupMode,
+    pub vr_stats_layout_popup_selected: usize,
+    pub vr_stats_saved_shareables: Vec<SavedShareable>,
+    pub vr_stats_layout_save_name: String,
+    pub vr_stats_layout_save_cursor: usize,
+    pub vr_stats_layout_delete_name: String,
+    pub vr_stats_layout_delete_id: String,
+    pub vr_stats_layout_filter: String,
     pub visible_rows: usize,
     // Arkime (Summary) tab state
     pub vr_all_fields: Vec<ArkimeField>,
@@ -397,6 +415,25 @@ impl App {
             vr_stats_sort_column: 0,
             vr_stats_sort_desc: false,
             vr_stats_last_refresh: std::time::Instant::now(),
+            vr_stats_columns: [
+                stats_columns_from_fields(&capture_default_fields(), &capture_all_columns()),
+                stats_columns_from_fields(&esnodes_default_fields(), &esnodes_all_columns()),
+                stats_columns_from_fields(&esindices_default_fields(), &esindices_all_columns()),
+            ],
+            vr_stats_show_column_editor: false,
+            vr_stats_column_editor_selected: 0,
+            vr_stats_column_editor_mode: ColumnEditorMode::Browse,
+            vr_stats_column_editor_items: Vec::new(),
+            vr_stats_column_editor_filter: String::new(),
+            vr_stats_show_layout_popup: false,
+            vr_stats_layout_popup_mode: LayoutPopupMode::List,
+            vr_stats_layout_popup_selected: 0,
+            vr_stats_saved_shareables: Vec::new(),
+            vr_stats_layout_save_name: String::new(),
+            vr_stats_layout_save_cursor: 0,
+            vr_stats_layout_delete_name: String::new(),
+            vr_stats_layout_delete_id: String::new(),
+            vr_stats_layout_filter: String::new(),
             visible_rows: 20,
             // Arkime (Summary) tab state
             vr_all_fields: Vec::new(),
@@ -560,6 +597,7 @@ impl App {
         self.confirm_dialog.is_some()
             || self.show_help || self.show_debug || self.pl_show_detail
             || self.vr_show_column_editor || self.vr_show_layout_popup || self.vr_show_view_popup
+            || self.vr_stats_show_column_editor || self.vr_stats_show_layout_popup
             || self.c3_show_integration_popup || self.c3_show_overview_popup
             || self.c3_show_link_popup || self.c3_show_card_popup
             || self.c3_show_tags_popup || self.c3_show_date_popup
@@ -799,6 +837,149 @@ impl App {
         self.user.get("removeEnabled").and_then(|v| v.as_bool()).unwrap_or(false)
     }
 
+    /// Get the active columns for the current stats tab
+    pub fn vr_stats_active_columns(&self) -> &Vec<StatsColumnDef> {
+        let idx = StatsTab::ALL.iter().position(|&t| t == self.vr_stats_tab).unwrap_or(0);
+        &self.vr_stats_columns[idx]
+    }
+
+    /// Get the sort field for the current stats tab and sort column index
+    pub fn vr_stats_sort_field(&self) -> &str {
+        self.vr_stats_active_columns()
+            .get(self.vr_stats_sort_column)
+            .map(|c| c.sort.as_str())
+            .unwrap_or("nodeName")
+    }
+
+    /// Build stats column editor items from all-columns + current active columns
+    pub fn vr_stats_build_column_editor(&mut self) {
+        let all = stats_tab_all_columns(self.vr_stats_tab);
+        let active = self.vr_stats_active_columns();
+        let enabled: std::collections::HashSet<String> = active.iter().map(|c| c.field.clone()).collect();
+        let mut items: Vec<StatsColumnEditorItem> = Vec::new();
+        // Enabled columns first, in order
+        for col in active {
+            items.push(StatsColumnEditorItem {
+                field: col.field.clone(),
+                label: col.label.clone(),
+                enabled: true,
+            });
+        }
+        // Remaining columns, sorted by field name
+        let mut remaining: Vec<&StatsColumnDef> = all.iter()
+            .filter(|c| !enabled.contains(&c.field))
+            .collect();
+        remaining.sort_by(|a, b| a.field.cmp(&b.field));
+        for col in remaining {
+            items.push(StatsColumnEditorItem {
+                field: col.field.clone(),
+                label: col.label.clone(),
+                enabled: false,
+            });
+        }
+        self.vr_stats_column_editor_items = items;
+        self.vr_stats_column_editor_selected = 0;
+        self.vr_stats_column_editor_mode = ColumnEditorMode::Browse;
+        self.vr_stats_column_editor_filter.clear();
+    }
+
+    /// Apply stats column editor selections back to the current tab's columns
+    pub fn vr_stats_apply_column_editor(&mut self) {
+        let all = stats_tab_all_columns(self.vr_stats_tab);
+        let mut new_cols = Vec::new();
+        for item in &self.vr_stats_column_editor_items {
+            if !item.enabled { continue; }
+            if let Some(def) = all.iter().find(|c| c.field == item.field) {
+                new_cols.push(def.clone());
+            }
+        }
+        if !new_cols.is_empty() {
+            let idx = StatsTab::ALL.iter().position(|&t| t == self.vr_stats_tab).unwrap_or(0);
+            self.vr_stats_columns[idx] = new_cols;
+            self.vr_stats_sort_column = 0;
+        }
+    }
+
+    /// Reset current stats tab to default columns
+    pub fn vr_stats_reset_default_columns(&mut self) {
+        let defaults = stats_tab_default_fields(self.vr_stats_tab);
+        let all = stats_tab_all_columns(self.vr_stats_tab);
+        let idx = StatsTab::ALL.iter().position(|&t| t == self.vr_stats_tab).unwrap_or(0);
+        self.vr_stats_columns[idx] = stats_columns_from_fields(&defaults, &all);
+        self.vr_stats_sort_column = 0;
+    }
+
+    /// Apply a saved shareable layout to the current stats tab
+    pub fn vr_stats_apply_shareable(&mut self, shareable: &SavedShareable) {
+        let all = stats_tab_all_columns(self.vr_stats_tab);
+        let field_refs: Vec<&str> = shareable.columns.iter().map(|s| s.as_str()).collect();
+        let new_cols = stats_columns_from_fields(&field_refs, &all);
+        if !new_cols.is_empty() {
+            let idx = StatsTab::ALL.iter().position(|&t| t == self.vr_stats_tab).unwrap_or(0);
+            self.vr_stats_columns[idx] = new_cols;
+            // Apply sort
+            if !shareable.sort_field.is_empty() {
+                let active = &self.vr_stats_columns[idx];
+                if let Some(pos) = active.iter().position(|c| c.sort == shareable.sort_field || c.field == shareable.sort_field) {
+                    self.vr_stats_sort_column = pos;
+                    self.vr_stats_sort_desc = shareable.sort_dir == "desc";
+                }
+            }
+        }
+    }
+
+    /// Fetch saved shareables for the current stats tab
+    pub async fn vr_stats_fetch_shareables(&mut self) {
+        let stype = stats_tab_shareable_type(self.vr_stats_tab);
+        match self.client.get_shareables(stype).await {
+            Ok(items) => {
+                self.vr_stats_saved_shareables = items;
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching layouts: {e}");
+            }
+        }
+    }
+
+    /// Save current stats columns as a new shareable
+    pub async fn vr_stats_save_shareable(&mut self, name: &str) {
+        let stype = stats_tab_shareable_type(self.vr_stats_tab);
+        let columns: Vec<String> = self.vr_stats_active_columns().iter().map(|c| c.field.clone()).collect();
+        let sort_field = self.vr_stats_sort_field().to_string();
+        let sort_dir = if self.vr_stats_sort_desc { "desc" } else { "asc" }.to_string();
+        // Check if a shareable with this name already exists
+        let existing_id = self.vr_stats_saved_shareables.iter()
+            .find(|s| s.name == name && !s.shared)
+            .map(|s| s.id.clone());
+        let result = if let Some(id) = existing_id {
+            self.client.update_shareable(&id, name, stype, &columns, &sort_field, &sort_dir).await
+        } else {
+            self.client.create_shareable(name, stype, &columns, &sort_field, &sort_dir).await
+        };
+        match result {
+            Ok(_) => {
+                self.status_msg = format!("Saved layout '{name}'");
+                self.vr_stats_fetch_shareables().await;
+            }
+            Err(e) => {
+                self.status_msg = format!("Error saving layout: {e}");
+            }
+        }
+    }
+
+    /// Delete a shareable by ID
+    pub async fn vr_stats_delete_shareable(&mut self, id: &str) {
+        match self.client.delete_shareable(id).await {
+            Ok(_) => {
+                self.status_msg = "Layout deleted".into();
+                self.vr_stats_fetch_shareables().await;
+            }
+            Err(e) => {
+                self.status_msg = format!("Error deleting layout: {e}");
+            }
+        }
+    }
+
     pub async fn fetch_user(&mut self) {
         match self.client.get_user().await {
             Ok(user) => {
@@ -887,15 +1068,12 @@ impl App {
 
     pub async fn vr_fetch_stats(&mut self) {
         self.status_msg = format!("Fetching {}...", self.vr_stats_tab.name());
-        let columns = self.vr_stats_tab.columns();
-        let sort_field = columns.get(self.vr_stats_sort_column)
-            .map(|(f, _, _)| *f)
-            .unwrap_or(columns[0].0);
+        let sort_field = self.vr_stats_sort_field().to_string();
 
         let result = match self.vr_stats_tab {
-            StatsTab::Capture => self.client.vr_get_stats(&self.vr_stats_filter, sort_field, self.vr_stats_sort_desc).await,
-            StatsTab::DBStats => self.client.vr_get_esstats(&self.vr_stats_filter, sort_field, self.vr_stats_sort_desc).await,
-            StatsTab::DBIndices => self.client.vr_get_esindices(&self.vr_stats_filter, sort_field, self.vr_stats_sort_desc).await,
+            StatsTab::Capture => self.client.vr_get_stats(&self.vr_stats_filter, &sort_field, self.vr_stats_sort_desc).await,
+            StatsTab::DBStats => self.client.vr_get_esstats(&self.vr_stats_filter, &sort_field, self.vr_stats_sort_desc).await,
+            StatsTab::DBIndices => self.client.vr_get_esindices(&self.vr_stats_filter, &sort_field, self.vr_stats_sort_desc).await,
         };
 
         match result {

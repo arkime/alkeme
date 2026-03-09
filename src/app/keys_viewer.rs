@@ -1379,7 +1379,7 @@ impl App {
                 self.input_mode = InputMode::Expression;
             }
             KeyCode::Char('s') => {
-                let num_cols = self.vr_stats_tab.columns().len();
+                let num_cols = self.vr_stats_active_columns().len();
                 self.vr_stats_sort_column = (self.vr_stats_sort_column + 1) % num_cols;
                 self.vr_fetch_stats().await;
             }
@@ -1476,7 +1476,336 @@ impl App {
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
             }
+            KeyCode::Char('c') => {
+                self.vr_stats_fetch_shareables().await;
+                self.vr_stats_layout_popup_mode = LayoutPopupMode::List;
+                self.vr_stats_layout_popup_selected = 0;
+                self.vr_stats_layout_filter.clear();
+                self.vr_stats_show_layout_popup = true;
+            }
             _ => {}
+        }
+    }
+
+    fn stats_column_editor_filtered_indices(&self) -> Vec<usize> {
+        let filter_text = self.vr_stats_column_editor_filter.trim_matches('\0');
+        if filter_text.is_empty() {
+            return (0..self.vr_stats_column_editor_items.len()).collect();
+        }
+        let filter = filter_text.to_lowercase();
+        self.vr_stats_column_editor_items.iter().enumerate()
+            .filter(|(_, item)| {
+                item.field.to_lowercase().contains(&filter)
+                    || item.label.to_lowercase().contains(&filter)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    pub(crate) async fn handle_stats_column_editor_key(&mut self, key: KeyEvent) {
+        let filtered = self.stats_column_editor_filtered_indices();
+        let cur_pos = filtered.iter().position(|&i| i == self.vr_stats_column_editor_selected);
+
+        // When filter is active, route keys to filter input
+        if !self.vr_stats_column_editor_filter.is_empty() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.vr_stats_column_editor_filter.clear();
+                    self.vr_stats_column_editor_selected = 0;
+                    return;
+                }
+                KeyCode::Backspace => {
+                    self.vr_stats_column_editor_filter.pop();
+                    let filtered = self.stats_column_editor_filtered_indices();
+                    if !filtered.is_empty() {
+                        self.vr_stats_column_editor_selected = filtered[0];
+                    }
+                    return;
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    if let Some(item) = self.vr_stats_column_editor_items.get_mut(self.vr_stats_column_editor_selected) {
+                        item.enabled = !item.enabled;
+                    }
+                    return;
+                }
+                KeyCode::Down => {
+                    if let Some(pos) = cur_pos {
+                        if pos + 1 < filtered.len() {
+                            self.vr_stats_column_editor_selected = filtered[pos + 1];
+                        }
+                    } else if !filtered.is_empty() {
+                        self.vr_stats_column_editor_selected = filtered[0];
+                    }
+                    return;
+                }
+                KeyCode::Up => {
+                    if let Some(pos) = cur_pos {
+                        if pos > 0 {
+                            self.vr_stats_column_editor_selected = filtered[pos - 1];
+                        }
+                    } else if !filtered.is_empty() {
+                        self.vr_stats_column_editor_selected = filtered[0];
+                    }
+                    return;
+                }
+                KeyCode::Char(c) => {
+                    self.vr_stats_column_editor_filter.push(c);
+                    let filtered = self.stats_column_editor_filtered_indices();
+                    if !filtered.is_empty() {
+                        self.vr_stats_column_editor_selected = filtered[0];
+                    }
+                    return;
+                }
+                _ => { return; }
+            }
+        }
+
+        // Normal mode
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.vr_stats_show_column_editor = false;
+            }
+            KeyCode::Char('h') | KeyCode::Char('?') => {
+                self.show_help = !self.show_help;
+            }
+            KeyCode::Char('/') => {
+                self.vr_stats_column_editor_filter = "\0".to_string();
+            }
+            KeyCode::Enter => {
+                if self.vr_stats_column_editor_mode == ColumnEditorMode::Reorder {
+                    self.vr_stats_column_editor_mode = ColumnEditorMode::Browse;
+                } else if let Some(item) = self.vr_stats_column_editor_items.get_mut(self.vr_stats_column_editor_selected) {
+                    item.enabled = !item.enabled;
+                }
+            }
+            KeyCode::Char(' ') => {
+                if let Some(item) = self.vr_stats_column_editor_items.get_mut(self.vr_stats_column_editor_selected) {
+                    item.enabled = !item.enabled;
+                }
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if let Some(pos) = cur_pos {
+                    let new_pos = (pos + 10).min(filtered.len().saturating_sub(1));
+                    self.vr_stats_column_editor_selected = filtered[new_pos];
+                }
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if let Some(pos) = cur_pos {
+                    let new_pos = pos.saturating_sub(10);
+                    self.vr_stats_column_editor_selected = filtered[new_pos];
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.vr_stats_column_editor_mode == ColumnEditorMode::Reorder {
+                    let len = self.vr_stats_column_editor_items.len();
+                    if self.vr_stats_column_editor_selected + 1 < len {
+                        self.vr_stats_column_editor_items.swap(self.vr_stats_column_editor_selected, self.vr_stats_column_editor_selected + 1);
+                        self.vr_stats_column_editor_selected += 1;
+                    }
+                } else if let Some(pos) = cur_pos {
+                    if pos + 1 < filtered.len() {
+                        self.vr_stats_column_editor_selected = filtered[pos + 1];
+                    }
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.vr_stats_column_editor_mode == ColumnEditorMode::Reorder {
+                    if self.vr_stats_column_editor_selected > 0 {
+                        self.vr_stats_column_editor_items.swap(self.vr_stats_column_editor_selected, self.vr_stats_column_editor_selected - 1);
+                        self.vr_stats_column_editor_selected -= 1;
+                    }
+                } else if let Some(pos) = cur_pos {
+                    if pos > 0 {
+                        self.vr_stats_column_editor_selected = filtered[pos - 1];
+                    }
+                }
+            }
+            KeyCode::Char('m') => {
+                if self.vr_stats_column_editor_mode == ColumnEditorMode::Reorder {
+                    self.vr_stats_column_editor_mode = ColumnEditorMode::Browse;
+                } else {
+                    self.vr_stats_column_editor_mode = ColumnEditorMode::Reorder;
+                }
+            }
+            KeyCode::Char('a') => {
+                self.vr_stats_apply_column_editor();
+                self.vr_stats_show_column_editor = false;
+                self.vr_fetch_stats().await;
+            }
+            KeyCode::Char('d') => {
+                self.vr_stats_reset_default_columns();
+                self.vr_stats_show_column_editor = false;
+                self.vr_fetch_stats().await;
+            }
+            _ => {}
+        }
+    }
+
+    fn stats_layout_filtered_indices(&self) -> Vec<usize> {
+        let filter_text = self.vr_stats_layout_filter.trim_matches('\0');
+        if filter_text.is_empty() {
+            return (0..self.vr_stats_saved_shareables.len()).collect();
+        }
+        let filter = filter_text.to_lowercase();
+        self.vr_stats_saved_shareables.iter().enumerate()
+            .filter(|(_, s)| s.name.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    pub(crate) async fn handle_stats_layout_popup_key(&mut self, key: KeyEvent) {
+        match self.vr_stats_layout_popup_mode {
+            LayoutPopupMode::ConfirmDelete => {
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        let id = self.vr_stats_layout_delete_id.clone();
+                        self.vr_stats_delete_shareable(&id).await;
+                        self.vr_stats_layout_popup_mode = LayoutPopupMode::List;
+                        let max = self.vr_stats_saved_shareables.len() + 3;
+                        if self.vr_stats_layout_popup_selected >= max {
+                            self.vr_stats_layout_popup_selected = max.saturating_sub(1);
+                        }
+                    }
+                    _ => {
+                        self.vr_stats_layout_popup_mode = LayoutPopupMode::List;
+                    }
+                }
+            }
+            LayoutPopupMode::List => {
+                // Filter mode
+                if !self.vr_stats_layout_filter.is_empty() {
+                    let filtered = self.stats_layout_filtered_indices();
+                    let cur_pos = filtered.iter().position(|&i| i + 3 == self.vr_stats_layout_popup_selected);
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.vr_stats_layout_filter.clear();
+                            self.vr_stats_layout_popup_selected = 0;
+                        }
+                        KeyCode::Backspace => {
+                            self.vr_stats_layout_filter.pop();
+                            if self.vr_stats_layout_filter.is_empty() || self.vr_stats_layout_filter == "\0" {
+                                self.vr_stats_layout_filter.clear();
+                                self.vr_stats_layout_popup_selected = 0;
+                            } else {
+                                let filtered = self.stats_layout_filtered_indices();
+                                if let Some(&first) = filtered.first() {
+                                    self.vr_stats_layout_popup_selected = first + 3;
+                                }
+                            }
+                        }
+                        KeyCode::Enter => {
+                            if let Some(&idx) = filtered.iter().find(|&&i| i + 3 == self.vr_stats_layout_popup_selected) {
+                                if let Some(shareable) = self.vr_stats_saved_shareables.get(idx).cloned() {
+                                    self.vr_stats_apply_shareable(&shareable);
+                                    self.vr_stats_show_layout_popup = false;
+                                    self.vr_stats_layout_filter.clear();
+                                    self.vr_fetch_stats().await;
+                                }
+                            }
+                        }
+                        KeyCode::Down => {
+                            if let Some(pos) = cur_pos {
+                                if pos + 1 < filtered.len() {
+                                    self.vr_stats_layout_popup_selected = filtered[pos + 1] + 3;
+                                }
+                            } else if let Some(&first) = filtered.first() {
+                                self.vr_stats_layout_popup_selected = first + 3;
+                            }
+                        }
+                        KeyCode::Up => {
+                            if let Some(pos) = cur_pos {
+                                if pos > 0 {
+                                    self.vr_stats_layout_popup_selected = filtered[pos - 1] + 3;
+                                }
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            self.vr_stats_layout_filter.push(c);
+                            let filtered = self.stats_layout_filtered_indices();
+                            if let Some(&first) = filtered.first() {
+                                self.vr_stats_layout_popup_selected = first + 3;
+                            }
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+
+                // Normal list mode
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        self.vr_stats_show_layout_popup = false;
+                    }
+                    KeyCode::Char('h') | KeyCode::Char('?') => {
+                        self.show_help = !self.show_help;
+                    }
+                    KeyCode::Char('/') => {
+                        self.vr_stats_layout_filter = "\0".to_string();
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        let max = self.vr_stats_saved_shareables.len() + 3;
+                        if self.vr_stats_layout_popup_selected + 1 < max {
+                            self.vr_stats_layout_popup_selected += 1;
+                        }
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.vr_stats_layout_popup_selected = self.vr_stats_layout_popup_selected.saturating_sub(1);
+                    }
+                    KeyCode::Enter => {
+                        if self.vr_stats_layout_popup_selected == 0 {
+                            // Edit Columns
+                            self.vr_stats_build_column_editor();
+                            self.vr_stats_show_layout_popup = false;
+                            self.vr_stats_show_column_editor = true;
+                        } else if self.vr_stats_layout_popup_selected == 1 {
+                            self.vr_stats_layout_popup_mode = LayoutPopupMode::SaveInput;
+                            self.vr_stats_layout_save_name.clear();
+                            self.vr_stats_layout_save_cursor = 0;
+                        } else if self.vr_stats_layout_popup_selected == 2 {
+                            self.vr_stats_reset_default_columns();
+                            self.vr_stats_show_layout_popup = false;
+                            self.vr_fetch_stats().await;
+                        } else {
+                            let idx = self.vr_stats_layout_popup_selected - 3;
+                            if let Some(shareable) = self.vr_stats_saved_shareables.get(idx).cloned() {
+                                self.vr_stats_apply_shareable(&shareable);
+                                self.vr_stats_show_layout_popup = false;
+                                self.vr_fetch_stats().await;
+                            }
+                        }
+                    }
+                    KeyCode::Char('x') | KeyCode::Delete => {
+                        if let Some(idx) = self.vr_stats_layout_popup_selected.checked_sub(3) {
+                            if let Some(shareable) = self.vr_stats_saved_shareables.get(idx) {
+                                if !shareable.shared {
+                                    self.vr_stats_layout_delete_name = shareable.name.clone();
+                                    self.vr_stats_layout_delete_id = shareable.id.clone();
+                                    self.vr_stats_layout_popup_mode = LayoutPopupMode::ConfirmDelete;
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            LayoutPopupMode::SaveInput => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.vr_stats_layout_popup_mode = LayoutPopupMode::List;
+                    }
+                    KeyCode::Enter => {
+                        if !self.vr_stats_layout_save_name.is_empty() {
+                            let name = self.vr_stats_layout_save_name.clone();
+                            self.vr_stats_save_shareable(&name).await;
+                            self.vr_stats_show_layout_popup = false;
+                        }
+                    }
+                    KeyCode::Backspace | KeyCode::Left | KeyCode::Right | KeyCode::Char(_) => {
+                        handle_text_input_key(key.code, &mut self.vr_stats_layout_save_name, &mut self.vr_stats_layout_save_cursor);
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 

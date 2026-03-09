@@ -40,13 +40,13 @@ pub(super) fn draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
-    let columns = app.vr_stats_tab.columns();
+    let columns = app.vr_stats_active_columns().clone();
 
-    let header_cells = columns.iter().enumerate().map(|(i, (field, label, _))| {
+    let header_cells = columns.iter().enumerate().map(|(i, col)| {
         let is_sorted = i == app.vr_stats_sort_column;
-        let text = sort_header_label(label, is_sorted, app.vr_stats_sort_desc);
+        let text = sort_header_label(&col.label, is_sorted, app.vr_stats_sort_desc);
         let style = sort_header_style(is_sorted);
-        let line = if is_numeric_field(field) {
+        let line = if col.is_numeric() {
             Line::from(text).alignment(Alignment::Right)
         } else {
             Line::from(text)
@@ -56,10 +56,10 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
     let header = Row::new(header_cells).height(1);
 
     let rows: Vec<Row> = app.vr_stats_data.iter().map(|item| {
-        let cells = columns.iter().map(|(field, _, _)| {
-            let val = get_nested_value(item, field);
-            let text = format_stats_cell(field, val, item, app.vr_stats_tab);
-            if is_numeric_field(field) {
+        let cells = columns.iter().map(|col| {
+            let val = get_nested_value(item, &col.field);
+            let text = format_stats_cell_dynamic(col, val, item);
+            if col.is_numeric() {
                 Cell::from(Line::from(text).alignment(Alignment::Right))
             } else {
                 Cell::from(text)
@@ -69,7 +69,7 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
     }).collect();
 
     let widths: Vec<Constraint> = columns.iter()
-        .map(|(_, _, w)| Constraint::Length(*w))
+        .map(|col| Constraint::Length(col.width))
         .collect();
 
     let title = format!(
@@ -90,20 +90,10 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_stateful_widget(table, area, &mut app.vr_stats_table_state);
 }
 
-fn is_numeric_field(field: &str) -> bool {
-    matches!(field,
-        "monitoring" | "freeSpaceM" | "deltaPackets" | "deltaBytesPerSec" |
-        "deltaSessions" | "deltaDropped" | "storeSize" | "docs" |
-        "searches" | "searchesTime" | "docs.count" | "store.size" | "pri"
-    )
-}
-
 fn get_nested_value<'a>(item: &'a serde_json::Value, field: &str) -> &'a serde_json::Value {
-    // Try flat key first (handles keys like "store.size" that contain dots)
     if let Some(v) = item.get(field) {
         return v;
     }
-    // Only try dot-separated path if flat key didn't match
     if field.contains('.') {
         let mut current = item;
         for part in field.split('.') {
@@ -117,25 +107,36 @@ fn get_nested_value<'a>(item: &'a serde_json::Value, field: &str) -> &'a serde_j
     &serde_json::Value::Null
 }
 
-fn format_stats_cell(field: &str, val: &serde_json::Value, item: &serde_json::Value, tab: StatsTab) -> String {
-    match (tab, field) {
-        (StatsTab::Capture, "currentTime") => format_epoch_secs(val),
-        (StatsTab::Capture, "freeSpaceM") => {
+fn format_stats_cell_dynamic(col: &StatsColumnDef, val: &serde_json::Value, item: &serde_json::Value) -> String {
+    match col.format {
+        StatsFormat::EpochSecs => format_epoch_secs(val),
+        StatsFormat::Bytes => {
+            let base = val.as_f64().map(format_human_bytes).unwrap_or_else(|| "-".into());
+            // Show percentage if a companion "P" field exists (e.g. memoryP for memory)
+            let pct_field = format!("{}P", col.field);
+            let pct = item.get(&pct_field)
+                .and_then(|v| v.as_f64())
+                .map(|v| format!(" ({:.0}%)", v))
+                .unwrap_or_default();
+            format!("{base}{pct}")
+        }
+        StatsFormat::BytesPerSec => {
+            val.as_f64().map(format_human_bytes).unwrap_or_else(|| "-".into())
+        }
+        StatsFormat::MegaBytes => {
             let size = val.as_f64().map(format_human_megabytes).unwrap_or_else(|| "-".into());
-            let pct = item.get("freeSpaceP")
+            // Show percentage if a companion "P" field exists (e.g. freeSpaceP for freeSpaceM)
+            let pct_field = col.field.trim_end_matches('M').to_string() + "P";
+            let pct = item.get(&pct_field)
                 .and_then(|v| v.as_f64())
                 .map(|v| format!(" ({:.0}%)", v))
                 .unwrap_or_default();
             format!("{size}{pct}")
         }
-        (StatsTab::Capture, "deltaBytesPerSec") => {
-            val.as_f64().map(format_human_bytes).unwrap_or_else(|| "-".into())
+        StatsFormat::Percent => {
+            val.as_f64().map(|v| format!("{:.1}%", v / 100.0)).unwrap_or_else(|| "-".into())
         }
-        (StatsTab::DBStats, "storeSize") => {
-            val.as_f64().map(format_human_bytes).unwrap_or_else(|| "-".into())
-        }
-        (StatsTab::DBIndices, "store.size") => {
-            // Value may be a string like "10.2gb" or a number in bytes
+        StatsFormat::SizeString => {
             match val {
                 serde_json::Value::Number(n) => {
                     n.as_f64().map(format_human_bytes).unwrap_or_else(|| "-".into())
@@ -146,7 +147,8 @@ fn format_stats_cell(field: &str, val: &serde_json::Value, item: &serde_json::Va
                 _ => "-".into(),
             }
         }
-        _ => format_stats_value(val),
+        StatsFormat::Number => format_stats_value(val),
+        StatsFormat::String => format_stats_value(val),
     }
 }
 
@@ -214,22 +216,33 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::from(""));
     }
 
+    // Build field → friendly label map from all columns for this tab
+    let all_cols = crate::app::stats_tab_all_columns(app.vr_stats_tab);
+    let label_map: std::collections::HashMap<&str, &str> = all_cols.iter()
+        .map(|c| (c.field.as_str(), c.label.as_str()))
+        .collect();
+
     if let Some(obj) = detail.data.as_object() {
         let mut keys: Vec<&String> = obj.keys()
             .filter(|k| {
                 if filter_lower.is_empty() {
                     return true;
                 }
-                k.to_lowercase().contains(&filter_lower)
+                let k_str = k.as_str();
+                let friendly = label_map.get(k_str).copied().unwrap_or(k_str);
+                k_str.to_lowercase().contains(&filter_lower)
+                    || friendly.to_lowercase().contains(&filter_lower)
             })
             .collect();
         keys.sort();
         for key in keys {
             let val = &obj[key];
             let val_str = format_stats_value(val);
+            let key_str = key.as_str();
+            let display_name = label_map.get(key_str).copied().unwrap_or(key_str);
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("{key:>30}: "),
+                    format!("{display_name:>30}: "),
                     Style::default().fg(Color::Yellow),
                 ),
                 Span::raw(val_str),

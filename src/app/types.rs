@@ -100,6 +100,221 @@ pub enum LayoutPopupMode {
     ConfirmDelete,
 }
 
+// --- Stats column configuration ---
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum StatsFormat {
+    String,
+    Number,
+    Bytes,
+    BytesPerSec,
+    MegaBytes,
+    Percent,
+    EpochSecs,
+    SizeString,
+}
+
+#[derive(Clone)]
+pub struct StatsColumnDef {
+    pub field: String,
+    pub sort: String,
+    pub label: String,
+    pub width: u16,
+    pub format: StatsFormat,
+}
+
+impl StatsColumnDef {
+    pub fn new(field: &str, sort: &str, label: &str, width: u16, format: StatsFormat) -> Self {
+        Self {
+            field: field.into(),
+            sort: sort.into(),
+            label: label.into(),
+            width,
+            format,
+        }
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        !matches!(self.format, StatsFormat::String)
+    }
+}
+
+#[derive(Clone)]
+pub struct StatsColumnEditorItem {
+    pub field: String,
+    pub label: String,
+    pub enabled: bool,
+}
+
+#[derive(Clone)]
+pub struct SavedShareable {
+    pub id: String,
+    pub name: String,
+    pub columns: Vec<String>,
+    pub sort_field: String,
+    pub sort_dir: String,
+    pub shared: bool,
+}
+
+pub fn capture_all_columns() -> Vec<StatsColumnDef> {
+    use StatsFormat::*;
+    vec![
+        StatsColumnDef::new("nodeName", "nodeName", "Node", 20, String),
+        StatsColumnDef::new("currentTime", "currentTime", "Time", 20, EpochSecs),
+        StatsColumnDef::new("monitoring", "monitoring", "Sessions", 10, Number),
+        StatsColumnDef::new("freeSpaceM", "freeSpaceM", "Free Space", 16, MegaBytes),
+        StatsColumnDef::new("cpu", "cpu", "CPU", 8, Percent),
+        StatsColumnDef::new("memory", "memory", "Memory", 16, Bytes),
+        StatsColumnDef::new("packetQueue", "packetQueue", "Pkt Queue", 10, Number),
+        StatsColumnDef::new("diskQueue", "diskQueue", "Disk Queue", 10, Number),
+        StatsColumnDef::new("esQueue", "esQueue", "ES Queue", 10, Number),
+        StatsColumnDef::new("deltaPackets", "deltaPacketsPerSec", "ΔPackets", 10, Number),
+        StatsColumnDef::new("deltaBytesPerSec", "deltaBytesPerSec", "Bytes/Sec", 12, BytesPerSec),
+        StatsColumnDef::new("deltaSessions", "deltaSessionsPerSec", "ΔSessions", 10, Number),
+        StatsColumnDef::new("deltaDropped", "deltaDroppedPerSec", "ΔDropped", 10, Number),
+        // non-default
+        StatsColumnDef::new("deltaBitsPerSec", "deltaBitsPerSec", "Bits/Sec", 12, Number),
+        StatsColumnDef::new("deltaWrittenBytesPerSec", "deltaWrittenBytesPerSec", "Written/Sec", 12, BytesPerSec),
+        StatsColumnDef::new("deltaUnwrittenBytesPerSec", "deltaUnwrittenBytesPerSec", "Unwritten/Sec", 14, BytesPerSec),
+        StatsColumnDef::new("tcpSessions", "tcpSessions", "TCP Sess", 10, Number),
+        StatsColumnDef::new("udpSessions", "udpSessions", "UDP Sess", 10, Number),
+        StatsColumnDef::new("icmpSessions", "icmpSessions", "ICMP Sess", 10, Number),
+        StatsColumnDef::new("sctpSessions", "sctpSessions", "SCTP Sess", 10, Number),
+        StatsColumnDef::new("espSessions", "espSessions", "ESP Sess", 10, Number),
+        StatsColumnDef::new("usedSpaceM", "usedSpaceM", "Used Space", 12, MegaBytes),
+        StatsColumnDef::new("esHealthMS", "esHealthMS", "ES Health MS", 12, Number),
+        StatsColumnDef::new("closeQueue", "closeQueue", "Close Queue", 12, Number),
+        StatsColumnDef::new("needSave", "needSave", "Need Save", 10, Number),
+        StatsColumnDef::new("frags", "frags", "Frags", 10, Number),
+        StatsColumnDef::new("deltaFragsDroppedPerSec", "deltaFragsDroppedPerSec", "ΔFragsDropped", 14, Number),
+        StatsColumnDef::new("deltaTotalDroppedPerSec", "deltaTotalDroppedPerSec", "ΔTotalDropped", 14, Number),
+        StatsColumnDef::new("deltaSessionBytesPerSec", "deltaSessionBytesPerSec", "SessBytes/Sec", 14, BytesPerSec),
+        StatsColumnDef::new("deltaOverloadDropped", "deltaOverloadDropped", "ΔOverloadDrop", 14, Number),
+        StatsColumnDef::new("deltaDupDroppedPerSec", "deltaDupDroppedPerSec", "ΔDupDropped", 12, Number),
+        StatsColumnDef::new("deltaESDroppedPerSec", "deltaESDroppedPerSec", "ΔESDropped", 12, Number),
+        StatsColumnDef::new("sessionSizePerSec", "sessionSizePerSec", "SessSize/Sec", 12, Number),
+        StatsColumnDef::new("retention", "retention", "Retention", 10, Number),
+        StatsColumnDef::new("startTime", "startTime", "Start Time", 20, EpochSecs),
+        StatsColumnDef::new("runningTime", "runningTime", "Running Time", 20, Number),
+        StatsColumnDef::new("ver", "ver", "Version", 14, String),
+    ]
+}
+
+pub fn capture_default_fields() -> Vec<&'static str> {
+    vec![
+        "nodeName", "currentTime", "monitoring", "freeSpaceM", "cpu", "memory",
+        "packetQueue", "diskQueue", "esQueue", "deltaPackets", "deltaBytesPerSec",
+        "deltaSessions", "deltaDropped",
+    ]
+}
+
+pub fn esnodes_all_columns() -> Vec<StatsColumnDef> {
+    use StatsFormat::*;
+    vec![
+        StatsColumnDef::new("name", "nodeName", "Node", 20, String),
+        StatsColumnDef::new("docs", "docs", "Docs", 12, Number),
+        StatsColumnDef::new("storeSize", "storeSize", "Disk Used", 12, Bytes),
+        StatsColumnDef::new("freeSize", "freeSize", "Free Size", 12, Bytes),
+        StatsColumnDef::new("heapSize", "heapSize", "Heap Size", 12, Bytes),
+        StatsColumnDef::new("load", "load", "Load", 10, Number),
+        StatsColumnDef::new("cpu", "cpu", "CPU", 8, Percent),
+        StatsColumnDef::new("read", "read", "Read", 10, Bytes),
+        StatsColumnDef::new("write", "write", "Write", 10, Bytes),
+        StatsColumnDef::new("searches", "searches", "Searches", 10, Number),
+        // non-default
+        StatsColumnDef::new("scrolls", "scrolls", "Scrolls", 10, Number),
+        StatsColumnDef::new("ip", "ip", "IP", 16, String),
+        StatsColumnDef::new("ipExcluded", "ipExcluded", "IP Excluded", 12, String),
+        StatsColumnDef::new("nodeExcluded", "nodeExcluded", "Node Excluded", 14, String),
+        StatsColumnDef::new("nonHeapSize", "nonHeapSize", "Non-Heap", 12, Bytes),
+        StatsColumnDef::new("searchesTime", "searchesTime", "Search Time", 12, Number),
+        StatsColumnDef::new("writesRejectedDelta", "writesRejectedDelta", "Writes Rej Δ", 12, Number),
+        StatsColumnDef::new("writesCompleted", "writesCompleted", "Writes Done", 12, Number),
+        StatsColumnDef::new("writesCompletedDelta", "writesCompletedDelta", "Writes Done Δ", 14, Number),
+        StatsColumnDef::new("writesQueueSize", "writesQueueSize", "Write Queue", 12, Number),
+        StatsColumnDef::new("molochtype", "molochtype", "Type", 10, String),
+        StatsColumnDef::new("molochzone", "molochzone", "Zone", 10, String),
+        StatsColumnDef::new("shards", "shards", "Shards", 8, Number),
+        StatsColumnDef::new("segments", "segments", "Segments", 10, Number),
+        StatsColumnDef::new("uptime", "uptime", "Uptime", 10, Number),
+        StatsColumnDef::new("version", "version", "Version", 12, String),
+        StatsColumnDef::new("writesRejected", "writesRejected", "Writes Rejected", 14, Number),
+    ]
+}
+
+pub fn esnodes_default_fields() -> Vec<&'static str> {
+    vec![
+        "name", "docs", "storeSize", "freeSize", "heapSize", "load", "cpu",
+        "read", "write", "searches",
+    ]
+}
+
+pub fn esindices_all_columns() -> Vec<StatsColumnDef> {
+    use StatsFormat::*;
+    vec![
+        StatsColumnDef::new("index", "index", "Index", 40, String),
+        StatsColumnDef::new("docs.count", "docs.count", "Docs", 14, Number),
+        StatsColumnDef::new("store.size", "store.size", "Disk Size", 14, SizeString),
+        StatsColumnDef::new("pri", "pri", "Shards", 8, Number),
+        StatsColumnDef::new("segmentsCount", "segmentsCount", "Segments", 10, Number),
+        StatsColumnDef::new("rep", "rep", "Replicas", 10, Number),
+        StatsColumnDef::new("memoryTotal", "memoryTotal", "Memory", 12, Bytes),
+        StatsColumnDef::new("health", "health", "Health", 10, String),
+        StatsColumnDef::new("status", "status", "Status", 10, String),
+        // non-default
+        StatsColumnDef::new("cd", "cd", "Created", 20, EpochSecs),
+        StatsColumnDef::new("pri.search.query_current", "pri.search.query_current", "Queries", 10, Number),
+        StatsColumnDef::new("uuid", "uuid", "UUID", 12, String),
+        StatsColumnDef::new("molochtype", "molochtype", "Type", 10, String),
+        StatsColumnDef::new("shardsPerNode", "shardsPerNode", "Shards/Node", 12, String),
+        StatsColumnDef::new("versionCreated", "versionCreated", "Version", 12, String),
+        StatsColumnDef::new("docSize", "docSize", "Doc Size", 10, Number),
+    ]
+}
+
+pub fn esindices_default_fields() -> Vec<&'static str> {
+    vec![
+        "index", "docs.count", "store.size", "pri", "segmentsCount", "rep",
+        "memoryTotal", "health", "status",
+    ]
+}
+
+/// Build active columns from a list of field names and the all-columns definition
+pub fn stats_columns_from_fields(field_names: &[&str], all_columns: &[StatsColumnDef]) -> Vec<StatsColumnDef> {
+    let mut result = Vec::new();
+    for &name in field_names {
+        if let Some(col) = all_columns.iter().find(|c| c.field == name) {
+            result.push(col.clone());
+        }
+    }
+    result
+}
+
+/// Get all-columns and default fields for a given StatsTab
+pub fn stats_tab_all_columns(tab: StatsTab) -> Vec<StatsColumnDef> {
+    match tab {
+        StatsTab::Capture => capture_all_columns(),
+        StatsTab::DBStats => esnodes_all_columns(),
+        StatsTab::DBIndices => esindices_all_columns(),
+    }
+}
+
+pub fn stats_tab_default_fields(tab: StatsTab) -> Vec<&'static str> {
+    match tab {
+        StatsTab::Capture => capture_default_fields(),
+        StatsTab::DBStats => esnodes_default_fields(),
+        StatsTab::DBIndices => esindices_default_fields(),
+    }
+}
+
+pub fn stats_tab_shareable_type(tab: StatsTab) -> &'static str {
+    match tab {
+        StatsTab::Capture => "capture-columns",
+        StatsTab::DBStats => "esnodes-columns",
+        StatsTab::DBIndices => "esindices-columns",
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum ViewPopupMode {
     List,
@@ -430,38 +645,6 @@ impl StatsTab {
             StatsTab::Capture => "Capture Stats",
             StatsTab::DBStats => "DB Nodes",
             StatsTab::DBIndices => "DB Indices",
-        }
-    }
-
-    pub fn columns(&self) -> &[(&str, &str, u16)] {
-        // (field_name, label, width)
-        match self {
-            StatsTab::Capture => &[
-                ("nodeName", "Node", 20),
-                ("currentTime", "Time", 20),
-                ("monitoring", "Sessions", 10),
-                ("freeSpaceM", "Free Space", 16),
-                ("deltaPackets", "ΔPackets", 10),
-                ("deltaBytesPerSec", "Bytes/Sec", 12),
-                ("deltaSessions", "ΔSessions", 10),
-                ("deltaDropped", "ΔDropped", 10),
-            ],
-            StatsTab::DBStats => &[
-                ("name", "Node", 20),
-                ("storeSize", "Disk Used", 14),
-                ("docs", "Docs", 14),
-                ("searches", "Searches", 12),
-                ("searchesTime", "Search Time", 12),
-                ("version", "Version", 12),
-            ],
-            StatsTab::DBIndices => &[
-                ("index", "Index", 40),
-                ("status", "Status", 10),
-                ("health", "Health", 10),
-                ("docs.count", "Docs", 14),
-                ("store.size", "Disk Size", 14),
-                ("pri", "Shards", 8),
-            ],
         }
     }
 }

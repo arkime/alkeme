@@ -119,6 +119,14 @@ impl App {
             self.handle_layout_popup_key(key).await;
             return;
         }
+        if self.vr_stats_show_column_editor {
+            self.handle_stats_column_editor_key(key).await;
+            return;
+        }
+        if self.vr_stats_show_layout_popup {
+            self.handle_stats_layout_popup_key(key).await;
+            return;
+        }
         if self.vr_show_view_popup {
             self.handle_view_popup_key(key).await;
             return;

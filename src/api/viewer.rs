@@ -279,4 +279,68 @@ impl ArkimeClient {
         let url = format!("{}/api/view/{}", self.base_url, urlencoding::encode(id));
         self.authenticated_delete(&url).await
     }
+
+    // Shareable API methods
+
+    pub async fn get_shareables(&self, shareable_type: &str) -> Result<Vec<crate::app::SavedShareable>> {
+        let url = format!("{}/api/shareables?type={}", self.base_url, urlencoding::encode(shareable_type));
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let mut result = Vec::new();
+        if let Some(data) = parsed.get("data").and_then(|d| d.as_array()) {
+            for item in data {
+                let id = str_val(item, "id");
+                let name = str_val(item, "name");
+                let shared = item.get("shared").and_then(|v| v.as_bool()).unwrap_or(false);
+                let data_obj = item.get("data").unwrap_or(&Value::Null);
+                let columns: Vec<String> = data_obj.get("columns")
+                    .and_then(|c| c.as_array())
+                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let (sort_field, sort_dir) = data_obj.get("order")
+                    .and_then(|o| o.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|pair| pair.as_array())
+                    .map(|pair| {
+                        let f = pair.first().and_then(|x| x.as_str()).unwrap_or("").to_string();
+                        let d = pair.get(1).and_then(|x| x.as_str()).unwrap_or("asc").to_string();
+                        (f, d)
+                    })
+                    .unwrap_or_default();
+                result.push(crate::app::SavedShareable { id, name, columns, sort_field, sort_dir, shared });
+            }
+        }
+        Ok(result)
+    }
+
+    pub async fn create_shareable(&self, name: &str, shareable_type: &str, columns: &[String], sort_field: &str, sort_dir: &str) -> Result<Value> {
+        let url = format!("{}/api/shareable", self.base_url);
+        let body = serde_json::json!({
+            "name": name,
+            "type": shareable_type,
+            "data": {
+                "columns": columns,
+                "order": [[sort_field, sort_dir]]
+            }
+        });
+        self.authenticated_post_json(&url, &body).await
+    }
+
+    pub async fn update_shareable(&self, id: &str, name: &str, shareable_type: &str, columns: &[String], sort_field: &str, sort_dir: &str) -> Result<Value> {
+        let url = format!("{}/api/shareable/{}", self.base_url, urlencoding::encode(id));
+        let body = serde_json::json!({
+            "name": name,
+            "type": shareable_type,
+            "data": {
+                "columns": columns,
+                "order": [[sort_field, sort_dir]]
+            }
+        });
+        self.authenticated_put_json(&url, &body).await
+    }
+
+    pub async fn delete_shareable(&self, id: &str) -> Result<Value> {
+        let url = format!("{}/api/shareable/{}", self.base_url, urlencoding::encode(id));
+        self.authenticated_delete(&url).await
+    }
 }

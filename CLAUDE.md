@@ -289,7 +289,10 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 ## Stats tab
 
 - Has 3 sub-tabs switchable with `1/2/3` keys: Capture Stats, DB Nodes, DB Indices
-- Each sub-tab defines its own columns via `StatsTab::columns()` returning `(field, label, width)` tuples
+- Each sub-tab has dynamic columns defined by `StatsColumnDef` (field, sort, label, width, format)
+- `StatsFormat` enum controls cell rendering: String, Number, Bytes, BytesPerSec, MegaBytes, Percent, EpochSecs, SizeString
+- `c` opens column/layout popup (same pattern as session columns): Edit Columns, Save Layout, Default, saved layouts
+- Column layouts saved via shareable API with types: `capture-columns`, `esnodes-columns`, `esindices-columns`
 - Stats tab has its own layout: no time range picker, no graph — just sub-tab bar + filter + table
 - Filter (`/`) is passed as `filter` query param to the API (server-side filtering)
 - Auto-refreshes every 30 seconds when on the Stats tab
@@ -298,16 +301,23 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Detail overlay supports full navigation: ↑/↓ (line), Shift+↑/↓ and PgUp/PgDn (page), ←/Home (top), →/End (bottom)
 - `/` filters fields in detail overlay; `h`/`?` shows help
 - DB Nodes detail shows exclusion status banner (node/IP excluded state) with `e`/`x` toggle keys
-- DB Indices detail supports `d` (delete), `f` (force merge), `c` (close), `o` (open) operations
+- DB Indices detail supports `d` (delete), `f` (force merge), `C` (close), `O` (open) operations
 - DB Nodes list and detail support `e` (toggle node exclude/include) and `x` (toggle IP exclude/include) via `POST /api/esshards/:type/:value/:action`
 - DB Indices list supports `d` (delete via `DELETE /api/esindices/:index`), `f` (force merge), `C` (close), `O` (open) via `POST /api/esindices/:index/:action`
 - All operations use `ConfirmDialog` for confirmation and auto-refresh stats after success
 - Node exclude/include operations refresh detail in-place (preserving scroll and filter)
 
 ### Stats columns per sub-tab
-- **Capture Stats**: nodeName, currentTime (formatted date), monitoring (Sessions), freeSpaceM (human-readable + percent), deltaPackets, deltaBytesPerSec (human-readable), deltaSessions, deltaDropped
-- **DB Nodes**: name (Node), storeSize (Disk Used, human-readable), docs, searches, searchesTime, version
-- **DB Indices**: index, status, health, docs.count (nested field), store.size (human-readable), pri (Shards)
+- **Capture Stats** (13 default, 37 total): nodeName, currentTime, monitoring, freeSpaceM, cpu, memory, packetQueue, diskQueue, esQueue, deltaPackets, deltaBytesPerSec, deltaSessions, deltaDropped (+ 24 more)
+- **DB Nodes** (10 default, 27 total): name, docs, storeSize, freeSize, heapSize, load, cpu, read, write, searches (+ 17 more)
+- **DB Indices** (9 default, 16 total): index, docs.count, store.size, pri, segmentsCount, rep, memoryTotal, health, status (+ 7 more)
+
+### Shareable API (stats column layouts)
+- `GET /api/shareables?type={tab}-columns` — list saved layouts (no cookie needed)
+- `POST /api/shareable` — create: `{name, type, data: {columns: [...], order: [[sortField, dir]]}}`
+- `PUT /api/shareable/:id` — update (needs cookie)
+- `DELETE /api/shareable/:id` — delete (needs cookie)
+- `SavedShareable` struct: id, name, columns, sort_field, sort_dir, shared
 
 ### Human-readable byte formatting
 - `format_human_bytes()` uses Ki/Mi/Gi/Ti units (1024-based)
