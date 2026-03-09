@@ -59,6 +59,7 @@ Monitor all your Arkime clusters at a glance with health status, throughput, and
 - **Stats tab** — view capture stats, DB nodes, and DB indices with sortable tables, filtering, detail view, and configurable columns; press `c` to toggle/reorder columns, save/load named layouts via the shareable API
 - **Index operations** — delete, force merge, close, or open DB indices with confirmation dialogs
 - **Node operations** — toggle node or IP exclusion from DB Nodes list or detail view
+- **Files tab** — browse PCAP files with sortable, filterable, paginated table; configurable columns with save/load layouts via shareable API; Enter opens detail overlay with all fields
 
 ### Cont3xt
 - **Integration search** — search indicators (IPs, domains, emails, hashes) across all configured integrations

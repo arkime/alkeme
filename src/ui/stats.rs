@@ -90,7 +90,7 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_stateful_widget(table, area, &mut app.vr_stats_table_state);
 }
 
-fn get_nested_value<'a>(item: &'a serde_json::Value, field: &str) -> &'a serde_json::Value {
+pub(super) fn get_nested_value<'a>(item: &'a serde_json::Value, field: &str) -> &'a serde_json::Value {
     if let Some(v) = item.get(field) {
         return v;
     }
@@ -107,7 +107,7 @@ fn get_nested_value<'a>(item: &'a serde_json::Value, field: &str) -> &'a serde_j
     &serde_json::Value::Null
 }
 
-fn format_stats_cell_dynamic(col: &StatsColumnDef, val: &serde_json::Value, item: &serde_json::Value) -> String {
+pub(super) fn format_stats_cell_dynamic(col: &StatsColumnDef, val: &serde_json::Value, item: &serde_json::Value) -> String {
     match col.format {
         StatsFormat::EpochSecs => format_epoch_secs(val),
         StatsFormat::Bytes => {
@@ -149,10 +149,29 @@ fn format_stats_cell_dynamic(col: &StatsColumnDef, val: &serde_json::Value, item
         }
         StatsFormat::Number => format_stats_value(val),
         StatsFormat::String => format_stats_value(val),
+        StatsFormat::EpochMs => {
+            val.as_f64().map(|ms| {
+                let secs = (ms / 1000.0) as i64;
+                format_epoch_secs(&serde_json::Value::Number(serde_json::Number::from(secs)))
+            }).unwrap_or_else(|| "-".into())
+        }
+        StatsFormat::Boolean => {
+            match val.as_i64().or_else(|| val.as_f64().map(|f| f as i64)) {
+                Some(0) => "False".into(),
+                Some(_) => "True".into(),
+                None => match val.as_bool() {
+                    Some(b) => if b { "True" } else { "False" }.into(),
+                    None => "-".into(),
+                },
+            }
+        }
+        StatsFormat::PercentSuffix => {
+            val.as_f64().map(|v| format!("{:.1}%", v)).unwrap_or_else(|| "-".into())
+        }
     }
 }
 
-fn format_stats_value(val: &serde_json::Value) -> String {
+pub(super) fn format_stats_value(val: &serde_json::Value) -> String {
     match val {
         serde_json::Value::String(s) => s.clone(),
         serde_json::Value::Number(n) => {

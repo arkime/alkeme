@@ -47,6 +47,7 @@ src/
   ui/mod.rs            - Draw dispatch, common layout (tabs, toolbar, status bar, graph), center_popup(), sort_header_style(), sort_header_label(), render_text_input(), format_number()
   ui/sessions.rs       - Session list/detail rendering
   ui/stats.rs          - Stats tab rendering
+  ui/files.rs          - Files tab rendering
   ui/arkime.rs         - Summary tab + owl animation rendering
   ui/cont3xt.rs        - Cont3xt search/results/card rendering
   ui/parliament.rs     - Parliament dashboard + issues rendering
@@ -78,7 +79,7 @@ src/
 - `--app <mode>` CLI flag skips appversion call and forces a mode
 - `/api/user` provides user info (from `result.user` in appversion response)
 - Each mode has its own tab set via `AppMode::tabs()`:
-  - **Viewer**: Arkime, Sessions, Stats, Settings (defaults to Sessions)
+  - **Viewer**: Arkime, Sessions, Stats, Files, Settings (defaults to Sessions)
   - **Cont3xt**: Search, Stats, History, Settings (defaults to Search)
   - **Parliament**: Dashboard, Issues, Settings (defaults to Dashboard)
   - **Wise**: Stats, Query, Settings (defaults to Stats)
@@ -92,7 +93,7 @@ src/
 
 - `App` — All mutable state. Passed as `&mut` to handlers and renderers. Viewer fields prefixed `vr_`, cont3xt fields prefixed `c3_`, parliament fields prefixed `pl_`, WISE fields prefixed `ws_`. Public methods follow same convention.
 - `AppMode` — Enum: `Viewer` | `Cont3xt` | `Wise` | `Parliament`. Determined at startup from `/api/appversion` `result.app` or `--app` flag. Has `tabs()`, `default_tab()`, `label()`.
-- `Tab` — Enum: `Arkime` | `Sessions` | `Stats` | `Search` | `C3Stats` | `History` | `Dashboard` | `Issues` | `WsStats` | `WsQuery` | `Settings`. Which tabs are available depends on `AppMode::tabs()`.
+- `Tab` — Enum: `Arkime` | `Sessions` | `Stats` | `Files` | `Search` | `C3Stats` | `History` | `Dashboard` | `Issues` | `WsStats` | `WsQuery` | `Settings`. Which tabs are available depends on `AppMode::tabs()`.
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
 - `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
 - `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
@@ -290,7 +291,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 - Has 3 sub-tabs switchable with `1/2/3` keys: Capture Stats, DB Nodes, DB Indices
 - Each sub-tab has dynamic columns defined by `StatsColumnDef` (field, sort, label, width, format)
-- `StatsFormat` enum controls cell rendering: String, Number, Bytes, BytesPerSec, MegaBytes, Percent, EpochSecs, SizeString
+- `StatsFormat` enum controls cell rendering: String, Number, Bytes, BytesPerSec, MegaBytes, Percent, EpochSecs, EpochMs, Boolean, PercentSuffix, SizeString
 - `c` opens column/layout popup (same pattern as session columns): Edit Columns, Save Layout, Default, saved layouts
 - Column layouts saved via shareable API with types: `capture-columns`, `esnodes-columns`, `esindices-columns`
 - Stats tab has its own layout: no time range picker, no graph — just sub-tab bar + filter + table
@@ -327,6 +328,27 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ### Nested field access
 - `get_nested_value()` tries flat key first (e.g., `"store.size"`), then dot-separated path (e.g., `"docs"` → `"count"`)
+
+## Files tab
+
+- Displays PCAP files known to Arkime with sortable, filterable, paginated table
+- API: `GET /api/files?sortField={}&desc={true|false}&start={}&length={}&filter={}`
+- Filter is a name-only wildcard search (server-side `*{filter}*`)
+- Response: `{ recordsTotal, recordsFiltered, data: [{num, node, name, locked, first, filesize, ...}] }`
+- Pagination: offset-based with start/length like Sessions (← → for pages)
+- 18 total columns, 6 defaults: num, node, name, locked, first, filesize
+- `cratio` is calculated server-side (compression ratio percentage)
+- `locked` field: 0→"False", 1→"True" (Boolean format)
+- `first` is epoch seconds; `lastTimestamp`, `startTimestamp`, `finishTimestamp` are epoch milliseconds (EpochMs format)
+- Column layouts saved via shareable API with type `files-columns`
+- Enter opens detail overlay showing all fields with friendly labels
+- Detail supports `/` filter, scroll navigation, Esc to close
+- State: `vr_files_data`, `vr_files_total`, `vr_files_filtered`, `vr_files_filter`, `vr_files_selected`, `vr_files_table_state`, `vr_files_sort_column`, `vr_files_sort_desc`, `vr_files_page_start`, `vr_files_page_size`, `vr_files_columns`, `vr_files_view`, `vr_files_detail`
+- Column editor and layout popup reuse generic infrastructure (`handle_column_editor_key_generic`, `handle_layout_popup_key_generic`, `draw_column_editor_core`, `draw_layout_popup_core`)
+
+### Files columns
+- **Default (6):** num, node, name, locked, first, filesize
+- **All (18):** num, node, name, locked, first, filesize, lastTimestamp, encoding, packetPosEncoding, packets, packetsSize, uncompressedBits, cratio, compression, startTimestamp, finishTimestamp, sessionsStarted, sessionsPresent
 
 ## Arkime (Summary) tab
 

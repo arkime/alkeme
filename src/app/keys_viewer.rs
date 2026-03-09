@@ -407,11 +407,17 @@ impl App {
                 if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
                     self.vr_fetch_stats().await;
                 }
+                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                    self.vr_fetch_files().await;
+                }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
                 if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
                     self.vr_fetch_stats().await;
+                }
+                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                    self.vr_fetch_files().await;
                 }
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -967,6 +973,7 @@ impl App {
 
     pub(crate) fn handle_detail_filter_key(&mut self, key: KeyEvent) {
         let is_stats = self.active_tab == Tab::Stats;
+        let is_files = self.active_tab == Tab::Files;
         let is_c3_detail = self.app_mode == crate::app::AppMode::Cont3xt && self.active_tab == Tab::Search;
         match key.code {
             KeyCode::Esc => {
@@ -975,6 +982,11 @@ impl App {
                     self.c3_detail_scroll = 0;
                 } else if is_stats {
                     if let Some(ref mut detail) = self.vr_stats_detail {
+                        detail.filter.clear();
+                        detail.scroll = 0;
+                    }
+                } else if is_files {
+                    if let Some(ref mut detail) = self.vr_files_detail {
                         detail.filter.clear();
                         detail.scroll = 0;
                     }
@@ -998,6 +1010,11 @@ impl App {
                         detail.filter.push(c);
                         detail.scroll = 0;
                     }
+                } else if is_files {
+                    if let Some(ref mut detail) = self.vr_files_detail {
+                        detail.filter.push(c);
+                        detail.scroll = 0;
+                    }
                 } else if let Some(ref mut detail) = self.vr_session_detail {
                     detail.filter.push(c);
                     detail.selected = 0;
@@ -1011,6 +1028,11 @@ impl App {
                     self.c3_detail_scroll = 0;
                 } else if is_stats {
                     if let Some(ref mut detail) = self.vr_stats_detail {
+                        detail.filter.pop();
+                        detail.scroll = 0;
+                    }
+                } else if is_files {
+                    if let Some(ref mut detail) = self.vr_files_detail {
                         detail.filter.pop();
                         detail.scroll = 0;
                     }
@@ -1426,9 +1448,15 @@ impl App {
         match key.code {
             KeyCode::Tab => {
                 self.next_tab();
+                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                    self.vr_fetch_files().await;
+                }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
+                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                    self.vr_fetch_files().await;
+                }
             }
             KeyCode::Char('1') => {
                 if self.vr_stats_tab != StatsTab::Capture {
@@ -1765,11 +1793,17 @@ impl App {
                 if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
                     self.vr_fetch_stats().await;
                 }
+                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                    self.vr_fetch_files().await;
+                }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
                 if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
                     self.vr_fetch_stats().await;
+                }
+                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                    self.vr_fetch_files().await;
                 }
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
@@ -1903,6 +1937,241 @@ impl App {
             KeyCode::Backspace => {
                 self.vr_field_filter.pop();
                 self.vr_field_filter_selected = 0;
+            }
+            _ => {}
+        }
+    }
+
+    // --- Files tab key handlers ---
+
+    pub(crate) async fn handle_files_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Tab => {
+                self.next_tab();
+                if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
+                    self.vr_fetch_stats().await;
+                }
+            }
+            KeyCode::BackTab => {
+                self.prev_tab();
+                if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
+                    self.vr_fetch_stats().await;
+                }
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if !self.vr_files_data.is_empty() {
+                    self.vr_files_selected = (self.vr_files_selected + self.visible_rows).min(self.vr_files_data.len() - 1);
+                    self.vr_files_table_state.select(Some(self.vr_files_selected));
+                }
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.vr_files_selected = self.vr_files_selected.saturating_sub(self.visible_rows);
+                self.vr_files_table_state.select(Some(self.vr_files_selected));
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if !self.vr_files_data.is_empty() {
+                    self.vr_files_selected = (self.vr_files_selected + 1).min(self.vr_files_data.len() - 1);
+                    self.vr_files_table_state.select(Some(self.vr_files_selected));
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.vr_files_selected > 0 {
+                    self.vr_files_selected -= 1;
+                    self.vr_files_table_state.select(Some(self.vr_files_selected));
+                }
+            }
+            KeyCode::Enter => {
+                self.vr_open_files_detail();
+            }
+            KeyCode::Right => {
+                let total = self.vr_files_filtered as usize;
+                let next = self.vr_files_page_start + self.vr_files_page_size;
+                if next < total {
+                    self.vr_files_page_start = next;
+                    self.vr_files_selected = 0;
+                    self.vr_fetch_files().await;
+                }
+            }
+            KeyCode::Left => {
+                if self.vr_files_page_start > 0 {
+                    self.vr_files_page_start = self.vr_files_page_start.saturating_sub(self.vr_files_page_size);
+                    self.vr_files_selected = 0;
+                    self.vr_fetch_files().await;
+                }
+            }
+            KeyCode::Home => {
+                if self.vr_files_page_start > 0 {
+                    self.vr_files_page_start = 0;
+                    self.vr_files_selected = 0;
+                    self.vr_fetch_files().await;
+                }
+            }
+            KeyCode::Char('r') => {
+                self.vr_fetch_files().await;
+            }
+            KeyCode::Char('/') | KeyCode::Char('E') => {
+                self.vr_files_filter_edit = self.vr_files_filter.clone();
+                self.expression_cursor = self.vr_files_filter_edit.len();
+                self.input_mode = InputMode::Expression;
+            }
+            KeyCode::Char('s') => {
+                let num_cols = self.vr_files_columns.len();
+                self.vr_files_sort_column = (self.vr_files_sort_column + 1) % num_cols;
+                self.vr_files_page_start = 0;
+                self.vr_files_selected = 0;
+                self.vr_fetch_files().await;
+            }
+            KeyCode::Char('S') => {
+                self.vr_files_sort_desc = !self.vr_files_sort_desc;
+                self.vr_files_page_start = 0;
+                self.vr_files_selected = 0;
+                self.vr_fetch_files().await;
+            }
+            KeyCode::Char('c') => {
+                self.vr_files_fetch_shareables().await;
+                self.vr_files_layout_popup_mode = LayoutPopupMode::List;
+                self.vr_files_layout_popup_selected = 0;
+                self.vr_files_layout_filter.clear();
+                self.vr_files_show_layout_popup = true;
+            }
+            KeyCode::Char('h') | KeyCode::Char('?') => {
+                self.show_help = true;
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) async fn handle_files_column_editor_key(&mut self, key: KeyEvent) {
+        let mut state = ColumnEditorState {
+            filter: &mut self.vr_files_column_editor_filter,
+            selected: &mut self.vr_files_column_editor_selected,
+            mode: &mut self.vr_files_column_editor_mode,
+            show: &mut self.vr_files_show_column_editor,
+        };
+        let action = handle_column_editor_key_generic(
+            key, &mut state, &mut self.vr_files_column_editor_items, &mut self.show_help,
+        );
+        match action.as_deref() {
+            Some("apply") => {
+                self.vr_files_apply_column_editor();
+                self.vr_files_show_column_editor = false;
+                self.vr_files_page_start = 0;
+                self.vr_files_selected = 0;
+                self.vr_fetch_files().await;
+            }
+            Some("default") => {
+                self.vr_files_reset_default_columns();
+                self.vr_files_show_column_editor = false;
+                self.vr_files_page_start = 0;
+                self.vr_files_selected = 0;
+                self.vr_fetch_files().await;
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) async fn handle_files_layout_popup_key(&mut self, key: KeyEvent) {
+        let items: Vec<LayoutItem> = self.vr_files_saved_shareables.iter()
+            .map(|s| LayoutItem { name: s.name.clone(), shared: s.shared })
+            .collect();
+        let mut delete_name_for_id = String::new();
+        let mut state = LayoutPopupState {
+            mode: &mut self.vr_files_layout_popup_mode,
+            selected: &mut self.vr_files_layout_popup_selected,
+            filter: &mut self.vr_files_layout_filter,
+            save_name: &mut self.vr_files_layout_save_name,
+            save_cursor: &mut self.vr_files_layout_save_cursor,
+            show: &mut self.vr_files_show_layout_popup,
+            delete_name: &mut delete_name_for_id,
+        };
+        let action = handle_layout_popup_key_generic(key, &mut state, &items, &mut self.show_help);
+
+        if let Some(cmd) = action {
+            if cmd == "edit" {
+                self.vr_files_build_column_editor();
+                self.vr_files_show_layout_popup = false;
+                self.vr_files_show_column_editor = true;
+            } else if cmd == "default" {
+                self.vr_files_reset_default_columns();
+                self.vr_files_page_start = 0;
+                self.vr_files_selected = 0;
+                self.vr_fetch_files().await;
+            } else if cmd.starts_with("confirm_delete:") {
+                if let Some(s) = self.vr_files_saved_shareables.iter().find(|s| s.name == delete_name_for_id) {
+                    let id = s.id.clone();
+                    self.vr_files_delete_shareable(&id).await;
+                    let max = self.vr_files_saved_shareables.len() + 3;
+                    if self.vr_files_layout_popup_selected >= max {
+                        self.vr_files_layout_popup_selected = max.saturating_sub(1);
+                    }
+                }
+            } else if let Some(name) = cmd.strip_prefix("save:") {
+                self.vr_files_save_shareable(name).await;
+            } else if let Some(idx_str) = cmd.strip_prefix("select:") {
+                if let Ok(idx) = idx_str.parse::<usize>() {
+                    if let Some(shareable) = self.vr_files_saved_shareables.get(idx).cloned() {
+                        self.vr_files_apply_shareable(&shareable);
+                        self.vr_files_page_start = 0;
+                        self.vr_files_selected = 0;
+                        self.vr_fetch_files().await;
+                    }
+                }
+            }
+        }
+        self.vr_files_layout_delete_name = delete_name_for_id;
+    }
+
+    pub(crate) fn handle_files_detail_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.vr_files_view = StatsView::List;
+                self.vr_files_detail = None;
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if let Some(ref mut detail) = self.vr_files_detail {
+                    detail.scroll = detail.scroll.saturating_add(self.visible_rows as u16);
+                }
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if let Some(ref mut detail) = self.vr_files_detail {
+                    detail.scroll = detail.scroll.saturating_sub(self.visible_rows as u16);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(ref mut detail) = self.vr_files_detail {
+                    detail.scroll = detail.scroll.saturating_add(1);
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(ref mut detail) = self.vr_files_detail {
+                    detail.scroll = detail.scroll.saturating_sub(1);
+                }
+            }
+            KeyCode::PageDown => {
+                if let Some(ref mut detail) = self.vr_files_detail {
+                    detail.scroll = detail.scroll.saturating_add(self.visible_rows as u16);
+                }
+            }
+            KeyCode::PageUp => {
+                if let Some(ref mut detail) = self.vr_files_detail {
+                    detail.scroll = detail.scroll.saturating_sub(self.visible_rows as u16);
+                }
+            }
+            KeyCode::Left | KeyCode::Home => {
+                if let Some(ref mut detail) = self.vr_files_detail {
+                    detail.scroll = 0;
+                }
+            }
+            KeyCode::Right | KeyCode::End => {
+                if let Some(ref mut detail) = self.vr_files_detail {
+                    detail.scroll = u16::MAX;
+                }
+            }
+            KeyCode::Char('/') => {
+                self.input_mode = InputMode::DetailFilter;
+            }
+            KeyCode::Char('h') | KeyCode::Char('?') => {
+                self.show_help = true;
             }
             _ => {}
         }

@@ -445,6 +445,26 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(vec![key("x"), Span::raw("Exclude/include IP")]));
         }
         ("Stats", lines)
+    } else if app.active_tab == Tab::Files {
+        ("Files", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            Line::from(vec![key("← / →"), Span::raw("Previous / next page")]),
+            Line::from(vec![key("Home"), Span::raw("First page")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("/ / E"), Span::raw("Filter by name")]),
+            Line::from(vec![key("s"), Span::raw("Next sort column")]),
+            Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
+            Line::from(vec![key("c"), Span::raw("Columns & layouts")]),
+            Line::from(vec![key("r"), Span::raw("Refresh")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+        ])
     } else if app.active_tab == Tab::Arkime {
         ("Arkime Summary", vec![
             hdr!("Navigation"),
@@ -1458,4 +1478,35 @@ pub(super) fn draw_loading(f: &mut Frame, app: &mut App, area: Rect) {
             text_area,
         );
     }
+}
+
+pub(super) fn draw_files_column_editor(f: &mut Frame, app: &mut App, area: Rect) {
+    let items: Vec<(&str, &str, bool)> = app.vr_files_column_editor_items.iter()
+        .map(|i| (i.label.as_str(), i.field.as_str(), i.enabled))
+        .collect();
+    draw_column_editor_core(f, area, &ColumnEditorRenderData {
+        title: " Files Columns".into(),
+        filter: &app.vr_files_column_editor_filter,
+        items: &items,
+        selected: app.vr_files_column_editor_selected,
+        mode: app.vr_files_column_editor_mode,
+        popup_width: 50,
+    });
+}
+
+pub(super) fn draw_files_layout_popup(f: &mut Frame, app: &mut App, area: Rect) {
+    let items: Vec<LayoutRenderItem> = app.vr_files_saved_shareables.iter()
+        .map(|s| LayoutRenderItem { name: &s.name, col_count: s.columns.len(), shared: s.shared })
+        .collect();
+    draw_layout_popup_core(f, area, &LayoutRenderData {
+        popup_title: " Files Layouts ".into(),
+        save_title: " Save Files Layout ".into(),
+        delete_name: &app.vr_files_layout_delete_name,
+        mode: app.vr_files_layout_popup_mode,
+        selected: app.vr_files_layout_popup_selected,
+        filter: &app.vr_files_layout_filter,
+        save_name: &app.vr_files_layout_save_name,
+        save_cursor: app.vr_files_layout_save_cursor,
+        items,
+    });
 }

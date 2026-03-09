@@ -111,7 +111,10 @@ pub enum StatsFormat {
     MegaBytes,
     Percent,
     EpochSecs,
+    EpochMs,
     SizeString,
+    Boolean,
+    PercentSuffix,
 }
 
 #[derive(Clone)]
@@ -279,6 +282,35 @@ pub fn esindices_default_fields() -> Vec<&'static str> {
     ]
 }
 
+pub fn files_all_columns() -> Vec<StatsColumnDef> {
+    use StatsFormat::*;
+    vec![
+        StatsColumnDef::new("num", "num", "File #", 8, Number),
+        StatsColumnDef::new("node", "node", "Node", 14, String),
+        StatsColumnDef::new("name", "name", "Name", 50, String),
+        StatsColumnDef::new("locked", "locked", "Locked", 8, Boolean),
+        StatsColumnDef::new("first", "first", "First Date", 20, EpochSecs),
+        StatsColumnDef::new("filesize", "filesize", "File Size", 12, Number),
+        // non-default
+        StatsColumnDef::new("lastTimestamp", "lastTimestamp", "Last Date", 20, EpochMs),
+        StatsColumnDef::new("encoding", "encoding", "Encoding", 14, String),
+        StatsColumnDef::new("packetPosEncoding", "packetPosEncoding", "Pkt Pos Enc", 14, String),
+        StatsColumnDef::new("packets", "packets", "Packets", 12, Number),
+        StatsColumnDef::new("packetsSize", "packetsSize", "Packets Size", 14, Number),
+        StatsColumnDef::new("uncompressedBits", "uncompressedBits", "UC Bits", 10, Number),
+        StatsColumnDef::new("cratio", "cratio", "C Ratio", 10, PercentSuffix),
+        StatsColumnDef::new("compression", "compression", "Compression", 14, String),
+        StatsColumnDef::new("startTimestamp", "startTimestamp", "Start Date", 20, EpochMs),
+        StatsColumnDef::new("finishTimestamp", "finishTimestamp", "Finish Date", 20, EpochMs),
+        StatsColumnDef::new("sessionsStarted", "sessionsStarted", "Sess Started", 14, Number),
+        StatsColumnDef::new("sessionsPresent", "sessionsPresent", "Sess Present", 14, Number),
+    ]
+}
+
+pub fn files_default_fields() -> Vec<&'static str> {
+    vec!["num", "node", "name", "locked", "first", "filesize"]
+}
+
 /// Build active columns from a list of field names and the all-columns definition
 pub fn stats_columns_from_fields(field_names: &[&str], all_columns: &[StatsColumnDef]) -> Vec<StatsColumnDef> {
     let mut result = Vec::new();
@@ -341,7 +373,7 @@ pub enum AppMode {
 impl AppMode {
     pub fn tabs(&self) -> &'static [Tab] {
         match self {
-            AppMode::Viewer => &[Tab::Arkime, Tab::Sessions, Tab::Stats, Tab::Settings],
+            AppMode::Viewer => &[Tab::Arkime, Tab::Sessions, Tab::Stats, Tab::Files, Tab::Settings],
             AppMode::Cont3xt => &[Tab::Search, Tab::C3Stats, Tab::History, Tab::Settings],
             AppMode::Wise => &[Tab::WsStats, Tab::WsQuery, Tab::Settings],
             AppMode::Parliament => &[Tab::Dashboard, Tab::Issues, Tab::Settings],
@@ -372,6 +404,7 @@ pub enum Tab {
     Arkime,
     Sessions,
     Stats,
+    Files,
     Search,
     C3Stats,
     History,
@@ -388,6 +421,7 @@ impl Tab {
             Tab::Arkime => "Arkime",
             Tab::Sessions => "Sessions",
             Tab::Stats => "Stats",
+            Tab::Files => "Files",
             Tab::Search => "Search",
             Tab::C3Stats => "Stats",
             Tab::History => "History",

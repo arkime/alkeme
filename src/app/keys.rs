@@ -127,6 +127,14 @@ impl App {
             self.handle_stats_layout_popup_key(key).await;
             return;
         }
+        if self.vr_files_show_column_editor {
+            self.handle_files_column_editor_key(key).await;
+            return;
+        }
+        if self.vr_files_show_layout_popup {
+            self.handle_files_layout_popup_key(key).await;
+            return;
+        }
         if self.vr_show_view_popup {
             self.handle_view_popup_key(key).await;
             return;
@@ -154,6 +162,12 @@ impl App {
                             StatsView::Detail => self.handle_stats_detail_key(key),
                         }
                     }
+                    Tab::Files => {
+                        match self.vr_files_view {
+                            StatsView::List => self.handle_files_key(key).await,
+                            StatsView::Detail => self.handle_files_detail_key(key),
+                        }
+                    }
                     Tab::Arkime => self.handle_arkime_key(key).await,
                     _ => {
                         match self.vr_session_view {
@@ -177,6 +191,7 @@ impl App {
 
     async fn handle_expression_key(&mut self, key: KeyEvent) {
         let is_stats = self.active_tab == Tab::Stats;
+        let is_files = self.active_tab == Tab::Files;
         let is_pl_issues = self.app_mode == crate::app::AppMode::Parliament && self.active_tab == Tab::Issues;
         let is_ws_stats = self.app_mode == crate::app::AppMode::Wise && self.active_tab == Tab::WsStats;
         let is_ws_query = self.app_mode == crate::app::AppMode::Wise && self.active_tab == Tab::WsQuery;
@@ -188,6 +203,8 @@ impl App {
             &mut self.ws_query_value_edit
         } else if is_stats {
             &mut self.vr_stats_filter_edit
+        } else if is_files {
+            &mut self.vr_files_filter_edit
         } else {
             &mut self.expression_edit
         };
@@ -210,6 +227,12 @@ impl App {
                     self.vr_stats_filter = self.vr_stats_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
                     self.vr_fetch_stats().await;
+                } else if is_files {
+                    self.vr_files_filter = self.vr_files_filter_edit.clone();
+                    self.input_mode = InputMode::Normal;
+                    self.vr_files_page_start = 0;
+                    self.vr_files_selected = 0;
+                    self.vr_fetch_files().await;
                 } else {
                     self.expression = self.expression_edit.clone();
                     self.input_mode = InputMode::Normal;
@@ -237,6 +260,8 @@ impl App {
                     self.ws_query_value_edit = self.ws_query_value.clone();
                 } else if is_stats {
                     self.vr_stats_filter_edit = self.vr_stats_filter.clone();
+                } else if is_files {
+                    self.vr_files_filter_edit = self.vr_files_filter.clone();
                 } else {
                     self.expression_edit = self.expression.clone();
                 }

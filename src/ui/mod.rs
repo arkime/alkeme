@@ -5,6 +5,7 @@ mod popups;
 mod cont3xt;
 mod parliament;
 mod wise;
+mod files;
 
 // Re-export app types for sub-modules via `use super::*`
 #[allow(unused_imports)]
@@ -175,6 +176,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 fn draw_viewer(f: &mut Frame, app: &mut App) {
     match app.active_tab {
         Tab::Stats => draw_stats_layout(f, app),
+        Tab::Files => draw_files_layout(f, app),
         _ => draw_default_layout(f, app),
     }
 
@@ -204,6 +206,12 @@ fn draw_viewer(f: &mut Frame, app: &mut App) {
     }
     if app.vr_stats_show_layout_popup {
         popups::draw_stats_layout_popup(f, app, f.area());
+    }
+    if app.vr_files_show_column_editor {
+        popups::draw_files_column_editor(f, app, f.area());
+    }
+    if app.vr_files_show_layout_popup {
+        popups::draw_files_layout_popup(f, app, f.area());
     }
     if app.vr_show_view_popup {
         popups::draw_view_popup(f, app, f.area());
@@ -274,6 +282,24 @@ fn draw_stats_layout(f: &mut Frame, app: &mut App) {
     draw_tabs(f, app, chunks[0]);
     stats::draw_stats_toolbar(f, app, chunks[1]);
     stats::draw_stats(f, app, chunks[2]);
+    draw_status_bar(f, app, chunks[3]);
+}
+
+fn draw_files_layout(f: &mut Frame, app: &mut App) {
+    let status_h = status_bar_height(app);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // tabs
+            Constraint::Length(3), // filter + pagination bar
+            Constraint::Min(0),   // content
+            Constraint::Length(status_h), // status bar
+        ])
+        .split(f.area());
+
+    draw_tabs(f, app, chunks[0]);
+    files::draw_files_toolbar(f, app, chunks[1]);
+    files::draw_files(f, app, chunks[2]);
     draw_status_bar(f, app, chunks[3]);
 }
 

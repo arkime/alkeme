@@ -156,6 +156,36 @@ pub struct App {
     pub vr_stats_layout_delete_name: String,
     pub vr_stats_layout_filter: String,
     pub visible_rows: usize,
+    // Files tab state
+    pub vr_files_data: Vec<Value>,
+    pub vr_files_total: u64,
+    pub vr_files_filtered: u64,
+    pub vr_files_filter: String,
+    pub vr_files_filter_edit: String,
+    pub vr_files_selected: usize,
+    pub vr_files_table_state: TableState,
+    pub vr_files_sort_column: usize,
+    pub vr_files_sort_desc: bool,
+    pub vr_files_page_start: usize,
+    pub vr_files_page_size: usize,
+    pub vr_files_columns: Vec<StatsColumnDef>,
+    // Files column editor
+    pub vr_files_show_column_editor: bool,
+    pub vr_files_column_editor_selected: usize,
+    pub vr_files_column_editor_mode: ColumnEditorMode,
+    pub vr_files_column_editor_items: Vec<StatsColumnEditorItem>,
+    pub vr_files_column_editor_filter: String,
+    // Files layout popup (shareables)
+    pub vr_files_show_layout_popup: bool,
+    pub vr_files_layout_popup_mode: LayoutPopupMode,
+    pub vr_files_layout_popup_selected: usize,
+    pub vr_files_saved_shareables: Vec<SavedShareable>,
+    pub vr_files_layout_save_name: String,
+    pub vr_files_layout_save_cursor: usize,
+    pub vr_files_layout_delete_name: String,
+    pub vr_files_layout_filter: String,
+    pub vr_files_view: StatsView,
+    pub vr_files_detail: Option<StatsDetail>,
     // Arkime (Summary) tab state
     pub vr_all_fields: Vec<ArkimeField>,
     pub vr_summary_field: String,
@@ -435,6 +465,34 @@ impl App {
             vr_stats_layout_delete_name: String::new(),
             vr_stats_layout_filter: String::new(),
             visible_rows: 20,
+            // Files tab
+            vr_files_data: Vec::new(),
+            vr_files_total: 0,
+            vr_files_filtered: 0,
+            vr_files_filter: String::new(),
+            vr_files_filter_edit: String::new(),
+            vr_files_selected: 0,
+            vr_files_table_state: TableState::default(),
+            vr_files_sort_column: 0,
+            vr_files_sort_desc: false,
+            vr_files_page_start: 0,
+            vr_files_page_size: 100,
+            vr_files_columns: stats_columns_from_fields(&files_default_fields(), &files_all_columns()),
+            vr_files_show_column_editor: false,
+            vr_files_column_editor_selected: 0,
+            vr_files_column_editor_mode: ColumnEditorMode::Browse,
+            vr_files_column_editor_items: Vec::new(),
+            vr_files_column_editor_filter: String::new(),
+            vr_files_show_layout_popup: false,
+            vr_files_layout_popup_mode: LayoutPopupMode::List,
+            vr_files_layout_popup_selected: 0,
+            vr_files_saved_shareables: Vec::new(),
+            vr_files_layout_save_name: String::new(),
+            vr_files_layout_save_cursor: 0,
+            vr_files_layout_delete_name: String::new(),
+            vr_files_layout_filter: String::new(),
+            vr_files_view: StatsView::List,
+            vr_files_detail: None,
             // Arkime (Summary) tab state
             vr_all_fields: Vec::new(),
             vr_summary_field: String::new(),
@@ -977,6 +1035,141 @@ impl App {
             Err(e) => {
                 self.status_msg = format!("Error deleting layout: {e}");
             }
+        }
+    }
+
+    // --- Files tab methods ---
+
+    pub fn vr_files_sort_field(&self) -> &str {
+        self.vr_files_columns.get(self.vr_files_sort_column)
+            .map(|c| c.sort.as_str())
+            .unwrap_or("num")
+    }
+
+    pub fn vr_files_build_column_editor(&mut self) {
+        let all = files_all_columns();
+        let enabled: std::collections::HashSet<String> = self.vr_files_columns.iter().map(|c| c.field.clone()).collect();
+        let mut items: Vec<StatsColumnEditorItem> = Vec::new();
+        for col in &self.vr_files_columns {
+            items.push(StatsColumnEditorItem { field: col.field.clone(), label: col.label.clone(), enabled: true });
+        }
+        let mut remaining: Vec<&StatsColumnDef> = all.iter().filter(|c| !enabled.contains(&c.field)).collect();
+        remaining.sort_by(|a, b| a.field.cmp(&b.field));
+        for col in remaining {
+            items.push(StatsColumnEditorItem { field: col.field.clone(), label: col.label.clone(), enabled: false });
+        }
+        self.vr_files_column_editor_items = items;
+        self.vr_files_column_editor_selected = 0;
+        self.vr_files_column_editor_mode = ColumnEditorMode::Browse;
+        self.vr_files_column_editor_filter.clear();
+    }
+
+    pub fn vr_files_apply_column_editor(&mut self) {
+        let all = files_all_columns();
+        let mut new_cols = Vec::new();
+        for item in &self.vr_files_column_editor_items {
+            if !item.enabled { continue; }
+            if let Some(def) = all.iter().find(|c| c.field == item.field) {
+                new_cols.push(def.clone());
+            }
+        }
+        if !new_cols.is_empty() {
+            self.vr_files_columns = new_cols;
+            self.vr_files_sort_column = 0;
+        }
+    }
+
+    pub fn vr_files_reset_default_columns(&mut self) {
+        let defaults = files_default_fields();
+        let all = files_all_columns();
+        self.vr_files_columns = stats_columns_from_fields(&defaults, &all);
+        self.vr_files_sort_column = 0;
+    }
+
+    pub fn vr_files_apply_shareable(&mut self, shareable: &SavedShareable) {
+        let all = files_all_columns();
+        let field_refs: Vec<&str> = shareable.columns.iter().map(|s| s.as_str()).collect();
+        let new_cols = stats_columns_from_fields(&field_refs, &all);
+        if !new_cols.is_empty() {
+            self.vr_files_columns = new_cols;
+            if !shareable.sort_field.is_empty() {
+                if let Some(pos) = self.vr_files_columns.iter().position(|c| c.sort == shareable.sort_field || c.field == shareable.sort_field) {
+                    self.vr_files_sort_column = pos;
+                    self.vr_files_sort_desc = shareable.sort_dir == "desc";
+                }
+            }
+        }
+    }
+
+    pub async fn vr_files_fetch_shareables(&mut self) {
+        match self.client.get_shareables("files-columns").await {
+            Ok(items) => { self.vr_files_saved_shareables = items; }
+            Err(e) => { self.status_msg = format!("Error fetching layouts: {e}"); }
+        }
+    }
+
+    pub async fn vr_files_save_shareable(&mut self, name: &str) {
+        let columns: Vec<String> = self.vr_files_columns.iter().map(|c| c.field.clone()).collect();
+        let sort_field = self.vr_files_sort_field().to_string();
+        let sort_dir = if self.vr_files_sort_desc { "desc" } else { "asc" }.to_string();
+        let existing_id = self.vr_files_saved_shareables.iter()
+            .find(|s| s.name == name && !s.shared)
+            .map(|s| s.id.clone());
+        let result = if let Some(id) = existing_id {
+            self.client.update_shareable(&id, name, "files-columns", &columns, &sort_field, &sort_dir).await
+        } else {
+            self.client.create_shareable(name, "files-columns", &columns, &sort_field, &sort_dir).await
+        };
+        match result {
+            Ok(_) => {
+                self.status_msg = format!("Saved layout '{name}'");
+                self.vr_files_fetch_shareables().await;
+            }
+            Err(e) => { self.status_msg = format!("Error saving layout: {e}"); }
+        }
+    }
+
+    pub async fn vr_files_delete_shareable(&mut self, id: &str) {
+        match self.client.delete_shareable(id).await {
+            Ok(_) => {
+                self.status_msg = "Layout deleted".into();
+                self.vr_files_fetch_shareables().await;
+            }
+            Err(e) => { self.status_msg = format!("Error deleting layout: {e}"); }
+        }
+    }
+
+    pub async fn vr_fetch_files(&mut self) {
+        self.status_msg = "Fetching files...".into();
+        let sort_field = self.vr_files_sort_field().to_string();
+        match self.client.vr_get_files(&self.vr_files_filter, &sort_field, self.vr_files_sort_desc, self.vr_files_page_start, self.vr_files_page_size).await {
+            Ok(value) => {
+                self.vr_files_data = value.get("data")
+                    .and_then(|d| d.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                self.vr_files_total = value.get("recordsTotal")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                self.vr_files_filtered = value.get("recordsFiltered")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                if self.vr_files_selected >= self.vr_files_data.len() {
+                    self.vr_files_selected = 0;
+                }
+                self.vr_files_table_state.select(if self.vr_files_data.is_empty() { None } else { Some(self.vr_files_selected) });
+                self.status_msg = String::new();
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching files: {e}");
+            }
+        }
+    }
+
+    pub fn vr_open_files_detail(&mut self) {
+        if let Some(item) = self.vr_files_data.get(self.vr_files_selected) {
+            self.vr_files_detail = Some(StatsDetail { data: item.clone(), scroll: 0, filter: String::new() });
+            self.vr_files_view = StatsView::Detail;
         }
     }
 
