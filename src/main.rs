@@ -79,6 +79,10 @@ struct Cli {
     /// Default search expression for Viewer only (overrides --search for Viewer)
     #[arg(long)]
     viewer_search: Option<String>,
+
+    /// Default time range for Viewer (15m, 30m, 1h, 6h, 24h, 1w, 2w, 1M, All, -1, or {num}h/w/m e.g. 72h, 2w, 3m)
+    #[arg(long, allow_hyphen_values = true)]
+    viewer_time_range: Option<String>,
 }
 
 /// Resolve a value that may be a `|command` pipe. If prefixed with `|`, runs the
@@ -314,6 +318,21 @@ async fn main() -> Result<()> {
             }
         }
         _ => {}
+    }
+
+    if let Some(ref tr_arg) = cli.viewer_time_range {
+        match app::TimeRange::parse(tr_arg) {
+            Ok(tr) => {
+                let idx = app::TimeRange::insert_sorted(&mut app.time_ranges, tr);
+                app.time_range = app.time_ranges[idx].clone();
+            }
+            Err(e) => {
+                disable_raw_mode()?;
+                execute!(io::stdout(), LeaveAlternateScreen)?;
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 
     if let Some(tags) = cli.cont3xt_tags {

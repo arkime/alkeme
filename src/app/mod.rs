@@ -49,6 +49,7 @@ pub struct App {
     pub user: Value,
     pub active_tab: Tab,
     pub time_range: TimeRange,
+    pub time_ranges: Vec<TimeRange>,
     pub expression: String,
     pub expression_edit: String,
     pub expression_cursor: usize,
@@ -314,6 +315,7 @@ impl App {
             user: Value::Null,
             active_tab,
             time_range: TimeRange::Hours1,
+            time_ranges: TimeRange::defaults(),
             expression: String::new(),
             expression_edit: String::new(),
             expression_cursor: 0,
@@ -1694,6 +1696,17 @@ impl App {
         self.expression_edit = self.expression.clone();
         self.expression_cursor = self.expression_edit.len();
         self.input_mode = InputMode::Expression;
+    }
+
+    pub fn time_range_next(&mut self) {
+        let idx = self.time_ranges.iter().position(|t| t == &self.time_range).unwrap_or(0);
+        self.time_range = self.time_ranges[(idx + 1) % self.time_ranges.len()].clone();
+    }
+
+    pub fn time_range_prev(&mut self) {
+        let idx = self.time_ranges.iter().position(|t| t == &self.time_range).unwrap_or(0);
+        let len = self.time_ranges.len();
+        self.time_range = self.time_ranges[(idx + len - 1) % len].clone();
     }
 
     /// Get the currently selected overview from the filtered+sorted list

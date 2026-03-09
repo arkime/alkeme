@@ -446,12 +446,12 @@ impl App {
                 self.enter_expression_mode();
             }
             KeyCode::Char('t') => {
-                self.time_range = self.time_range.next();
+                self.time_range_next();
                 self.vr_page_start = 0;
                 self.vr_fetch_sessions().await;
             }
             KeyCode::Char('T') => {
-                self.time_range = self.time_range.prev();
+                self.time_range_prev();
                 self.vr_page_start = 0;
                 self.vr_fetch_sessions().await;
             }
@@ -1853,11 +1853,11 @@ impl App {
                 self.vr_request_summary_fetch();
             }
             KeyCode::Char('t') => {
-                self.time_range = self.time_range.next();
+                self.time_range_next();
                 self.vr_request_summary_fetch();
             }
             KeyCode::Char('T') => {
-                self.time_range = self.time_range.prev();
+                self.time_range_prev();
                 self.vr_request_summary_fetch();
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {

@@ -478,7 +478,7 @@ impl LineMode {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum TimeRange {
     Minutes15,
     Minutes30,
@@ -489,16 +489,19 @@ pub enum TimeRange {
     Weeks2,
     Month1,
     All,
+    Custom { label: String, date_value: String },
 }
 
 impl TimeRange {
-    pub const ALL: [TimeRange; 9] = [
-        TimeRange::Minutes15, TimeRange::Minutes30, TimeRange::Hours1,
-        TimeRange::Hours6, TimeRange::Hours24, TimeRange::Week1,
-        TimeRange::Weeks2, TimeRange::Month1, TimeRange::All,
-    ];
+    pub fn defaults() -> Vec<TimeRange> {
+        vec![
+            TimeRange::Minutes15, TimeRange::Minutes30, TimeRange::Hours1,
+            TimeRange::Hours6, TimeRange::Hours24, TimeRange::Week1,
+            TimeRange::Weeks2, TimeRange::Month1, TimeRange::All,
+        ]
+    }
 
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> &str {
         match self {
             TimeRange::Minutes15 => "15m",
             TimeRange::Minutes30 => "30m",
@@ -509,10 +512,11 @@ impl TimeRange {
             TimeRange::Weeks2 => "2w",
             TimeRange::Month1 => "1M",
             TimeRange::All => "All",
+            TimeRange::Custom { label, .. } => label,
         }
     }
 
-    pub fn date_value(&self) -> &'static str {
+    pub fn date_value(&self) -> &str {
         match self {
             TimeRange::Minutes15 => "0.25",
             TimeRange::Minutes30 => "0.50",
@@ -523,17 +527,63 @@ impl TimeRange {
             TimeRange::Weeks2 => "336",
             TimeRange::Month1 => "720",
             TimeRange::All => "-1",
+            TimeRange::Custom { date_value, .. } => date_value,
         }
     }
 
-    pub fn next(&self) -> TimeRange {
-        let idx = TimeRange::ALL.iter().position(|&t| t == *self).unwrap_or(0);
-        TimeRange::ALL[(idx + 1) % TimeRange::ALL.len()]
+    /// Hours as f64 for sorting (All = infinity)
+    fn sort_hours(&self) -> f64 {
+        match self {
+            TimeRange::All => f64::INFINITY,
+            other => other.date_value().parse().unwrap_or(0.0),
+        }
     }
 
-    pub fn prev(&self) -> TimeRange {
-        let idx = TimeRange::ALL.iter().position(|&t| t == *self).unwrap_or(0);
-        TimeRange::ALL[(idx + TimeRange::ALL.len() - 1) % TimeRange::ALL.len()]
+    /// Parse a CLI time range string. Returns the matching built-in or a Custom entry.
+    /// Supports: built-in labels (15m, 30m, 1h, etc.), -1 (All), {float}h (custom hours).
+    pub fn parse(s: &str) -> Result<TimeRange, String> {
+        if s == "-1" {
+            return Ok(TimeRange::All);
+        }
+        // Check built-in labels (case-insensitive)
+        for t in Self::defaults() {
+            if t.label().eq_ignore_ascii_case(s) {
+                return Ok(t);
+            }
+        }
+        // Try {float}h, {float}w, {float}m format
+        let last = s.as_bytes().last().copied().unwrap_or(0);
+        let (num_str, suffix, multiplier) = match last {
+            b'h' | b'H' => (&s[..s.len()-1], "h", 1.0),
+            b'w' | b'W' => (&s[..s.len()-1], "w", 168.0),
+            b'm' | b'M' => (&s[..s.len()-1], "m", 730.5),
+            _ => ("", "", 0.0),
+        };
+        if !num_str.is_empty() {
+            if let Ok(val) = num_str.parse::<f64>() {
+                if val > 0.0 {
+                    let hours = val * multiplier;
+                    return Ok(TimeRange::Custom {
+                        label: format!("{val}{suffix}"),
+                        date_value: hours.to_string(),
+                    });
+                }
+            }
+        }
+        Err(format!("invalid time range '{s}': use a label (15m, 1h, 24h, 1w, All), -1, or {{num}}h/w/m (e.g. 72h, 2w, 3m)"))
+    }
+
+    /// Insert a time range into a sorted list. If it matches an existing entry, does nothing.
+    /// Returns the index of the (possibly newly inserted) entry.
+    pub fn insert_sorted(list: &mut Vec<TimeRange>, entry: TimeRange) -> usize {
+        // Check if already present
+        if let Some(idx) = list.iter().position(|t| t == &entry) {
+            return idx;
+        }
+        let hours = entry.sort_hours();
+        let pos = list.iter().position(|t| t.sort_hours() > hours).unwrap_or(list.len());
+        list.insert(pos, entry);
+        pos
     }
 }
 

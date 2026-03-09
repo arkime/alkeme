@@ -301,7 +301,7 @@ fn draw_toolbar(f: &mut Frame, app: &App, area: Rect) {
         .split(area);
 
     // Time range: show ◄ prev | SELECTED | next ►
-    let selected_idx = TimeRange::ALL.iter().position(|&t| t == app.time_range).unwrap_or(0);
+    let selected_idx = app.time_ranges.iter().position(|t| t == &app.time_range).unwrap_or(0);
     let mut spans: Vec<Span> = Vec::new();
     if selected_idx > 0 {
         spans.push(Span::styled("◄ ", Style::default().fg(Color::DarkGray)));
@@ -312,7 +312,7 @@ fn draw_toolbar(f: &mut Frame, app: &App, area: Rect) {
         format!(" {} ", app.time_range.label()),
         Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
     ));
-    if selected_idx < TimeRange::ALL.len() - 1 {
+    if selected_idx < app.time_ranges.len() - 1 {
         spans.push(Span::styled(" ►", Style::default().fg(Color::DarkGray)));
     }
     let time_widget = Paragraph::new(Line::from(spans))

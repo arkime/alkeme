@@ -198,6 +198,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --cont3xt-re
 | `--search <EXPR>` | Default search expression (viewer and cont3xt); auto-submits in cont3xt |
 | `--user <USER:PASS>` | Credentials in `user:pass` format (prompts if omitted with `--auth`); `user` without colon prompts for password only |
 | `--viewer-search <EXPR>` | Search expression for Viewer only |
+| `--viewer-time-range <RANGE>` | Default time range for Viewer (`15m`, `30m`, `1h`, `6h`, `24h`, `1w`, `2w`, `1M`, `All`, `-1`, or `{num}h/w/m` e.g. `72h`, `2w`, `3m`). Custom values are added to the time range menu for the session |
 
 ## Keybindings
 
