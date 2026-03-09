@@ -1,6 +1,6 @@
 # Alkeme
 
-A terminal user interface (TUI) for the [Arkime](https://arkime.com) ecosystem, built with Rust and [ratatui](https://github.com/ratatui/ratatui).
+A terminal user interface (TUI) for the [Arkime](https://arkime.com) <a href="assets/alkeme.mp3" type="audio/mpeg">🔊</a> ecosystem, built with Rust and [ratatui](https://github.com/ratatui/ratatui).
 
 Alkeme auto-detects the Arkime application (Viewer, Cont3xt, WISE, Parliament) and provides a tailored interface for each. Currently supports Viewer (full packet capture session browsing), Cont3xt (integration search with card-based results), Parliament (cluster monitoring dashboard with health stats and issue tracking), and WISE (source/type statistics and lookups).
 
