@@ -272,7 +272,7 @@ impl App {
                                 let integrations = self.c3_enabled_integration_names();
                                 let status = tokio::task::block_in_place(|| {
                                     tokio::runtime::Handle::current().block_on(
-                                        self.client.c3_create_view(&name, &integrations)
+                                        self.client.c3_create_view(&name, &integrations, &[], &[])
                                     )
                                 });
                                 match status {
@@ -629,6 +629,297 @@ impl App {
             return;
         }
 
+        // Settings confirm dialog
+        if let Some((action, _msg)) = &self.c3_settings_confirm {
+            let action = action.clone();
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    // action is "delete_view:{id}"
+                    if let Some(id) = action.strip_prefix("delete_view:") {
+                        let id = id.to_string();
+                        let status = tokio::task::block_in_place(|| {
+                            tokio::runtime::Handle::current().block_on(
+                                self.client.c3_delete_view(&id)
+                            )
+                        });
+                        match status {
+                            Ok(_) => {
+                                self.status_msg = "View deleted".to_string();
+                                tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(async {
+                                        self.c3_fetch_settings_views().await;
+                                        self.c3_fetch_views().await;
+                                    })
+                                });
+                            }
+                            Err(e) => self.status_msg = format!("Error deleting view: {e}"),
+                        }
+                    }
+                    self.c3_settings_confirm = None;
+                }
+                _ => {
+                    self.c3_settings_confirm = None;
+                }
+            }
+            return;
+        }
+
+        // Role selection sub-popup within view editor
+        if self.c3_role_popup_open {
+            if self.c3_role_popup_filtering {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.c3_role_popup_filtering = false;
+                    }
+                    KeyCode::Enter => {
+                        self.c3_role_popup_filtering = false;
+                    }
+                    KeyCode::Backspace => {
+                        self.c3_role_popup_filter.pop();
+                        self.c3_role_popup_selected = 0;
+                    }
+                    KeyCode::Char(c) => {
+                        self.c3_role_popup_filter.push(c);
+                        self.c3_role_popup_selected = 0;
+                    }
+                    _ => {}
+                }
+                return;
+            }
+            let filtered = self.c3_role_popup_filtered_roles();
+            match key.code {
+                KeyCode::Esc => {
+                    self.c3_role_popup_open = false;
+                    self.c3_role_popup_filter.clear();
+                }
+                KeyCode::Char('/') => {
+                    self.c3_role_popup_filtering = true;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if self.c3_role_popup_selected > 0 {
+                        self.c3_role_popup_selected -= 1;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if self.c3_role_popup_selected + 1 < filtered.len() {
+                        self.c3_role_popup_selected += 1;
+                    }
+                }
+                KeyCode::Char(' ') | KeyCode::Enter => {
+                    if let Some(&idx) = filtered.get(self.c3_role_popup_selected) {
+                        let roles = if self.c3_role_popup_for_edit {
+                            &mut self.c3_view_editor_edit_roles
+                        } else {
+                            &mut self.c3_view_editor_view_roles
+                        };
+                        roles[idx].1 = !roles[idx].1;
+                    }
+                }
+                KeyCode::Char('a') => {
+                    let roles = if self.c3_role_popup_for_edit {
+                        &mut self.c3_view_editor_edit_roles
+                    } else {
+                        &mut self.c3_view_editor_view_roles
+                    };
+                    for r in roles.iter_mut() { r.1 = true; }
+                }
+                KeyCode::Char('n') => {
+                    let roles = if self.c3_role_popup_for_edit {
+                        &mut self.c3_view_editor_edit_roles
+                    } else {
+                        &mut self.c3_view_editor_view_roles
+                    };
+                    for r in roles.iter_mut() { r.1 = false; }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // View editor
+        if self.c3_view_editor_open {
+            // Integration filter mode within editor
+            if self.c3_view_editor_integration_filtering {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.c3_view_editor_integration_filtering = false;
+                    }
+                    KeyCode::Enter => {
+                        self.c3_view_editor_integration_filtering = false;
+                    }
+                    KeyCode::Backspace => {
+                        self.c3_view_editor_integration_filter.pop();
+                        self.c3_view_editor_integration_selected = 0;
+                    }
+                    KeyCode::Char(c) => {
+                        self.c3_view_editor_integration_filter.push(c);
+                        self.c3_view_editor_integration_selected = 0;
+                    }
+                    _ => {}
+                }
+                return;
+            }
+
+            match self.c3_view_editor_field {
+                C3ViewEditorField::Name => {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.c3_view_editor_open = false;
+                        }
+                        KeyCode::Tab => {
+                            self.c3_view_editor_field = self.c3_view_editor_field.next();
+                            self.c3_view_editor_integration_selected = 0;
+                        }
+                        KeyCode::BackTab => {
+                            self.c3_view_editor_field = self.c3_view_editor_field.prev();
+                        }
+                        KeyCode::Left => {
+                            if self.c3_view_editor_name_cursor > 0 {
+                                self.c3_view_editor_name_cursor -= 1;
+                            }
+                        }
+                        KeyCode::Right => {
+                            if self.c3_view_editor_name_cursor < self.c3_view_editor_name.len() {
+                                self.c3_view_editor_name_cursor += 1;
+                            }
+                        }
+                        KeyCode::Home => self.c3_view_editor_name_cursor = 0,
+                        KeyCode::End => self.c3_view_editor_name_cursor = self.c3_view_editor_name.len(),
+                        KeyCode::Backspace => {
+                            if self.c3_view_editor_name_cursor > 0 {
+                                self.c3_view_editor_name_cursor -= 1;
+                                self.c3_view_editor_name.remove(self.c3_view_editor_name_cursor);
+                            }
+                        }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            self.c3_save_view_editor();
+                        }
+                        KeyCode::Char(c) => {
+                            self.c3_view_editor_name.insert(self.c3_view_editor_name_cursor, c);
+                            self.c3_view_editor_name_cursor += 1;
+                        }
+                        _ => {}
+                    }
+                }
+                C3ViewEditorField::Integrations => {
+                    let filtered = self.c3_view_editor_filtered_integrations();
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.c3_view_editor_open = false;
+                        }
+                        KeyCode::Tab => {
+                            self.c3_view_editor_field = self.c3_view_editor_field.next();
+                        }
+                        KeyCode::BackTab => {
+                            self.c3_view_editor_field = self.c3_view_editor_field.prev();
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            if self.c3_view_editor_integration_selected > 0 {
+                                self.c3_view_editor_integration_selected -= 1;
+                            }
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            if self.c3_view_editor_integration_selected + 1 < filtered.len() {
+                                self.c3_view_editor_integration_selected += 1;
+                            }
+                        }
+                        KeyCode::Char(' ') => {
+                            if let Some(&idx) = filtered.get(self.c3_view_editor_integration_selected) {
+                                self.c3_view_editor_integrations[idx].1 = !self.c3_view_editor_integrations[idx].1;
+                            }
+                        }
+                        KeyCode::Char('/') => {
+                            self.c3_view_editor_integration_filtering = true;
+                        }
+                        KeyCode::Char('a') => {
+                            for i in &mut self.c3_view_editor_integrations { i.1 = true; }
+                        }
+                        KeyCode::Char('n') => {
+                            for i in &mut self.c3_view_editor_integrations { i.1 = false; }
+                        }
+                        KeyCode::Char('!') => {
+                            for i in &mut self.c3_view_editor_integrations { i.1 = !i.1; }
+                        }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            self.c3_save_view_editor();
+                        }
+                        _ => {}
+                    }
+                }
+                C3ViewEditorField::ViewRoles => {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.c3_view_editor_open = false;
+                        }
+                        KeyCode::Tab => {
+                            self.c3_view_editor_field = self.c3_view_editor_field.next();
+                        }
+                        KeyCode::BackTab => {
+                            self.c3_view_editor_field = self.c3_view_editor_field.prev();
+                        }
+                        KeyCode::Enter | KeyCode::Char(' ') => {
+                            self.c3_role_popup_open = true;
+                            self.c3_role_popup_for_edit = false;
+                            self.c3_role_popup_selected = 0;
+                            self.c3_role_popup_filter.clear();
+                        }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            self.c3_save_view_editor();
+                        }
+                        _ => {}
+                    }
+                }
+                C3ViewEditorField::EditRoles => {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.c3_view_editor_open = false;
+                        }
+                        KeyCode::Tab => {
+                            self.c3_view_editor_field = self.c3_view_editor_field.next();
+                        }
+                        KeyCode::BackTab => {
+                            self.c3_view_editor_field = self.c3_view_editor_field.prev();
+                        }
+                        KeyCode::Enter | KeyCode::Char(' ') => {
+                            self.c3_role_popup_open = true;
+                            self.c3_role_popup_for_edit = true;
+                            self.c3_role_popup_selected = 0;
+                            self.c3_role_popup_filter.clear();
+                        }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            self.c3_save_view_editor();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            return;
+        }
+
+        // Settings views filter
+        if self.c3_settings_views_filtering {
+            match key.code {
+                KeyCode::Esc => {
+                    self.c3_settings_views_filtering = false;
+                }
+                KeyCode::Enter => {
+                    self.c3_settings_views_filtering = false;
+                }
+                KeyCode::Backspace => {
+                    self.c3_settings_views_filter.pop();
+                    self.c3_settings_views_selected = 0;
+                    self.c3_settings_views_table_state.select(Some(0));
+                }
+                KeyCode::Char(c) => {
+                    self.c3_settings_views_filter.push(c);
+                    self.c3_settings_views_selected = 0;
+                    self.c3_settings_views_table_state.select(Some(0));
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Tab => {
                 self.next_tab();
@@ -642,6 +933,14 @@ impl App {
                         tokio::runtime::Handle::current().block_on(self.c3_fetch_history())
                     });
                 }
+                if self.active_tab == Tab::Settings && !self.c3_settings_views_loaded {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(async {
+                            self.c3_fetch_settings_views().await;
+                            self.c3_fetch_roles().await;
+                        })
+                    });
+                }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
@@ -653,6 +952,14 @@ impl App {
                 if self.active_tab == Tab::History && !self.c3_history_loaded {
                     tokio::task::block_in_place(|| {
                         tokio::runtime::Handle::current().block_on(self.c3_fetch_history())
+                    });
+                }
+                if self.active_tab == Tab::Settings && !self.c3_settings_views_loaded {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(async {
+                            self.c3_fetch_settings_views().await;
+                            self.c3_fetch_roles().await;
+                        })
                     });
                 }
             }
@@ -832,6 +1139,12 @@ impl App {
                         self.c3_history_selected = (self.c3_history_selected + self.visible_rows).min(len - 1);
                         self.c3_history_table_state.select(Some(self.c3_history_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views {
+                    let filtered = self.c3_settings_filtered_views();
+                    if !filtered.is_empty() {
+                        self.c3_settings_views_selected = (self.c3_settings_views_selected + self.visible_rows).min(filtered.len() - 1);
+                        self.c3_settings_views_table_state.select(Some(self.c3_settings_views_selected));
+                    }
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -857,6 +1170,9 @@ impl App {
                 } else if self.active_tab == Tab::History {
                     self.c3_history_selected = self.c3_history_selected.saturating_sub(self.visible_rows);
                     self.c3_history_table_state.select(Some(self.c3_history_selected));
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views {
+                    self.c3_settings_views_selected = self.c3_settings_views_selected.saturating_sub(self.visible_rows);
+                    self.c3_settings_views_table_state.select(Some(self.c3_settings_views_selected));
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -890,6 +1206,12 @@ impl App {
                         self.c3_history_selected = (self.c3_history_selected + 1).min(len - 1);
                         self.c3_history_table_state.select(Some(self.c3_history_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views {
+                    let filtered = self.c3_settings_filtered_views();
+                    if self.c3_settings_views_selected + 1 < filtered.len() {
+                        self.c3_settings_views_selected += 1;
+                        self.c3_settings_views_table_state.select(Some(self.c3_settings_views_selected));
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -910,6 +1232,11 @@ impl App {
                 } else if self.active_tab == Tab::History {
                     self.c3_history_selected = self.c3_history_selected.saturating_sub(1);
                     self.c3_history_table_state.select(Some(self.c3_history_selected));
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views {
+                    if self.c3_settings_views_selected > 0 {
+                        self.c3_settings_views_selected -= 1;
+                        self.c3_settings_views_table_state.select(Some(self.c3_settings_views_selected));
+                    }
                 }
             }
             KeyCode::PageDown => {
@@ -929,6 +1256,9 @@ impl App {
                 } else if self.active_tab == Tab::History {
                     self.c3_history_selected = 0;
                     self.c3_history_table_state.select(Some(0));
+                } else if self.active_tab == Tab::Settings {
+                    self.c3_settings_views_selected = 0;
+                    self.c3_settings_views_table_state.select(Some(0));
                 }
             }
             KeyCode::End => {
@@ -939,6 +1269,12 @@ impl App {
                     if len > 0 {
                         self.c3_history_selected = len - 1;
                         self.c3_history_table_state.select(Some(self.c3_history_selected));
+                    }
+                } else if self.active_tab == Tab::Settings {
+                    let filtered = self.c3_settings_filtered_views();
+                    if !filtered.is_empty() {
+                        self.c3_settings_views_selected = filtered.len() - 1;
+                        self.c3_settings_views_table_state.select(Some(self.c3_settings_views_selected));
                     }
                 }
             }
@@ -1072,7 +1408,141 @@ impl App {
                     }
                 }
             }
+            // Settings tab keys
+            KeyCode::Char('1') if self.active_tab == Tab::Settings => {
+                self.c3_settings_tab = C3SettingsTab::Views;
+            }
+            KeyCode::Char('2') if self.active_tab == Tab::Settings => {
+                self.c3_settings_tab = C3SettingsTab::Integrations;
+            }
+            KeyCode::Char('3') if self.active_tab == Tab::Settings => {
+                self.c3_settings_tab = C3SettingsTab::Overviews;
+            }
+            KeyCode::Char('4') if self.active_tab == Tab::Settings => {
+                self.c3_settings_tab = C3SettingsTab::LinkGroups;
+            }
+            KeyCode::Char('r') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views => {
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        self.c3_fetch_settings_views().await;
+                        self.c3_fetch_roles().await;
+                    })
+                });
+            }
+            KeyCode::Char('s') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views => {
+                self.c3_settings_views_sort = (self.c3_settings_views_sort + 1) % 5;
+                self.c3_settings_views_selected = 0;
+                self.c3_settings_views_table_state.select(Some(0));
+            }
+            KeyCode::Char('S') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views => {
+                self.c3_settings_views_sort_desc = !self.c3_settings_views_sort_desc;
+                self.c3_settings_views_selected = 0;
+                self.c3_settings_views_table_state.select(Some(0));
+            }
+            KeyCode::Char('/') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views => {
+                self.c3_settings_views_filtering = true;
+            }
+            KeyCode::Char('n') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views => {
+                self.c3_open_new_view_editor();
+            }
+            KeyCode::Enter | KeyCode::Char('e') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views => {
+                let filtered = self.c3_settings_filtered_views();
+                if let Some(&idx) = filtered.get(self.c3_settings_views_selected) {
+                    let view = self.c3_settings_views[idx].clone();
+                    if view.editable {
+                        self.c3_open_edit_view_editor(&view);
+                    } else {
+                        self.status_msg = "View is not editable".to_string();
+                    }
+                }
+            }
+            KeyCode::Char('d') | KeyCode::Char('x') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views => {
+                let filtered = self.c3_settings_filtered_views();
+                if let Some(&idx) = filtered.get(self.c3_settings_views_selected) {
+                    let view = &self.c3_settings_views[idx];
+                    if view.editable {
+                        self.c3_settings_confirm = Some((
+                            format!("delete_view:{}", view.id),
+                            format!("Delete view \"{}\"?", view.name),
+                        ));
+                    } else {
+                        self.status_msg = "View is not editable".to_string();
+                    }
+                }
+            }
             _ => {}
+        }
+    }
+
+    pub(crate) fn c3_settings_filtered_views(&self) -> Vec<usize> {
+        let filter = self.c3_settings_views_filter.to_lowercase();
+        let mut indices: Vec<usize> = self.c3_settings_views.iter().enumerate()
+            .filter(|(_, v)| filter.is_empty() || v.name.to_lowercase().contains(&filter) || v.creator.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect();
+        let views = &self.c3_settings_views;
+        let col = self.c3_settings_views_sort;
+        let desc = self.c3_settings_views_sort_desc;
+        indices.sort_by(|&a, &b| {
+            let cmp = match col {
+                0 => views[a].name.to_lowercase().cmp(&views[b].name.to_lowercase()),
+                1 => views[a].creator.to_lowercase().cmp(&views[b].creator.to_lowercase()),
+                2 => views[a].integrations.len().cmp(&views[b].integrations.len()),
+                3 => views[a].view_roles.join(",").cmp(&views[b].view_roles.join(",")),
+                _ => views[a].edit_roles.join(",").cmp(&views[b].edit_roles.join(",")),
+            };
+            if desc { cmp.reverse() } else { cmp }
+        });
+        indices
+    }
+
+    fn c3_save_view_editor(&mut self) {
+        let name = self.c3_view_editor_name.trim().to_string();
+        if name.is_empty() {
+            self.status_msg = "View name cannot be empty".to_string();
+            return;
+        }
+        let integrations: Vec<String> = self.c3_view_editor_integrations.iter()
+            .filter(|(_, enabled)| *enabled)
+            .map(|(name, _)| name.clone())
+            .collect();
+        let view_roles: Vec<String> = self.c3_view_editor_view_roles.iter()
+            .filter(|(_, sel)| *sel)
+            .map(|(r, _)| r.clone())
+            .collect();
+        let edit_roles: Vec<String> = self.c3_view_editor_edit_roles.iter()
+            .filter(|(_, sel)| *sel)
+            .map(|(r, _)| r.clone())
+            .collect();
+
+        let result = if let Some(id) = &self.c3_view_editor_id {
+            let id = id.clone();
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(
+                    self.client.c3_update_view(&id, &name, &integrations, &view_roles, &edit_roles)
+                )
+            })
+        } else {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(
+                    self.client.c3_create_view(&name, &integrations, &view_roles, &edit_roles)
+                )
+            })
+        };
+
+        match result {
+            Ok(_) => {
+                let action = if self.c3_view_editor_id.is_some() { "Updated" } else { "Created" };
+                self.status_msg = format!("{action} view: {name}");
+                self.c3_view_editor_open = false;
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        self.c3_fetch_settings_views().await;
+                        self.c3_fetch_views().await;
+                    })
+                });
+            }
+            Err(e) => self.status_msg = format!("Error saving view: {e}"),
         }
     }
 }

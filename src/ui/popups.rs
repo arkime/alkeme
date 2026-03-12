@@ -583,6 +583,30 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("r"), Span::raw("Refresh history")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
         ]).collect())
+    } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::Settings {
+        ("Cont3xt Settings", vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("1 / 2 / 3 / 4"), Span::raw("Switch sub-tab")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate views")]),
+            Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
+        ].into_iter().chain(
+            if app.pl_saved_client.is_some() {
+                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
+            } else { vec![] }
+        ).chain(vec![
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("n"), Span::raw("New view")]),
+            Line::from(vec![key("Enter / e"), Span::raw("Edit view")]),
+            Line::from(vec![key("d / x"), Span::raw("Delete view")]),
+            Line::from(vec![key("/"), Span::raw("Filter views")]),
+            Line::from(vec![key("r"), Span::raw("Refresh views")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
+        ]).collect())
     } else if app.c3_show_overview_popup {
         ("Select Overview", vec![
             hdr!("Navigation"),

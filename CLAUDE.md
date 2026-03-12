@@ -210,6 +210,11 @@ src/
 | J | Save all results as JSON (prompts for filename) |
 | t | Edit search tags (comma-separated, sent with queries) |
 | d | Edit date range for links (start/stop, supports relative: -7d, -1h, now, or absolute: YYYY-MM-DD) |
+| 1 / 2 / 3 / 4 | Switch Settings sub-tab (Views/Integrations/Overviews/LinkGroups) |
+| n | New view (Settings Views) |
+| e / Enter | Edit view (Settings Views) |
+| d / x | Delete view (Settings Views) |
+| Ctrl+S | Save view editor |
 | ← / → | Previous/next page (History); jump to top/bottom (results); scroll detail |
 | D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
 | h / ? | Show help |
@@ -429,6 +434,34 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - `c3_link_groups`, `c3_show_link_popup`, `c3_link_popup_selected`, `c3_link_popup_filter`, `c3_link_popup_filtering`, `c3_link_flat`
 - `c3_history_data`, `c3_history_total`, `c3_history_page` (1-indexed), `c3_history_selected`, `c3_history_table_state`
 - `c3_history_filter`, `c3_history_filtering`, `c3_history_sort_col`, `c3_history_sort_desc`, `c3_history_loaded`
+
+### Cont3xt Settings
+- Settings tab has 4 sub-tabs switchable with `1/2/3/4` keys: Views, Integrations, Overviews, LinkGroups
+- Only Views sub-tab is fully implemented; others show under-construction owl animation
+- `C3SettingsTab` — Enum: `Views` | `Integrations` | `Overviews` | `LinkGroups`. Has `name()`, `ALL` const array.
+- Auto-fetches views and roles on first tab switch (lazy loading via `c3_settings_views_loaded` flag)
+
+### Cont3xt Settings Views
+- Table with columns: Name, Creator, Integrations count, View Roles, Edit Roles
+- Non-editable views (shared by other users) shown with 🔗 indicator
+- Sortable columns (`s`/`S`): client-side sort with ▲/▼ indicators
+- Filter (`/`): case-insensitive substring match on name and creator
+- `n` creates new view; `Enter`/`e` edits; `d`/`x` deletes (with confirmation)
+- `r` refreshes views and roles from server
+- API: `GET /api/views`, `POST /api/view`, `PUT /api/view/:id`, `DELETE /api/view/:id`
+- Roles fetched from `GET /api/roles` (cont3xt uses this, not `/api/user/roles`)
+
+### Cont3xt View Editor
+- Multi-field popup form with Tab/BackTab cycling: Name → Integrations → ViewRoles → EditRoles
+- `C3ViewEditorField` — Enum: `Name` | `Integrations` | `ViewRoles` | `EditRoles`. Has `next()`/`prev()`.
+- **Name field**: Full cursor-based text input (like expression editing)
+- **Integrations field**: Toggle list (Space to toggle, a=all, n=none, !=invert, /=filter)
+- **ViewRoles/EditRoles**: Display selected roles, Enter/Space opens role sub-popup
+- `Ctrl+S` saves (create or update based on `c3_view_editor_id`); Esc cancels
+- Role sub-popup: toggle list of all available roles with Space/Enter toggle, a=all, n=none, /=filter, Esc=done
+- `c3_role_popup_for_edit` boolean determines which role list is being edited
+- State: `c3_view_editor_open`, `c3_view_editor_id`, `c3_view_editor_name`, `c3_view_editor_name_cursor`, `c3_view_editor_field`, `c3_view_editor_integrations`, `c3_view_editor_view_roles`, `c3_view_editor_edit_roles`, `c3_role_popup_open`, `c3_role_popup_for_edit`, `c3_role_popup_selected`, `c3_role_popup_filter`
+- `Cont3xtView` struct: id, name, creator, integrations (Vec<String>), editable (bool), view_roles (Vec<String>), edit_roles (Vec<String>)
 
 ### Results tree hierarchy
 - Results panel shows indicators in a tree structure: parent indicators contain child indicators

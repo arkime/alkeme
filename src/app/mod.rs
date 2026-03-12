@@ -286,6 +286,37 @@ pub struct App {
     pub c3_history_sort_col: usize,
     pub c3_history_sort_desc: bool,
     pub c3_history_loaded: bool,
+    // Cont3xt settings
+    pub c3_settings_tab: C3SettingsTab,
+    pub c3_settings_views: Vec<Cont3xtView>,
+    pub c3_settings_views_selected: usize,
+    pub c3_settings_views_table_state: ratatui::widgets::TableState,
+    pub c3_settings_views_filter: String,
+    pub c3_settings_views_filtering: bool,
+    pub c3_settings_views_loaded: bool,
+    pub c3_settings_views_sort: u8,
+    pub c3_settings_views_sort_desc: bool,
+    pub c3_all_roles: Vec<String>,
+    // View editor state
+    pub c3_view_editor_open: bool,
+    pub c3_view_editor_id: Option<String>, // None = new, Some(id) = editing
+    pub c3_view_editor_name: String,
+    pub c3_view_editor_name_cursor: usize,
+    pub c3_view_editor_integrations: Vec<(String, bool)>, // (name, enabled)
+    pub c3_view_editor_integration_selected: usize,
+    pub c3_view_editor_integration_filter: String,
+    pub c3_view_editor_integration_filtering: bool,
+    pub c3_view_editor_view_roles: Vec<(String, bool)>, // (role, selected)
+    pub c3_view_editor_edit_roles: Vec<(String, bool)>, // (role, selected)
+    pub c3_view_editor_field: C3ViewEditorField,
+    // Role popup state (sub-popup within view editor)
+    pub c3_role_popup_open: bool,
+    pub c3_role_popup_for_edit: bool, // false = viewRoles, true = editRoles
+    pub c3_role_popup_selected: usize,
+    pub c3_role_popup_filter: String,
+    pub c3_role_popup_filtering: bool,
+    // Settings confirm dialog
+    pub c3_settings_confirm: Option<(String, String)>, // (action, message)
     // Parliament state
     pub pl_groups: Vec<PlGroup>,
     pub pl_stats: HashMap<String, PlClusterStats>,
@@ -587,6 +618,34 @@ impl App {
             c3_history_sort_col: 0,
             c3_history_sort_desc: true,
             c3_history_loaded: false,
+            // Cont3xt settings
+            c3_settings_tab: C3SettingsTab::Views,
+            c3_settings_views: Vec::new(),
+            c3_settings_views_selected: 0,
+            c3_settings_views_table_state: ratatui::widgets::TableState::default(),
+            c3_settings_views_filter: String::new(),
+            c3_settings_views_filtering: false,
+            c3_settings_views_loaded: false,
+            c3_settings_views_sort: 0,
+            c3_settings_views_sort_desc: false,
+            c3_all_roles: Vec::new(),
+            c3_view_editor_open: false,
+            c3_view_editor_id: None,
+            c3_view_editor_name: String::new(),
+            c3_view_editor_name_cursor: 0,
+            c3_view_editor_integrations: Vec::new(),
+            c3_view_editor_integration_selected: 0,
+            c3_view_editor_integration_filter: String::new(),
+            c3_view_editor_integration_filtering: false,
+            c3_view_editor_view_roles: Vec::new(),
+            c3_view_editor_edit_roles: Vec::new(),
+            c3_view_editor_field: C3ViewEditorField::Name,
+            c3_role_popup_open: false,
+            c3_role_popup_for_edit: false,
+            c3_role_popup_selected: 0,
+            c3_role_popup_filter: String::new(),
+            c3_role_popup_filtering: false,
+            c3_settings_confirm: None,
             // Parliament state
             pl_groups: Vec::new(),
             pl_stats: HashMap::new(),
@@ -636,6 +695,15 @@ impl App {
         self.vr_session_view == SessionView::Detail || self.vr_stats_view == StatsView::Detail
     }
 
+    pub fn needs_animation(&self) -> bool {
+        match self.app_mode {
+            AppMode::Viewer => self.active_tab == Tab::Settings,
+            AppMode::Cont3xt => self.active_tab == Tab::Settings && self.c3_settings_tab != C3SettingsTab::Views,
+            AppMode::Wise => self.active_tab == Tab::Settings,
+            AppMode::Parliament => self.active_tab == Tab::Settings,
+        }
+    }
+
     /// Returns true if any popup overlay is open that could use background caching
     pub fn has_popup_open(&self) -> bool {
         self.confirm_dialog.is_some()
@@ -646,6 +714,8 @@ impl App {
             || self.c3_show_tags_popup
             || self.c3_show_date_popup
             || self.c3_save_json_prompt.is_some()
+            || self.c3_view_editor_open
+            || self.c3_role_popup_open
             || self.show_help
             || self.show_debug
     }
@@ -659,6 +729,7 @@ impl App {
             || self.c3_show_integration_popup || self.c3_show_overview_popup
             || self.c3_show_link_popup || self.c3_show_card_popup
             || self.c3_show_tags_popup || self.c3_show_date_popup
+            || self.c3_view_editor_open || self.c3_role_popup_open
     }
 
     pub fn tabs(&self) -> &'static [Tab] {
@@ -1441,6 +1512,89 @@ impl App {
                 self.status_msg = format!("Error fetching stats: {e}");
             }
         }
+    }
+
+    pub async fn c3_fetch_settings_views(&mut self) {
+        match self.client.c3_get_views().await {
+            Ok(views) => {
+                self.c3_settings_views = views;
+                self.c3_settings_views_loaded = true;
+                if self.c3_settings_views_selected >= self.c3_settings_views.len() {
+                    self.c3_settings_views_selected = 0;
+                }
+                self.c3_settings_views_table_state.select(Some(self.c3_settings_views_selected));
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching views: {e}");
+            }
+        }
+    }
+
+    pub async fn c3_fetch_roles(&mut self) {
+        match self.client.c3_get_roles().await {
+            Ok(roles) => self.c3_all_roles = roles,
+            Err(e) => self.status_msg = format!("Error fetching roles: {e}"),
+        }
+    }
+
+    /// Open the view editor for a new view
+    pub fn c3_open_new_view_editor(&mut self) {
+        self.c3_view_editor_open = true;
+        self.c3_view_editor_id = None;
+        self.c3_view_editor_name = String::new();
+        self.c3_view_editor_name_cursor = 0;
+        self.c3_view_editor_field = C3ViewEditorField::Name;
+        self.c3_view_editor_integration_filter = String::new();
+        self.c3_view_editor_integration_filtering = false;
+        self.c3_view_editor_integration_selected = 0;
+        // All integrations unchecked
+        self.c3_view_editor_integrations = self.c3_integrations.iter()
+            .map(|i| (i.name.clone(), false)).collect();
+        self.c3_view_editor_view_roles = self.c3_all_roles.iter()
+            .map(|r| (r.clone(), false)).collect();
+        self.c3_view_editor_edit_roles = self.c3_all_roles.iter()
+            .map(|r| (r.clone(), false)).collect();
+    }
+
+    /// Open the view editor to edit an existing view
+    pub fn c3_open_edit_view_editor(&mut self, view: &Cont3xtView) {
+        self.c3_view_editor_open = true;
+        self.c3_view_editor_id = Some(view.id.clone());
+        self.c3_view_editor_name = view.name.clone();
+        self.c3_view_editor_name_cursor = view.name.len();
+        self.c3_view_editor_field = C3ViewEditorField::Name;
+        self.c3_view_editor_integration_filter = String::new();
+        self.c3_view_editor_integration_filtering = false;
+        self.c3_view_editor_integration_selected = 0;
+        self.c3_view_editor_integrations = self.c3_integrations.iter()
+            .map(|i| (i.name.clone(), view.integrations.contains(&i.name))).collect();
+        self.c3_view_editor_view_roles = self.c3_all_roles.iter()
+            .map(|r| (r.clone(), view.view_roles.contains(r))).collect();
+        self.c3_view_editor_edit_roles = self.c3_all_roles.iter()
+            .map(|r| (r.clone(), view.edit_roles.contains(r))).collect();
+    }
+
+    /// Get filtered integrations for view editor
+    pub fn c3_view_editor_filtered_integrations(&self) -> Vec<usize> {
+        let filter = self.c3_view_editor_integration_filter.to_lowercase();
+        self.c3_view_editor_integrations.iter().enumerate()
+            .filter(|(_, (name, _))| filter.is_empty() || name.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Get filtered roles for role popup
+    pub fn c3_role_popup_filtered_roles(&self) -> Vec<usize> {
+        let filter = self.c3_role_popup_filter.to_lowercase();
+        let roles = if self.c3_role_popup_for_edit {
+            &self.c3_view_editor_edit_roles
+        } else {
+            &self.c3_view_editor_view_roles
+        };
+        roles.iter().enumerate()
+            .filter(|(_, (name, _))| filter.is_empty() || name.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect()
     }
 
     pub fn c3_stats_current_data(&self) -> &Vec<serde_json::Value> {

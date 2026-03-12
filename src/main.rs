@@ -704,6 +704,11 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             needs_redraw = true;
         }
 
+        // Trigger periodic redraws for animated pages (under construction owl)
+        if app.needs_animation() {
+            needs_redraw = true;
+        }
+
         // Drain all pending key events before next draw
         while event::poll(Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {

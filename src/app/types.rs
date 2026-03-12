@@ -362,6 +362,60 @@ pub enum IntegrationPopupMode {
     ConfirmDelete,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum C3SettingsTab {
+    Views,
+    Integrations,
+    Overviews,
+    LinkGroups,
+}
+
+impl C3SettingsTab {
+    pub const ALL: [C3SettingsTab; 4] = [
+        C3SettingsTab::Views,
+        C3SettingsTab::Integrations,
+        C3SettingsTab::Overviews,
+        C3SettingsTab::LinkGroups,
+    ];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            C3SettingsTab::Views => "(1) Views",
+            C3SettingsTab::Integrations => "(2) Integrations",
+            C3SettingsTab::Overviews => "(3) Overviews",
+            C3SettingsTab::LinkGroups => "(4) Link Groups",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum C3ViewEditorField {
+    Name,
+    Integrations,
+    ViewRoles,
+    EditRoles,
+}
+
+impl C3ViewEditorField {
+    pub fn next(&self) -> Self {
+        match self {
+            C3ViewEditorField::Name => C3ViewEditorField::Integrations,
+            C3ViewEditorField::Integrations => C3ViewEditorField::ViewRoles,
+            C3ViewEditorField::ViewRoles => C3ViewEditorField::EditRoles,
+            C3ViewEditorField::EditRoles => C3ViewEditorField::Name,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            C3ViewEditorField::Name => C3ViewEditorField::EditRoles,
+            C3ViewEditorField::Integrations => C3ViewEditorField::Name,
+            C3ViewEditorField::ViewRoles => C3ViewEditorField::Integrations,
+            C3ViewEditorField::EditRoles => C3ViewEditorField::ViewRoles,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum AppMode {
     Viewer,

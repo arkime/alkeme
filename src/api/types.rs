@@ -138,9 +138,10 @@ pub struct Cont3xtView {
     pub id: String,
     pub name: String,
     pub integrations: Vec<String>,
-    #[allow(dead_code)]
     pub creator: String,
     pub editable: bool,
+    pub view_roles: Vec<String>,
+    pub edit_roles: Vec<String>,
 }
 
 /// A cont3xt integration definition from /api/integration

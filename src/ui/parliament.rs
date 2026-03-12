@@ -20,6 +20,8 @@ pub fn draw_parliament(f: &mut Frame, app: &mut App) {
         _ => {
             let block = Block::default().borders(Borders::ALL).title(app.active_tab.name());
             f.render_widget(block, chunks[1]);
+            arkime::draw_under_construction(f, app, chunks[1]);
+            arkime::draw_owl(f, app, chunks[1]);
         }
     }
 

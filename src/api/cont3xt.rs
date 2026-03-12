@@ -120,26 +120,58 @@ impl ArkimeClient {
                     .unwrap_or_default();
                 let editable = item.get("_editable").and_then(|v| v.as_bool()).unwrap_or(false)
                     || creator == current_user;
-                views.push(Cont3xtView { id, name, integrations, creator, editable });
+                let parse_roles = |key: &str| -> Vec<String> {
+                    item.get(key).and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default()
+                };
+                let view_roles = parse_roles("viewRoles");
+                let edit_roles = parse_roles("editRoles");
+                views.push(Cont3xtView { id, name, integrations, creator, editable, view_roles, edit_roles });
             }
         }
         Ok(views)
     }
 
     /// Create a cont3xt view (saved integration set)
-    pub async fn c3_create_view(&self, name: &str, integrations: &[String]) -> Result<Value> {
+    pub async fn c3_create_view(&self, name: &str, integrations: &[String], view_roles: &[String], edit_roles: &[String]) -> Result<Value> {
         let url = format!("{}/api/view", self.base_url);
         let body = serde_json::json!({
             "name": name,
             "integrations": integrations,
+            "viewRoles": view_roles,
+            "editRoles": edit_roles,
         });
         self.authenticated_post_json(&url, &body).await
+    }
+
+    /// Update a cont3xt view
+    pub async fn c3_update_view(&self, id: &str, name: &str, integrations: &[String], view_roles: &[String], edit_roles: &[String]) -> Result<Value> {
+        let url = format!("{}/api/view/{}", self.base_url, urlencoding::encode(id));
+        let body = serde_json::json!({
+            "name": name,
+            "integrations": integrations,
+            "viewRoles": view_roles,
+            "editRoles": edit_roles,
+        });
+        self.authenticated_put_json(&url, &body).await
     }
 
     /// Delete a cont3xt view
     pub async fn c3_delete_view(&self, id: &str) -> Result<Value> {
         let url = format!("{}/api/view/{}", self.base_url, urlencoding::encode(id));
         self.authenticated_delete(&url).await
+    }
+
+    /// Fetch available roles
+    pub async fn c3_get_roles(&self) -> Result<Vec<String>> {
+        let url = format!("{}/api/roles", self.base_url);
+        let body = self.authenticated_get_with_cookie(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let roles = parsed.get("roles").and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        Ok(roles)
     }
 
     /// Fetch cont3xt integration stats
