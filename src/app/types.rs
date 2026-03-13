@@ -430,6 +430,8 @@ pub enum C3BackupKind {
     LinkGroupSingle,
     Integrations,
     Views,
+    OverviewsAll,
+    OverviewSingle,
 }
 
 impl C3BackupKind {
@@ -439,6 +441,8 @@ impl C3BackupKind {
             Self::LinkGroupSingle => " Backup Link Group ",
             Self::Integrations => " Backup Integration Settings ",
             Self::Views => " Backup Integration Views ",
+            Self::OverviewsAll => " Backup All Overviews ",
+            Self::OverviewSingle => " Backup Overview ",
         }
     }
 }
@@ -491,6 +495,95 @@ impl C3LinkEditorField {
             Self::InfoField => "Info",
             Self::ExternalDocName => "External Doc Name",
             Self::ExternalDocUrl => "External Doc URL",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum C3OverviewLevel {
+    List,
+    Editor,
+    FieldList,
+    FieldEditor,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum C3OverviewEditorField {
+    Name,
+    Title,
+    Itype,
+    ViewRoles,
+    EditRoles,
+}
+
+impl C3OverviewEditorField {
+    pub fn all() -> &'static [C3OverviewEditorField] {
+        &[Self::Name, Self::Title, Self::Itype, Self::ViewRoles, Self::EditRoles]
+    }
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Name => "Name",
+            Self::Title => "Title",
+            Self::Itype => "IType",
+            Self::ViewRoles => "View Roles",
+            Self::EditRoles => "Edit Roles",
+        }
+    }
+    pub fn next(&self) -> Self {
+        match self {
+            Self::Name => Self::Title,
+            Self::Title => Self::Itype,
+            Self::Itype => Self::ViewRoles,
+            Self::ViewRoles => Self::EditRoles,
+            Self::EditRoles => Self::Name,
+        }
+    }
+    pub fn prev(&self) -> Self {
+        match self {
+            Self::Name => Self::EditRoles,
+            Self::Title => Self::Name,
+            Self::Itype => Self::Title,
+            Self::ViewRoles => Self::Itype,
+            Self::EditRoles => Self::ViewRoles,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum C3OvFieldEditorField {
+    From,
+    Field,
+    Label,
+    CustomJson,
+}
+
+impl C3OvFieldEditorField {
+    pub fn next(&self, is_custom: bool) -> Self {
+        if is_custom {
+            match self {
+                Self::From => Self::CustomJson,
+                _ => Self::From,
+            }
+        } else {
+            match self {
+                Self::From => Self::Field,
+                Self::Field => Self::Label,
+                _ => Self::From,
+            }
+        }
+    }
+    pub fn prev(&self, is_custom: bool) -> Self {
+        if is_custom {
+            match self {
+                Self::From => Self::CustomJson,
+                _ => Self::From,
+            }
+        } else {
+            match self {
+                Self::From => Self::Label,
+                Self::Field => Self::From,
+                _ => Self::Field,
+            }
         }
     }
 }

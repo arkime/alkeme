@@ -201,7 +201,6 @@ pub struct CardField {
 
 /// A field in a cont3xt overview definition
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct Cont3xtOverviewField {
     pub field_type: String,      // "linked" or "custom"
     pub from: String,            // integration name
@@ -212,13 +211,16 @@ pub struct Cont3xtOverviewField {
 
 /// A cont3xt overview definition
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct Cont3xtOverview {
     pub id: String,
     pub name: String,
     pub title: String,
     pub itype: String,
     pub is_default: bool,
+    pub creator: String,
+    pub editable: bool,
+    pub view_roles: Vec<String>,
+    pub edit_roles: Vec<String>,
     pub fields: Vec<Cont3xtOverviewField>,
 }
 

@@ -67,6 +67,14 @@ impl ArkimeClient {
                 let name = str_val(item, "name");
                 let title = str_val(item, "title");
                 let itype = str_val(item, "iType");
+                let creator = str_val(item, "creator");
+                let editable = item.get("_editable").and_then(|v| v.as_bool()).unwrap_or(false);
+                let view_roles = item.get("viewRoles").and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let edit_roles = item.get("editRoles").and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
                 let fields = item.get("fields").and_then(|v| v.as_array())
                     .map(|arr| arr.iter().map(|f| {
                         Cont3xtOverviewField {
@@ -82,8 +90,8 @@ impl ArkimeClient {
                         }
                     }).collect())
                     .unwrap_or_default();
-                let is_default = itype == id; // default overviews have _id == iType
-                overviews.push(Cont3xtOverview { id, name, title, itype, is_default, fields });
+                let is_default = itype == id;
+                overviews.push(Cont3xtOverview { id, name, title, itype, is_default, creator, editable, view_roles, edit_roles, fields });
             }
         }
         Ok(overviews)
@@ -120,6 +128,24 @@ impl ArkimeClient {
             "selectedOverviews": overviews
         });
         self.authenticated_put_json(&url, &body).await
+    }
+
+    /// Create a cont3xt overview
+    pub async fn c3_create_overview(&self, overview: &serde_json::Value) -> Result<Value> {
+        let url = format!("{}/api/overview", self.base_url);
+        self.authenticated_post_json(&url, overview).await
+    }
+
+    /// Update a cont3xt overview
+    pub async fn c3_update_overview(&self, id: &str, overview: &serde_json::Value) -> Result<Value> {
+        let url = format!("{}/api/overview/{}", self.base_url, urlencoding::encode(id));
+        self.authenticated_put_json(&url, overview).await
+    }
+
+    /// Delete a cont3xt overview
+    pub async fn c3_delete_overview(&self, id: &str) -> Result<Value> {
+        let url = format!("{}/api/overview/{}", self.base_url, urlencoding::encode(id));
+        self.authenticated_delete(&url).await
     }
 
     pub fn cont3xt_search_url(&self) -> String {

@@ -122,7 +122,9 @@ impl App {
 
     pub async fn c3_fetch_roles(&mut self) {
         match self.client.c3_get_roles().await {
-            Ok(roles) => self.c3_all_roles = roles,
+            Ok(roles) => {
+                self.c3_all_roles = roles;
+            }
             Err(e) => self.status_msg = format!("Error fetching roles: {e}"),
         }
     }
@@ -275,6 +277,37 @@ impl App {
             .map(|r| (r.clone(), prev_view.contains(r))).collect();
         self.c3_view_editor_edit_roles = self.c3_all_roles.iter()
             .map(|r| (r.clone(), prev_edit.contains(r))).collect();
+    }
+
+    /// Get sorted integration names for the overview field editor From popup
+    pub fn c3_ov_fe_integration_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.c3_integrations.iter()
+            .map(|i| i.name.clone())
+            .collect();
+        names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        names
+    }
+
+    /// Get field labels for the selected integration + "Custom" for the overview field editor Field popup
+    pub fn c3_ov_fe_field_labels(&self) -> Vec<String> {
+        let from = &self.c3_ov_field_editor_from;
+        let mut labels: Vec<String> = self.c3_integrations.iter()
+            .find(|i| i.name == *from)
+            .and_then(|i| i.card.as_ref())
+            .map(|c| c.fields.iter().map(|f| f.label.clone()).collect())
+            .unwrap_or_default();
+        labels.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        labels.push("Custom".to_string());
+        labels
+    }
+
+    /// Get filtered items for the overview field editor selector popup
+    pub fn c3_ov_fe_popup_filtered(&self) -> Vec<usize> {
+        let filter = self.c3_ov_fe_popup_filter.to_lowercase();
+        self.c3_ov_fe_popup_items.iter().enumerate()
+            .filter(|(_, name)| filter.is_empty() || name.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect()
     }
 
     pub fn c3_stats_current_data(&self) -> &Vec<serde_json::Value> {
@@ -730,6 +763,45 @@ impl App {
             Ok(_) => self.status_msg = "Overview saved".to_string(),
             Err(e) => self.status_msg = format!("Error saving overview: {e}"),
         }
+    }
+
+    /// Save the field editor contents back to the overview field and persist
+    pub fn c3_ov_fe_save_field(&mut self) {
+        let ov_idx = self.c3_ov_editor_idx;
+        let fi = self.c3_ov_field_editor_idx;
+        if let Some(ov) = self.c3_ov_list.get_mut(ov_idx) {
+            if let Some(field) = ov.fields.get_mut(fi) {
+                field.from = self.c3_ov_field_editor_from.clone();
+                if self.c3_ov_field_editor_is_custom {
+                    let json_str = self.c3_ov_fe_json_lines.join("\n");
+                    match serde_json::from_str::<serde_json::Value>(&json_str) {
+                        Ok(custom_inner) => {
+                            field.field_type = "custom".to_string();
+                            field.field.clear();
+                            field.alias = None;
+                            field.custom = Some(serde_json::json!({
+                                "from": field.from,
+                                "custom": custom_inner,
+                            }));
+                        }
+                        Err(e) => {
+                            self.status_msg = format!("Invalid JSON: {e}");
+                            return;
+                        }
+                    }
+                } else {
+                    field.field_type = "linked".to_string();
+                    field.field = self.c3_ov_field_editor_field_name.clone();
+                    let label = self.c3_ov_field_editor_label.trim().to_string();
+                    field.alias = if label.is_empty() { None } else { Some(label) };
+                    field.custom = None;
+                }
+            }
+        }
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(self.c3_ov_save())
+        });
+        self.c3_ov_level = C3OverviewLevel::FieldList;
     }
 
     pub async fn c3_ov_create(&mut self) {

@@ -1,7 +1,7 @@
 use super::*;
-use super::cont3xt_settings::{c3_draw_settings, c3_draw_view_editor, c3_draw_role_popup, c3_draw_int_editor};
+use super::cont3xt_settings::{c3_draw_settings, c3_draw_view_editor, c3_draw_role_popup, c3_draw_int_editor, c3_draw_group_role_popup, c3_draw_ov_fe_selector_popup};
 use crate::api::{CardField, Cont3xtCard, Cont3xtOverview};
-use crate::app::C3TreeItem;
+use crate::app::{C3TreeItem, C3SettingsTab, C3GroupEditorField};
 
 pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
     let any_popup = app.has_popup_open();
@@ -59,10 +59,30 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
         c3_draw_view_editor(f, app, area);
     }
     if app.c3_role_popup_open {
-        c3_draw_role_popup(f, app, area);
+        if app.active_tab == Tab::Settings && app.c3_settings_tab == C3SettingsTab::LinkGroups {
+            let active = app.c3_lg_group_editor_field;
+            let roles = if active == C3GroupEditorField::ViewRoles {
+                &app.c3_lg_group_editor_view_roles
+            } else {
+                &app.c3_lg_group_editor_edit_roles
+            };
+            c3_draw_group_role_popup(f, app, area, roles);
+        } else if app.active_tab == Tab::Settings && app.c3_settings_tab == C3SettingsTab::Overviews {
+            let roles = if app.c3_role_popup_for_edit {
+                &app.c3_ov_editor_edit_roles
+            } else {
+                &app.c3_ov_editor_view_roles
+            };
+            c3_draw_group_role_popup(f, app, area, roles);
+        } else {
+            c3_draw_role_popup(f, app, area);
+        }
     }
     if app.c3_int_editor_open {
         c3_draw_int_editor(f, app, area);
+    }
+    if app.c3_ov_fe_popup_open {
+        c3_draw_ov_fe_selector_popup(f, app, area);
     }
 }
 

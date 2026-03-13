@@ -368,6 +368,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
                     C3OverviewLevel::FieldEditor => {
                         lines.extend_from_slice(&[
                             Line::from(vec![key("↑ / ↓"), Span::raw("Navigate fields")]),
+                            Line::from(vec![key("Enter"), Span::raw("Open selector (Integration/Field)")]),
                             Line::from(vec![key("Ctrl+S"), Span::raw("Apply changes")]),
                             Line::from(vec![key("Esc"), Span::raw("Cancel / back to field list")]),
                         ]);

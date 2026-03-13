@@ -722,28 +722,14 @@ fn c3_draw_lg_group_editor(f: &mut Frame, app: &mut App, area: Rect) {
         sections[3],
     );
 
-    // Role popup overlay
-    if app.c3_role_popup_open {
-        let roles = if active == C3GroupEditorField::ViewRoles {
-            &app.c3_lg_group_editor_view_roles
-        } else {
-            &app.c3_lg_group_editor_edit_roles
-        };
-        c3_draw_group_role_popup(f, app, area, roles);
-    }
 }
 
-fn c3_draw_group_role_popup(f: &mut Frame, app: &App, area: Rect, selected_roles: &[String]) {
+pub(super) fn c3_draw_group_role_popup(f: &mut Frame, app: &App, area: Rect, selected_roles: &[String]) {
     let popup_area = center_popup(40, 16, area);
     f.render_widget(Clear, popup_area);
 
-    let title = if app.c3_role_popup_filtering {
-        format!(" Roles — filter: {}_ ", app.c3_role_popup_filter)
-    } else if !app.c3_role_popup_filter.is_empty() {
-        format!(" Roles — filter: {} ", app.c3_role_popup_filter)
-    } else {
-        " Roles ".to_string()
-    };
+    let filtered = app.c3_all_roles_filtered();
+    let title = if app.c3_role_popup_for_edit { " Edit Roles " } else { " View Roles " };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Magenta))
@@ -751,8 +737,24 @@ fn c3_draw_group_role_popup(f: &mut Frame, app: &App, area: Rect, selected_roles
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
 
-    let filtered = app.c3_all_roles_filtered();
-    let visible = inner.height as usize;
+    // Filter bar at top
+    let filter_style = if app.c3_role_popup_filtering {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let filter_text = if app.c3_role_popup_filter.is_empty() && !app.c3_role_popup_filtering {
+        " /:filter".to_string()
+    } else {
+        format!(" /{}", app.c3_role_popup_filter)
+    };
+    f.render_widget(
+        Paragraph::new(filter_text).style(filter_style),
+        Rect::new(inner.x, inner.y, inner.width, 1),
+    );
+
+    let list_area = Rect::new(inner.x, inner.y + 1, inner.width, inner.height.saturating_sub(1));
+    let visible = list_area.height as usize;
     let offset = if app.c3_role_popup_selected >= visible {
         app.c3_role_popup_selected - visible + 1
     } else { 0 };
@@ -771,7 +773,7 @@ fn c3_draw_group_role_popup(f: &mut Frame, app: &App, area: Rect, selected_roles
             let text = format!(" {} {}", marker, role);
             f.render_widget(
                 Paragraph::new(text).style(style),
-                Rect::new(inner.x, inner.y + row_idx as u16, inner.width, 1),
+                Rect::new(list_area.x, list_area.y + row_idx as u16, list_area.width, 1),
             );
         }
     }
@@ -982,14 +984,6 @@ fn c3_draw_settings_overviews(f: &mut Frame, app: &mut App, area: Rect) {
         C3OverviewLevel::Editor => {
             c3_draw_ov_list(f, app, area);
             c3_draw_ov_editor(f, app, area);
-            if app.c3_role_popup_open {
-                let roles = if app.c3_role_popup_for_edit {
-                    &app.c3_ov_editor_edit_roles
-                } else {
-                    &app.c3_ov_editor_view_roles
-                };
-                c3_draw_group_role_popup(f, app, area, roles);
-            }
         }
         C3OverviewLevel::FieldList => c3_draw_ov_field_list(f, app, area),
         C3OverviewLevel::FieldEditor => {
@@ -1170,7 +1164,7 @@ fn c3_draw_ov_field_list(f: &mut Frame, app: &mut App, area: Rect) {
     let toolbar = Paragraph::new(toolbar_text).style(Style::default().fg(Color::DarkGray));
     f.render_widget(toolbar, chunks[0]);
 
-    let col_names = [" Integration", "Field", "Alias", "Type"];
+    let col_names = [" Integration", "Field", "Label", "Type"];
     let header_cells: Vec<Cell> = col_names.iter().map(|&name| {
         Cell::from(name).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     }).collect();
@@ -1178,20 +1172,25 @@ fn c3_draw_ov_field_list(f: &mut Frame, app: &mut App, area: Rect) {
 
     let rows: Vec<Row> = filtered.iter().map(|&fi| {
         let field = &ov.fields[fi];
-        let alias_str = field.alias.as_deref().unwrap_or("");
         if field.field_type == "custom" {
+            let custom_label = field.custom.as_ref()
+                .and_then(|v| v.get("custom"))
+                .and_then(|v| v.get("label"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             Row::new(vec![
-                Cell::from(" (custom)".to_string()).style(Style::default().fg(Color::DarkGray)),
-                Cell::from(field.field.clone()).style(Style::default().fg(Color::DarkGray)),
-                Cell::from(alias_str.to_string()).style(Style::default().fg(Color::DarkGray)),
-                Cell::from("custom".to_string()).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(format!(" {}", field.from)),
+                Cell::from(custom_label.to_string()).style(Style::default().fg(Color::Yellow)),
+                Cell::from(""),
+                Cell::from("custom").style(Style::default().fg(Color::Yellow)),
             ])
         } else {
+            let alias_str = field.alias.as_deref().unwrap_or("");
             Row::new(vec![
                 Cell::from(format!(" {}", field.from)),
                 Cell::from(field.field.clone()),
                 Cell::from(alias_str.to_string()),
-                Cell::from(field.field_type.clone()),
+                Cell::from("linked"),
             ])
         }
     }).collect();
@@ -1213,8 +1212,13 @@ fn c3_draw_ov_field_list(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn c3_draw_ov_field_editor(f: &mut Frame, app: &mut App, area: Rect) {
-    let popup_width = (area.width * 50 / 100).max(45).min(area.width.saturating_sub(4));
-    let popup_height = 8u16.min(area.height.saturating_sub(4));
+    let is_custom = app.c3_ov_field_editor_is_custom;
+    let popup_width = (area.width * 60 / 100).max(50).min(area.width.saturating_sub(4));
+    let popup_height = if is_custom {
+        (app.c3_ov_fe_json_lines.len() as u16 + 6).max(10).min(area.height.saturating_sub(4))
+    } else {
+        7u16.min(area.height.saturating_sub(4))
+    };
     let popup_area = center_popup(popup_width, popup_height, area);
     f.render_widget(Clear, popup_area);
 
@@ -1234,40 +1238,155 @@ fn c3_draw_ov_field_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let footer_area = content_chunks[1];
 
     let mut y = fields_area.y;
-    for &field in C3OvFieldEditorField::all() {
-        if y >= fields_area.y + fields_area.height { break; }
-        let is_selected = field == app.c3_ov_field_editor_field;
-        let label_style = if is_selected {
+
+    // Integration (From) row - always shown
+    let from_selected = app.c3_ov_field_editor_field == C3OvFieldEditorField::From;
+    let from_style = if from_selected {
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let from_val = if app.c3_ov_field_editor_from.is_empty() { "<Enter to select>" } else { &app.c3_ov_field_editor_from };
+    f.render_widget(
+        Paragraph::new(format!("  Integration: {} ▸", from_val)).style(from_style),
+        Rect::new(fields_area.x, y, fields_area.width, 1),
+    );
+    y += 1;
+
+    if is_custom {
+        // Custom JSON multiline editor
+        let json_selected = app.c3_ov_field_editor_field == C3OvFieldEditorField::CustomJson;
+        let label_style = if json_selected {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        f.render_widget(
+            Paragraph::new("  Custom JSON:").style(label_style),
+            Rect::new(fields_area.x, y, fields_area.width, 1),
+        );
+        y += 1;
+
+        let json_area_height = (fields_area.y + fields_area.height).saturating_sub(y) as usize;
+        // Scroll to keep cursor visible
+        if app.c3_ov_fe_json_line < app.c3_ov_fe_json_scroll {
+            app.c3_ov_fe_json_scroll = app.c3_ov_fe_json_line;
+        } else if app.c3_ov_fe_json_line >= app.c3_ov_fe_json_scroll + json_area_height {
+            app.c3_ov_fe_json_scroll = app.c3_ov_fe_json_line + 1 - json_area_height;
+        }
+
+        for (vi, li) in (app.c3_ov_fe_json_scroll..).enumerate() {
+            if vi >= json_area_height { break; }
+            if let Some(line) = app.c3_ov_fe_json_lines.get(li) {
+                let row_y = y + vi as u16;
+                let max_w = fields_area.width.saturating_sub(4) as usize;
+                let display = if line.len() > max_w { &line[..max_w] } else { line.as_str() };
+                let style = if json_selected && li == app.c3_ov_fe_json_line {
+                    Style::default().fg(Color::White)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+                f.render_widget(
+                    Paragraph::new(format!("    {}", display)).style(style),
+                    Rect::new(fields_area.x, row_y, fields_area.width, 1),
+                );
+                if json_selected && li == app.c3_ov_fe_json_line {
+                    let col = app.c3_ov_fe_json_col.min(max_w);
+                    f.set_cursor_position((fields_area.x + 4 + col as u16, row_y));
+                }
+            }
+        }
+    } else {
+        // Linked mode: Field + Label rows
+        let field_selected = app.c3_ov_field_editor_field == C3OvFieldEditorField::Field;
+        let field_style = if field_selected {
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
-
-        let label = field.label();
-        let value = match field {
-            C3OvFieldEditorField::From => &app.c3_ov_field_editor_from,
-            C3OvFieldEditorField::Field => &app.c3_ov_field_editor_field_name,
-            C3OvFieldEditorField::Alias => &app.c3_ov_field_editor_alias,
-        };
-
-        let label_len = label.len() + 4;
-        let max_val_width = fields_area.width as usize - label_len.min(fields_area.width as usize);
-        let truncated = if value.len() > max_val_width { &value[..max_val_width] } else { value };
-
-        let row_area = Rect::new(fields_area.x, y, fields_area.width, 1);
-        let text = format!("  {}: {}", label, truncated);
-        f.render_widget(Paragraph::new(text).style(label_style), row_area);
-
-        if is_selected {
-            let cursor_x = row_area.x + label_len as u16 + app.c3_ov_field_editor_cursor.min(max_val_width) as u16;
-            f.set_cursor_position((cursor_x, y));
-        }
+        let field_val = if app.c3_ov_field_editor_field_name.is_empty() { "<Enter to select>" } else { &app.c3_ov_field_editor_field_name };
+        f.render_widget(
+            Paragraph::new(format!("  Field: {} ▸", field_val)).style(field_style),
+            Rect::new(fields_area.x, y, fields_area.width, 1),
+        );
         y += 1;
+
+        let label_selected = app.c3_ov_field_editor_field == C3OvFieldEditorField::Label;
+        let label_style = if label_selected {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let label_prefix = "  Label: ";
+        f.render_widget(
+            Paragraph::new(format!("{}{}", label_prefix, app.c3_ov_field_editor_label)).style(label_style),
+            Rect::new(fields_area.x, y, fields_area.width, 1),
+        );
+        if label_selected {
+            let max_w = fields_area.width as usize - label_prefix.len();
+            let col = app.c3_ov_field_editor_cursor.min(max_w);
+            f.set_cursor_position((fields_area.x + label_prefix.len() as u16 + col as u16, y));
+        }
     }
 
     f.render_widget(
-        Paragraph::new(" ↑/↓:field  Ctrl+S:save  Esc:cancel")
+        Paragraph::new(" ↑/↓:nav  Enter:select  Ctrl+S:save  Esc:cancel")
             .style(Style::default().fg(Color::DarkGray)),
         footer_area,
     );
+}
+
+pub(super) fn c3_draw_ov_fe_selector_popup(f: &mut Frame, app: &App, area: Rect) {
+    let title = if app.c3_ov_fe_popup_for_field { " Select Field " } else { " Select Integration " };
+    let popup_area = center_popup(45, 18, area);
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green))
+        .title(title);
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    // Filter bar
+    let filter_style = if app.c3_ov_fe_popup_filtering {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let filter_text = if app.c3_ov_fe_popup_filter.is_empty() && !app.c3_ov_fe_popup_filtering {
+        " /:filter".to_string()
+    } else {
+        format!(" /{}", app.c3_ov_fe_popup_filter)
+    };
+    f.render_widget(
+        Paragraph::new(filter_text).style(filter_style),
+        Rect::new(inner.x, inner.y, inner.width, 1),
+    );
+
+    let list_area = Rect::new(inner.x, inner.y + 1, inner.width, inner.height.saturating_sub(1));
+    let filtered = app.c3_ov_fe_popup_filtered();
+    let visible = list_area.height as usize;
+    let offset = if app.c3_ov_fe_popup_selected >= visible {
+        app.c3_ov_fe_popup_selected - visible + 1
+    } else { 0 };
+
+    for (row_idx, &real_idx) in filtered.iter().skip(offset).enumerate() {
+        if row_idx >= visible { break; }
+        if let Some(name) = app.c3_ov_fe_popup_items.get(real_idx) {
+            let is_selected = app.c3_ov_fe_popup_selected == row_idx + offset;
+            let style = if is_selected {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else if name == "Custom" {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let text = format!("  {}", name);
+            f.render_widget(
+                Paragraph::new(text).style(style),
+                Rect::new(list_area.x, list_area.y + row_idx as u16, list_area.width, 1),
+            );
+        }
+    }
 }
