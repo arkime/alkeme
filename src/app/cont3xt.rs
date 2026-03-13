@@ -558,7 +558,23 @@ impl App {
         indices
     }
 
-    /// Build the flat list of links filtered by selected result's itype
+    pub fn c3_lg_filtered_links(&self) -> Vec<usize> {
+        let gi = self.c3_lg_editing_group_idx;
+        let group = match self.c3_lg_groups.get(gi) {
+            Some(g) => g,
+            None => return Vec::new(),
+        };
+        let filter = self.c3_lg_links_filter.to_lowercase();
+        group.links.iter().enumerate()
+            .filter(|(_, l)| {
+                filter.is_empty()
+                    || l.name.to_lowercase().contains(&filter)
+                    || l.url.to_lowercase().contains(&filter)
+                    || l.itypes.iter().any(|t| t.to_lowercase().contains(&filter))
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
     /// Get the integration name of the currently selected tree item (if it's a Result)
     pub fn c3_current_integration_name(&self) -> Option<String> {
         if let Some(C3TreeItem::Result(idx)) = self.c3_tree_order.get(self.c3_selected) {

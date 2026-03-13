@@ -366,24 +366,24 @@ pub enum IntegrationPopupMode {
 pub enum C3SettingsTab {
     Views,
     Integrations,
-    Overviews,
     LinkGroups,
+    Overviews,
 }
 
 impl C3SettingsTab {
     pub const ALL: [C3SettingsTab; 4] = [
         C3SettingsTab::Views,
         C3SettingsTab::Integrations,
-        C3SettingsTab::Overviews,
         C3SettingsTab::LinkGroups,
+        C3SettingsTab::Overviews,
     ];
 
     pub fn name(&self) -> &'static str {
         match self {
             C3SettingsTab::Views => "(1) Views",
             C3SettingsTab::Integrations => "(2) Integrations",
-            C3SettingsTab::Overviews => "(3) Overviews",
-            C3SettingsTab::LinkGroups => "(4) Link Groups",
+            C3SettingsTab::LinkGroups => "(3) Link Groups",
+            C3SettingsTab::Overviews => "(4) Overviews",
         }
     }
 }
@@ -432,9 +432,6 @@ pub enum C3GroupEditorField {
 }
 
 impl C3GroupEditorField {
-    pub fn all() -> &'static [C3GroupEditorField] {
-        &[Self::Name, Self::ViewRoles, Self::EditRoles]
-    }
     pub fn next(&self) -> Self {
         match self {
             Self::Name => Self::ViewRoles,

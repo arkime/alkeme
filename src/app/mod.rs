@@ -351,6 +351,8 @@ pub struct App {
     pub c3_lg_links_selected: usize,
     pub c3_lg_links_table_state: ratatui::widgets::TableState,
     pub c3_lg_editing_group_idx: usize,
+    pub c3_lg_links_filter: String,
+    pub c3_lg_links_filtering: bool,
     // Link editor
     pub c3_lg_editor_field: C3LinkEditorField,
     pub c3_lg_editor_link: Cont3xtLink,
@@ -725,6 +727,8 @@ impl App {
             c3_lg_links_selected: 0,
             c3_lg_links_table_state: ratatui::widgets::TableState::default(),
             c3_lg_editing_group_idx: 0,
+            c3_lg_links_filter: String::new(),
+            c3_lg_links_filtering: false,
             c3_lg_editor_field: C3LinkEditorField::Name,
             c3_lg_editor_link: Cont3xtLink {
                 name: String::new(),

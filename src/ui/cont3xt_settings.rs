@@ -793,9 +793,21 @@ fn c3_draw_lg_link_list(f: &mut Frame, app: &mut App, area: Rect) {
         .constraints([Constraint::Length(2), Constraint::Min(0)])
         .split(area);
 
+    let filter_display = if app.c3_lg_links_filtering {
+        format!("  Filter: {}_", app.c3_lg_links_filter)
+    } else if !app.c3_lg_links_filter.is_empty() {
+        format!("  Filter: {}", app.c3_lg_links_filter)
+    } else {
+        String::new()
+    };
+
+    let filtered = app.c3_lg_filtered_links();
     let toolbar_text = format!(
-        " Links in: {}  ({} links)  ↑/↓:nav  Shift+↑/↓:reorder  Enter:edit  n:new  a:separator  d:delete  Ctrl+S:save  Esc:back",
-        group.name, group.links.len()
+        " Links in: {}  ({}{} links){}",
+        group.name,
+        if !app.c3_lg_links_filter.is_empty() { format!("{}/", filtered.len()) } else { String::new() },
+        group.links.len(),
+        filter_display,
     );
     let toolbar = Paragraph::new(toolbar_text)
         .style(Style::default().fg(Color::DarkGray));
@@ -807,7 +819,8 @@ fn c3_draw_lg_link_list(f: &mut Frame, app: &mut App, area: Rect) {
     }).collect();
     let header = Row::new(header_cells).height(1);
 
-    let rows: Vec<Row> = group.links.iter().map(|link| {
+    let rows: Vec<Row> = filtered.iter().map(|&idx| {
+        let link = &group.links[idx];
         if link.is_separator() {
             Row::new(vec![
                 Cell::from(" ──── separator ────").style(Style::default().fg(Color::DarkGray)),

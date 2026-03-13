@@ -311,9 +311,10 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
                             Line::from(vec![key("N / A"), Span::raw("New link / separator (at end)")]),
                             Line::from(vec![key("d / x"), Span::raw("Delete link")]),
                             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Reorder link")]),
+                            Line::from(vec![key("/"), Span::raw("Filter links (disables add/reorder)")]),
                             Line::from(vec![key("B"), Span::raw("Backup this group to file")]),
                             Line::from(vec![key("Ctrl+S"), Span::raw("Save group to server")]),
-                            Line::from(vec![key("Esc"), Span::raw("Back to group list")]),
+                            Line::from(vec![key("Esc"), Span::raw("Clear filter / back to group list")]),
                         ]);
                     }
                     C3LinkGroupLevel::LinkEditor => {
