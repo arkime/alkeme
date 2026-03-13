@@ -7,7 +7,7 @@ mod keys_wise;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats, parse_card};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, IntegrationSettings, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats, parse_card};
 use chrono::{Datelike, Duration, Timelike, Utc};
 use crossterm::event::KeyCode;
 use ratatui::widgets::TableState;
@@ -317,6 +317,23 @@ pub struct App {
     pub c3_role_popup_filtering: bool,
     // Settings confirm dialog
     pub c3_settings_confirm: Option<(String, String)>, // (action, message)
+    // Integration settings
+    pub c3_int_settings: Vec<IntegrationSettings>,
+    pub c3_int_settings_selected: usize,
+    pub c3_int_settings_table_state: ratatui::widgets::TableState,
+    pub c3_int_settings_filter: String,
+    pub c3_int_settings_filtering: bool,
+    pub c3_int_settings_loaded: bool,
+    pub c3_int_settings_sort: u8,   // 0=Name, 1=Status
+    pub c3_int_settings_sort_desc: bool,
+    pub c3_int_settings_dirty: bool,
+    // Integration config editor
+    pub c3_int_editor_open: bool,
+    pub c3_int_editor_idx: usize,
+    pub c3_int_editor_values: Vec<(String, String, bool, bool, bool, String)>, // (field_name, value, is_password, is_boolean, required, help)
+    pub c3_int_editor_selected: usize,
+    pub c3_int_editor_cursor: usize,
+    pub c3_int_editor_show_password: bool,
     // Parliament state
     pub pl_groups: Vec<PlGroup>,
     pub pl_stats: HashMap<String, PlClusterStats>,
@@ -646,6 +663,22 @@ impl App {
             c3_role_popup_filter: String::new(),
             c3_role_popup_filtering: false,
             c3_settings_confirm: None,
+            // Integration settings
+            c3_int_settings: Vec::new(),
+            c3_int_settings_selected: 0,
+            c3_int_settings_table_state: ratatui::widgets::TableState::default(),
+            c3_int_settings_filter: String::new(),
+            c3_int_settings_filtering: false,
+            c3_int_settings_loaded: false,
+            c3_int_settings_sort: 0,
+            c3_int_settings_sort_desc: false,
+            c3_int_settings_dirty: false,
+            c3_int_editor_open: false,
+            c3_int_editor_idx: 0,
+            c3_int_editor_values: Vec::new(),
+            c3_int_editor_selected: 0,
+            c3_int_editor_cursor: 0,
+            c3_int_editor_show_password: false,
             // Parliament state
             pl_groups: Vec::new(),
             pl_stats: HashMap::new(),
@@ -698,7 +731,7 @@ impl App {
     pub fn needs_animation(&self) -> bool {
         match self.app_mode {
             AppMode::Viewer => self.active_tab == Tab::Settings,
-            AppMode::Cont3xt => self.active_tab == Tab::Settings && self.c3_settings_tab != C3SettingsTab::Views,
+            AppMode::Cont3xt => self.active_tab == Tab::Settings && self.c3_settings_tab != C3SettingsTab::Views && self.c3_settings_tab != C3SettingsTab::Integrations,
             AppMode::Wise => self.active_tab == Tab::Settings,
             AppMode::Parliament => self.active_tab == Tab::Settings,
         }
@@ -716,6 +749,7 @@ impl App {
             || self.c3_save_json_prompt.is_some()
             || self.c3_view_editor_open
             || self.c3_role_popup_open
+            || self.c3_int_editor_open
             || self.show_help
             || self.show_debug
     }
@@ -730,6 +764,7 @@ impl App {
             || self.c3_show_link_popup || self.c3_show_card_popup
             || self.c3_show_tags_popup || self.c3_show_date_popup
             || self.c3_view_editor_open || self.c3_role_popup_open
+            || self.c3_int_editor_open
     }
 
     pub fn tabs(&self) -> &'static [Tab] {
@@ -1535,6 +1570,75 @@ impl App {
             Ok(roles) => self.c3_all_roles = roles,
             Err(e) => self.status_msg = format!("Error fetching roles: {e}"),
         }
+    }
+
+    pub async fn c3_fetch_integration_settings(&mut self) {
+        match self.client.c3_get_integration_settings().await {
+            Ok(settings) => {
+                self.c3_int_settings = settings;
+                self.c3_int_settings_loaded = true;
+                if self.c3_int_settings_selected >= self.c3_int_settings.len() {
+                    self.c3_int_settings_selected = 0;
+                }
+                let filtered = self.c3_int_settings_filtered();
+                if !filtered.is_empty() {
+                    self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected.min(filtered.len() - 1)));
+                } else {
+                    self.c3_int_settings_table_state.select(Some(0));
+                }
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching integration settings: {e}");
+            }
+        }
+    }
+
+    pub fn c3_build_int_settings_payload(&self) -> HashMap<String, HashMap<String, serde_json::Value>> {
+        let mut payload: HashMap<String, HashMap<String, serde_json::Value>> = HashMap::new();
+        for int in &self.c3_int_settings {
+            let mut fields: HashMap<String, serde_json::Value> = HashMap::new();
+            fields.insert("disabled".to_string(), serde_json::Value::Bool(int.disabled));
+            for field_def in &int.fields {
+                let val = int.values.get(&field_def.name).cloned().unwrap_or_default();
+                if field_def.is_boolean {
+                    fields.insert(field_def.name.clone(), serde_json::Value::Bool(val == "true"));
+                } else {
+                    fields.insert(field_def.name.clone(), serde_json::Value::String(val));
+                }
+            }
+            payload.insert(int.name.clone(), fields);
+        }
+        payload
+    }
+
+    pub(crate) fn c3_int_settings_filtered(&self) -> Vec<usize> {
+        let filter = self.c3_int_settings_filter.to_lowercase();
+        let mut indices: Vec<usize> = self.c3_int_settings.iter().enumerate()
+            .filter(|(_, s)| filter.is_empty() || s.name.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect();
+        let settings = &self.c3_int_settings;
+        let col = self.c3_int_settings_sort;
+        let desc = self.c3_int_settings_sort_desc;
+        indices.sort_by(|&a, &b| {
+            let cmp = match col {
+                0 => settings[a].name.to_lowercase().cmp(&settings[b].name.to_lowercase()),
+                _ => {
+                    // Sort by status: locked, disabled, global, configured
+                    let status_rank = |s: &IntegrationSettings| -> u8 {
+                        if s.locked { 0 }
+                        else if s.disabled { 4 }
+                        else if s.global_configed { 1 }
+                        else if s.fields.iter().any(|f| f.required && s.values.get(&f.name).map_or(true, |v| v.is_empty())) { 3 }
+                        else { 2 }
+                    };
+                    status_rank(&settings[a]).cmp(&status_rank(&settings[b]))
+                        .then_with(|| settings[a].name.to_lowercase().cmp(&settings[b].name.to_lowercase()))
+                }
+            };
+            if desc { cmp.reverse() } else { cmp }
+        });
+        indices
     }
 
     /// Open the view editor for a new view

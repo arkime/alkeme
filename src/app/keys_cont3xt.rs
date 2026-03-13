@@ -896,6 +896,162 @@ impl App {
             return;
         }
 
+        // Integration config editor
+        if self.c3_int_editor_open {
+            match key.code {
+                KeyCode::Esc => {
+                    self.c3_int_editor_open = false;
+                }
+                KeyCode::Up | KeyCode::Char('k') if !self.c3_int_editor_values.is_empty() => {
+                    if self.c3_int_editor_selected > 0 {
+                        self.c3_int_editor_selected -= 1;
+                        let val = &self.c3_int_editor_values[self.c3_int_editor_selected].1;
+                        self.c3_int_editor_cursor = val.len();
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') if !self.c3_int_editor_values.is_empty() => {
+                    if self.c3_int_editor_selected + 1 < self.c3_int_editor_values.len() {
+                        self.c3_int_editor_selected += 1;
+                        let val = &self.c3_int_editor_values[self.c3_int_editor_selected].1;
+                        self.c3_int_editor_cursor = val.len();
+                    }
+                }
+                KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // Copy editor values back into settings
+                    let idx = self.c3_int_editor_idx;
+                    if idx < self.c3_int_settings.len() {
+                        for (field_name, value, _, _, _, _) in &self.c3_int_editor_values {
+                            self.c3_int_settings[idx].values.insert(field_name.clone(), value.clone());
+                        }
+                    }
+                    self.c3_int_editor_open = false;
+                    // Save all settings
+                    let payload = self.c3_build_int_settings_payload();
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(async {
+                            match self.client.c3_put_integration_settings(&payload).await {
+                                Ok(_) => {
+                                    self.status_msg = "Integration settings saved".to_string();
+                                    self.c3_int_settings_dirty = false;
+                                    self.c3_fetch_integration_settings().await;
+                                }
+                                Err(e) => {
+                                    self.status_msg = format!("Error saving settings: {e}");
+                                }
+                            }
+                        })
+                    });
+                }
+                KeyCode::Char('p') => {
+                    self.c3_int_editor_show_password = !self.c3_int_editor_show_password;
+                }
+                KeyCode::Char(' ') | KeyCode::Enter => {
+                    if let Some(entry) = self.c3_int_editor_values.get_mut(self.c3_int_editor_selected) {
+                        if entry.3 { // is_boolean
+                            entry.1 = if entry.1 == "true" { "false".to_string() } else { "true".to_string() };
+                            self.c3_int_settings_dirty = true;
+                        }
+                    }
+                }
+                _ => {
+                    // Text input for non-boolean fields
+                    if let Some(entry) = self.c3_int_editor_values.get(self.c3_int_editor_selected) {
+                        if !entry.3 { // not boolean
+                            let locked = self.c3_int_editor_idx < self.c3_int_settings.len() && self.c3_int_settings[self.c3_int_editor_idx].locked;
+                            if !locked {
+                                match key.code {
+                                    KeyCode::Char(c) => {
+                                        if let Some(entry) = self.c3_int_editor_values.get_mut(self.c3_int_editor_selected) {
+                                            entry.1.insert(self.c3_int_editor_cursor, c);
+                                            self.c3_int_editor_cursor += 1;
+                                            self.c3_int_settings_dirty = true;
+                                        }
+                                    }
+                                    KeyCode::Backspace => {
+                                        if self.c3_int_editor_cursor > 0 {
+                                            if let Some(entry) = self.c3_int_editor_values.get_mut(self.c3_int_editor_selected) {
+                                                entry.1.remove(self.c3_int_editor_cursor - 1);
+                                                self.c3_int_editor_cursor -= 1;
+                                                self.c3_int_settings_dirty = true;
+                                            }
+                                        }
+                                    }
+                                    KeyCode::Delete => {
+                                        if let Some(entry) = self.c3_int_editor_values.get_mut(self.c3_int_editor_selected) {
+                                            if self.c3_int_editor_cursor < entry.1.len() {
+                                                entry.1.remove(self.c3_int_editor_cursor);
+                                                self.c3_int_settings_dirty = true;
+                                            }
+                                        }
+                                    }
+                                    KeyCode::Left => {
+                                        if key.modifiers.contains(KeyModifiers::SHIFT) {
+                                            // Word jump left
+                                            if let Some(entry) = self.c3_int_editor_values.get(self.c3_int_editor_selected) {
+                                                let bytes = entry.1.as_bytes();
+                                                let mut pos = self.c3_int_editor_cursor;
+                                                while pos > 0 && bytes.get(pos - 1) == Some(&b' ') { pos -= 1; }
+                                                while pos > 0 && bytes.get(pos - 1) != Some(&b' ') { pos -= 1; }
+                                                self.c3_int_editor_cursor = pos;
+                                            }
+                                        } else {
+                                            self.c3_int_editor_cursor = self.c3_int_editor_cursor.saturating_sub(1);
+                                        }
+                                    }
+                                    KeyCode::Right => {
+                                        if let Some(entry) = self.c3_int_editor_values.get(self.c3_int_editor_selected) {
+                                            if key.modifiers.contains(KeyModifiers::SHIFT) {
+                                                // Word jump right
+                                                let bytes = entry.1.as_bytes();
+                                                let len = entry.1.len();
+                                                let mut pos = self.c3_int_editor_cursor;
+                                                while pos < len && bytes.get(pos) != Some(&b' ') { pos += 1; }
+                                                while pos < len && bytes.get(pos) == Some(&b' ') { pos += 1; }
+                                                self.c3_int_editor_cursor = pos;
+                                            } else if self.c3_int_editor_cursor < entry.1.len() {
+                                                self.c3_int_editor_cursor += 1;
+                                            }
+                                        }
+                                    }
+                                    KeyCode::Home => {
+                                        self.c3_int_editor_cursor = 0;
+                                    }
+                                    KeyCode::End => {
+                                        if let Some(entry) = self.c3_int_editor_values.get(self.c3_int_editor_selected) {
+                                            self.c3_int_editor_cursor = entry.1.len();
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
+        // Integration settings filter
+        if self.c3_int_settings_filtering {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => {
+                    self.c3_int_settings_filtering = false;
+                }
+                KeyCode::Backspace => {
+                    self.c3_int_settings_filter.pop();
+                    self.c3_int_settings_selected = 0;
+                    self.c3_int_settings_table_state.select(Some(0));
+                }
+                KeyCode::Char(c) => {
+                    self.c3_int_settings_filter.push(c);
+                    self.c3_int_settings_selected = 0;
+                    self.c3_int_settings_table_state.select(Some(0));
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // Settings views filter
         if self.c3_settings_views_filtering {
             match key.code {
@@ -941,6 +1097,11 @@ impl App {
                         })
                     });
                 }
+                if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations && !self.c3_int_settings_loaded {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(self.c3_fetch_integration_settings())
+                    });
+                }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
@@ -960,6 +1121,11 @@ impl App {
                             self.c3_fetch_settings_views().await;
                             self.c3_fetch_roles().await;
                         })
+                    });
+                }
+                if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations && !self.c3_int_settings_loaded {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(self.c3_fetch_integration_settings())
                     });
                 }
             }
@@ -1145,6 +1311,12 @@ impl App {
                         self.c3_settings_views_selected = (self.c3_settings_views_selected + self.visible_rows).min(filtered.len() - 1);
                         self.c3_settings_views_table_state.select(Some(self.c3_settings_views_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations {
+                    let filtered = self.c3_int_settings_filtered();
+                    if !filtered.is_empty() {
+                        self.c3_int_settings_selected = (self.c3_int_settings_selected + self.visible_rows).min(filtered.len() - 1);
+                        self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected));
+                    }
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -1173,6 +1345,9 @@ impl App {
                 } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views {
                     self.c3_settings_views_selected = self.c3_settings_views_selected.saturating_sub(self.visible_rows);
                     self.c3_settings_views_table_state.select(Some(self.c3_settings_views_selected));
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations {
+                    self.c3_int_settings_selected = self.c3_int_settings_selected.saturating_sub(self.visible_rows);
+                    self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected));
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -1212,6 +1387,12 @@ impl App {
                         self.c3_settings_views_selected += 1;
                         self.c3_settings_views_table_state.select(Some(self.c3_settings_views_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations {
+                    let filtered = self.c3_int_settings_filtered();
+                    if self.c3_int_settings_selected + 1 < filtered.len() {
+                        self.c3_int_settings_selected += 1;
+                        self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected));
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1237,6 +1418,11 @@ impl App {
                         self.c3_settings_views_selected -= 1;
                         self.c3_settings_views_table_state.select(Some(self.c3_settings_views_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations {
+                    if self.c3_int_settings_selected > 0 {
+                        self.c3_int_settings_selected -= 1;
+                        self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected));
+                    }
                 }
             }
             KeyCode::PageDown => {
@@ -1256,6 +1442,9 @@ impl App {
                 } else if self.active_tab == Tab::History {
                     self.c3_history_selected = 0;
                     self.c3_history_table_state.select(Some(0));
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations {
+                    self.c3_int_settings_selected = 0;
+                    self.c3_int_settings_table_state.select(Some(0));
                 } else if self.active_tab == Tab::Settings {
                     self.c3_settings_views_selected = 0;
                     self.c3_settings_views_table_state.select(Some(0));
@@ -1269,6 +1458,12 @@ impl App {
                     if len > 0 {
                         self.c3_history_selected = len - 1;
                         self.c3_history_table_state.select(Some(self.c3_history_selected));
+                    }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations {
+                    let filtered = self.c3_int_settings_filtered();
+                    if !filtered.is_empty() {
+                        self.c3_int_settings_selected = filtered.len() - 1;
+                        self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected));
                     }
                 } else if self.active_tab == Tab::Settings {
                     let filtered = self.c3_settings_filtered_views();
@@ -1414,6 +1609,11 @@ impl App {
             }
             KeyCode::Char('2') if self.active_tab == Tab::Settings => {
                 self.c3_settings_tab = C3SettingsTab::Integrations;
+                if !self.c3_int_settings_loaded {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(self.c3_fetch_integration_settings())
+                    });
+                }
             }
             KeyCode::Char('3') if self.active_tab == Tab::Settings => {
                 self.c3_settings_tab = C3SettingsTab::Overviews;
@@ -1468,6 +1668,65 @@ impl App {
                     } else {
                         self.status_msg = "View is not editable".to_string();
                     }
+                }
+            }
+            // Integration settings keys
+            KeyCode::Char('r') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations => {
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(self.c3_fetch_integration_settings())
+                });
+            }
+            KeyCode::Char('s') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations && !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.c3_int_settings_sort = (self.c3_int_settings_sort + 1) % 2;
+                self.c3_int_settings_selected = 0;
+                self.c3_int_settings_table_state.select(Some(0));
+            }
+            KeyCode::Char('S') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations => {
+                self.c3_int_settings_sort_desc = !self.c3_int_settings_sort_desc;
+                self.c3_int_settings_selected = 0;
+                self.c3_int_settings_table_state.select(Some(0));
+            }
+            KeyCode::Char('/') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations => {
+                self.c3_int_settings_filtering = true;
+            }
+            KeyCode::Char('d') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations => {
+                let filtered = self.c3_int_settings_filtered();
+                if let Some(&idx) = filtered.get(self.c3_int_settings_selected) {
+                    self.c3_int_settings[idx].disabled = !self.c3_int_settings[idx].disabled;
+                    self.c3_int_settings_dirty = true;
+                }
+            }
+            KeyCode::Char('s') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations && key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let payload = self.c3_build_int_settings_payload();
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        match self.client.c3_put_integration_settings(&payload).await {
+                            Ok(_) => {
+                                self.status_msg = "Integration settings saved".to_string();
+                                self.c3_int_settings_dirty = false;
+                                self.c3_fetch_integration_settings().await;
+                            }
+                            Err(e) => {
+                                self.status_msg = format!("Error saving settings: {e}");
+                            }
+                        }
+                    })
+                });
+            }
+            KeyCode::Enter | KeyCode::Char('e') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations => {
+                let filtered = self.c3_int_settings_filtered();
+                if let Some(&idx) = filtered.get(self.c3_int_settings_selected) {
+                    let int = &self.c3_int_settings[idx];
+                    let values: Vec<(String, String, bool, bool, bool, String)> = int.fields.iter().map(|f| {
+                        let val = int.values.get(&f.name).cloned().unwrap_or_default();
+                        (f.name.clone(), val, f.password, f.is_boolean, f.required, f.help.clone())
+                    }).collect();
+                    self.c3_int_editor_open = true;
+                    self.c3_int_editor_idx = idx;
+                    self.c3_int_editor_values = values;
+                    self.c3_int_editor_selected = 0;
+                    self.c3_int_editor_cursor = self.c3_int_editor_values.first().map(|v| v.1.len()).unwrap_or(0);
+                    self.c3_int_editor_show_password = false;
                 }
             }
             _ => {}

@@ -174,6 +174,84 @@ impl ArkimeClient {
         Ok(roles)
     }
 
+    /// Fetch cont3xt integration settings
+    pub async fn c3_get_integration_settings(&self) -> Result<Vec<super::IntegrationSettings>> {
+        let url = format!("{}/api/integration/settings", self.base_url);
+        let body = self.authenticated_get_with_cookie(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let mut result = Vec::new();
+        if let Some(settings_obj) = parsed.get("settings").and_then(|v| v.as_object()) {
+            for (name, info) in settings_obj {
+                let global_configed = info.get("globalConfiged").and_then(|v| v.as_bool()).unwrap_or(false);
+                let locked = info.get("locked").and_then(|v| v.as_bool()).unwrap_or(false);
+                let home_page = info.get("homePage").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+                let values_obj = info.get("values").and_then(|v| v.as_object());
+                let disabled = values_obj
+                    .and_then(|v| v.get("disabled"))
+                    .map(|v| v.as_bool().unwrap_or(false))
+                    .unwrap_or(false);
+
+                let mut values = HashMap::new();
+                let mut fields = Vec::new();
+
+                if let Some(settings_defs) = info.get("settings").and_then(|v| v.as_object()) {
+                    for (field_name, field_def) in settings_defs {
+                        if field_name == "disabled" {
+                            continue;
+                        }
+                        let help = field_def.get("help").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let password = field_def.get("password").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let required = field_def.get("required").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let is_boolean = field_def.get("type").and_then(|v| v.as_str()) == Some("boolean");
+
+                        fields.push(super::IntegrationSettingField {
+                            name: field_name.clone(),
+                            help,
+                            password,
+                            required,
+                            is_boolean,
+                        });
+
+                        if let Some(vo) = values_obj {
+                            if let Some(val) = vo.get(field_name) {
+                                if is_boolean {
+                                    values.insert(field_name.clone(), val.as_bool().unwrap_or(false).to_string());
+                                } else {
+                                    values.insert(field_name.clone(), val.as_str().unwrap_or("").to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Sort fields: required first, then alphabetically
+                fields.sort_by(|a, b| {
+                    b.required.cmp(&a.required).then_with(|| a.name.cmp(&b.name))
+                });
+
+                result.push(super::IntegrationSettings {
+                    name: name.clone(),
+                    fields,
+                    values,
+                    global_configed,
+                    locked,
+                    home_page,
+                    disabled,
+                });
+            }
+        }
+        result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(result)
+    }
+
+    /// Save all cont3xt integration settings
+    pub async fn c3_put_integration_settings(&self, settings: &HashMap<String, HashMap<String, Value>>) -> Result<Value> {
+        let url = format!("{}/api/integration/settings", self.base_url);
+        let body = serde_json::json!({ "settings": settings });
+        self.authenticated_put_json(&url, &body).await
+    }
+
     /// Fetch cont3xt integration stats
     pub async fn c3_get_stats(&self) -> Result<Value> {
         let url = format!("{}/api/integration/stats", self.base_url);

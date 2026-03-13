@@ -60,6 +60,9 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
     if app.c3_role_popup_open {
         c3_draw_role_popup(f, app, area);
     }
+    if app.c3_int_editor_open {
+        c3_draw_int_editor(f, app, area);
+    }
 }
 
 fn draw_cont3xt_background(f: &mut Frame, app: &mut App) {
@@ -1867,6 +1870,7 @@ fn c3_draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
 
     match app.c3_settings_tab {
         C3SettingsTab::Views => c3_draw_settings_views(f, app, chunks[1]),
+        C3SettingsTab::Integrations => c3_draw_settings_integrations(f, app, chunks[1]),
         _ => {
             arkime::draw_under_construction(f, app, chunks[1]);
             arkime::draw_owl(f, app, chunks[1]);
@@ -2153,5 +2157,221 @@ pub(super) fn c3_draw_role_popup(f: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(" Space:toggle  a:all  n:none  /:filter  Esc:done")
             .style(Style::default().fg(Color::DarkGray)),
         Rect::new(inner.x, help_y, inner.width, 1),
+    );
+}
+
+fn c3_draw_settings_integrations(f: &mut Frame, app: &mut App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Min(0)])
+        .split(area);
+
+    let filter_display = if app.c3_int_settings_filtering {
+        format!("Filter: {}_", app.c3_int_settings_filter)
+    } else if !app.c3_int_settings_filter.is_empty() {
+        format!("Filter: {}", app.c3_int_settings_filter)
+    } else {
+        String::new()
+    };
+
+    let filtered = app.c3_int_settings_filtered();
+
+    let dirty_indicator = if app.c3_int_settings_dirty { " [UNSAVED]" } else { "" };
+    let toolbar_text = format!(
+        " {} integrations  {}  [d]isable  [/]filter  [r]efresh  Ctrl+S:save{}",
+        filtered.len(),
+        filter_display,
+        dirty_indicator,
+    );
+    let toolbar = Paragraph::new(toolbar_text)
+        .style(Style::default().fg(Color::DarkGray));
+    f.render_widget(toolbar, chunks[0]);
+
+    if app.c3_int_settings_filtering {
+        let cursor_x = chunks[0].x + 1 + filtered.len().to_string().len() as u16 + 16 + app.c3_int_settings_filter.len() as u16;
+        f.set_cursor_position((cursor_x, chunks[0].y));
+    }
+
+    let col_names = [" Name", "Status", "Fields"];
+    let header_cells: Vec<Cell> = col_names.iter().enumerate().map(|(i, &name)| {
+        let is_sorted = (i < 2) && app.c3_int_settings_sort as usize == i;
+        let label = sort_header_label(name, is_sorted, app.c3_int_settings_sort_desc);
+        Cell::from(label).style(sort_header_style(is_sorted))
+    }).collect();
+    let header = Row::new(header_cells).height(1);
+
+    let rows: Vec<Row> = filtered.iter().map(|&idx| {
+        let int = &app.c3_int_settings[idx];
+        let status = if int.locked {
+            "🔒 locked".to_string()
+        } else if int.disabled {
+            "🚫 disabled".to_string()
+        } else if int.global_configed {
+            "🌍 global".to_string()
+        } else {
+            let has_unset_required = int.fields.iter().any(|f| {
+                f.required && int.values.get(&f.name).map_or(true, |v| v.is_empty())
+            });
+            if has_unset_required {
+                " ✗ not configured".to_string()
+            } else {
+                " ✓ configured".to_string()
+            }
+        };
+        let status_style = if int.locked {
+            Style::default().fg(Color::DarkGray)
+        } else if int.disabled {
+            Style::default().fg(Color::Red)
+        } else if int.global_configed {
+            Style::default().fg(Color::Blue)
+        } else {
+            let has_unset_required = int.fields.iter().any(|f| {
+                f.required && int.values.get(&f.name).map_or(true, |v| v.is_empty())
+            });
+            if has_unset_required {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::Green)
+            }
+        };
+        Row::new(vec![
+            Cell::from(format!(" {}", int.name)),
+            Cell::from(status).style(status_style),
+            Cell::from(format!("{}", int.fields.len())),
+        ])
+    }).collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(30),
+            Constraint::Length(20),
+            Constraint::Length(8),
+        ],
+    )
+    .header(header)
+    .block(Block::default().borders(Borders::ALL))
+    .row_highlight_style(Style::default().bg(Color::DarkGray));
+
+    f.render_stateful_widget(table, chunks[1], &mut app.c3_int_settings_table_state);
+}
+
+fn c3_draw_int_editor(f: &mut Frame, app: &mut App, area: Rect) {
+    let idx = app.c3_int_editor_idx;
+    let int = match app.c3_int_settings.get(idx) {
+        Some(i) => i,
+        None => return,
+    };
+
+    let field_count = app.c3_int_editor_values.len();
+    let popup_height = (field_count as u16 + 6).min(area.height.saturating_sub(4)).max(8);
+    let popup_width = 70u16.min(area.width.saturating_sub(4));
+    let popup_area = center_popup(popup_width, popup_height, area);
+    f.render_widget(Clear, popup_area);
+
+    let title = if int.locked {
+        format!(" {} 🔒 ", int.name)
+    } else {
+        format!(" {} Settings ", int.name)
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(title);
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    if int.locked {
+        let msg = Paragraph::new("This integration is locked by your administrator.\n\nPress Esc to close.")
+            .alignment(ratatui::layout::Alignment::Center)
+            .style(Style::default().fg(Color::DarkGray));
+        f.render_widget(msg, inner);
+        return;
+    }
+
+    if field_count == 0 {
+        let msg = Paragraph::new("No configurable fields.\n\nPress Esc to close.")
+            .alignment(ratatui::layout::Alignment::Center)
+            .style(Style::default().fg(Color::DarkGray));
+        f.render_widget(msg, inner);
+        return;
+    }
+
+    // Layout: fields area + help line + footer
+    let content_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1), Constraint::Length(1)])
+        .split(inner);
+
+    let fields_area = content_chunks[0];
+    let help_area = content_chunks[1];
+    let footer_area = content_chunks[2];
+
+    // Render fields
+    let max_visible = fields_area.height as usize;
+    let scroll_offset = if app.c3_int_editor_selected >= max_visible {
+        app.c3_int_editor_selected - max_visible + 1
+    } else {
+        0
+    };
+
+    for (i, (field_name, value, is_password, is_boolean, required, _help)) in
+        app.c3_int_editor_values.iter().enumerate().skip(scroll_offset).take(max_visible)
+    {
+        let y = fields_area.y + (i - scroll_offset) as u16;
+        if y >= fields_area.y + fields_area.height {
+            break;
+        }
+        let row_area = Rect::new(fields_area.x, y, fields_area.width, 1);
+        let is_selected = i == app.c3_int_editor_selected;
+        let label_style = if is_selected {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let required_mark = if *required { "*" } else { " " };
+
+        if *is_boolean {
+            let check = if value == "true" { "x" } else { " " };
+            let text = format!("{} [{}] {}", required_mark, check, field_name);
+            f.render_widget(Paragraph::new(text).style(label_style), row_area);
+        } else {
+            let display_value = if *is_password && !app.c3_int_editor_show_password {
+                "●".repeat(value.len())
+            } else {
+                value.clone()
+            };
+            let label_len = required_mark.len() + field_name.len() + 3; // "* field: "
+            let max_val_width = row_area.width as usize - label_len.min(row_area.width as usize);
+            let truncated = if display_value.len() > max_val_width {
+                display_value[..max_val_width].to_string()
+            } else {
+                display_value.clone()
+            };
+            let text = format!("{} {}: {}", required_mark, field_name, truncated);
+            f.render_widget(Paragraph::new(text).style(label_style), row_area);
+
+            if is_selected && !*is_boolean {
+                let cursor_x = row_area.x + label_len as u16;
+                let cx = cursor_x + app.c3_int_editor_cursor.min(max_val_width) as u16;
+                f.set_cursor_position((cx, y));
+            }
+        }
+    }
+
+    // Help text for selected field
+    if let Some((_, _, _, _, _, help)) = app.c3_int_editor_values.get(app.c3_int_editor_selected) {
+        f.render_widget(
+            Paragraph::new(help.as_str()).style(Style::default().fg(Color::DarkGray)),
+            help_area,
+        );
+    }
+
+    // Footer
+    f.render_widget(
+        Paragraph::new(" ↑/↓:navigate  Space:toggle  p:passwords  Ctrl+S:save  Esc:close")
+            .style(Style::default().fg(Color::DarkGray)),
+        footer_area,
     );
 }

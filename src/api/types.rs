@@ -144,6 +144,29 @@ pub struct Cont3xtView {
     pub edit_roles: Vec<String>,
 }
 
+/// A setting field definition for an integration
+#[derive(Clone)]
+pub struct IntegrationSettingField {
+    pub name: String,
+    pub help: String,
+    pub password: bool,
+    pub required: bool,
+    pub is_boolean: bool,
+}
+
+/// Integration settings from GET /api/integration/settings
+#[derive(Clone)]
+pub struct IntegrationSettings {
+    pub name: String,
+    pub fields: Vec<IntegrationSettingField>,
+    pub values: std::collections::HashMap<String, String>,
+    pub global_configed: bool,
+    pub locked: bool,
+    #[allow(dead_code)]
+    pub home_page: String,
+    pub disabled: bool,
+}
+
 /// A cont3xt integration definition from /api/integration
 #[derive(Clone)]
 pub struct Cont3xtIntegration {
