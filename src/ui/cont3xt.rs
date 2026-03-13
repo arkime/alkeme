@@ -1320,7 +1320,7 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
 
     // Reserve bottom for selected link description
     let selected_info = app.c3_link_flat.get(app.c3_link_popup_selected)
-        .map(|(_, _, url, info)| (url.clone(), info.clone()))
+        .map(|(_, _, url, info, _)| (url.clone(), info.clone()))
         .unwrap_or_default();
     let has_desc = !selected_info.0.is_empty();
     let desc_height = if has_desc { 3u16 } else { 0 };
@@ -1342,7 +1342,7 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
     // Count total lines up to selected to find its display position
     let mut last_group = String::new();
     let mut selected_line_pos = 0usize;
-    for (i, (group, _, _, _)) in app.c3_link_flat.iter().enumerate() {
+    for (i, (group, _, _, _, _)) in app.c3_link_flat.iter().enumerate() {
         if *group != last_group {
             if !last_group.is_empty() {
                 selected_line_pos += 1; // spacer
@@ -1364,7 +1364,7 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     let mut line_idx = 0usize;
     last_group = String::new();
-    for (i, (group, name, url, _info)) in app.c3_link_flat.iter().enumerate() {
+    for (i, (group, name, url, _info, color)) in app.c3_link_flat.iter().enumerate() {
         if *group != last_group {
             if !last_group.is_empty() {
                 if line_idx >= scroll_offset && lines.len() < visible {
@@ -1383,10 +1383,15 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
         }
         if lines.len() >= visible { break; }
         if line_idx >= scroll_offset {
-            let style = if i == selected {
-                Style::default().fg(Color::Black).bg(Color::Yellow)
+            let name_color = if i == selected {
+                Color::Black
             } else {
-                Style::default().fg(Color::White)
+                parse_hex_color(color).unwrap_or(Color::White)
+            };
+            let style = if i == selected {
+                Style::default().fg(name_color).bg(Color::Yellow)
+            } else {
+                Style::default().fg(name_color)
             };
             let max_url_len = (popup_width as usize).saturating_sub(name.len() + 6);
             let url_display = if max_url_len == 0 {

@@ -834,8 +834,11 @@ fn c3_draw_lg_link_list(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 link.url.clone()
             };
+            let name_style = parse_hex_color(&link.color)
+                .map(|c| Style::default().fg(c))
+                .unwrap_or_default();
             Row::new(vec![
-                Cell::from(format!(" {}", link.name)),
+                Cell::from(format!(" {}", link.name)).style(name_style),
                 Cell::from(url_display),
                 Cell::from(types_str),
             ])
@@ -946,8 +949,19 @@ fn c3_draw_lg_link_editor(f: &mut Frame, app: &mut App, area: Rect) {
                 value
             };
             let row_area = Rect::new(fields_area.x, y, fields_area.width, 1);
-            let text = format!("  {}: {}", label, truncated);
-            f.render_widget(Paragraph::new(text).style(label_style), row_area);
+            if field == C3LinkEditorField::Color {
+                let swatch = parse_hex_color(value).map(|c| {
+                    Span::styled(" █████", Style::default().fg(c))
+                });
+                let mut spans = vec![Span::styled(format!("  {}: {}", label, truncated), label_style)];
+                if let Some(sw) = swatch {
+                    spans.push(sw);
+                }
+                f.render_widget(Paragraph::new(Line::from(spans)), row_area);
+            } else {
+                let text = format!("  {}: {}", label, truncated);
+                f.render_widget(Paragraph::new(text).style(label_style), row_area);
+            }
 
             if is_selected {
                 let cursor_x = row_area.x + label_len as u16 + app.c3_lg_editor_cursor.min(max_val_width) as u16;

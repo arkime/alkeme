@@ -178,7 +178,7 @@ impl App {
                     }
                 }
                 KeyCode::Enter => {
-                    if let Some((_, _, url, _)) = self.c3_link_flat.get(self.c3_link_popup_selected) {
+                    if let Some((_, _, url, _, _)) = self.c3_link_flat.get(self.c3_link_popup_selected) {
                         // macOS `open` percent-encodes the URL, so decode first to avoid double-encoding
                         #[cfg(target_os = "macos")]
                         let open_url = percent_decode(url);

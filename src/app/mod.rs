@@ -267,7 +267,7 @@ pub struct App {
     pub c3_link_popup_selected: usize,
     pub c3_link_popup_filter: String,
     pub c3_link_popup_filtering: bool,
-    pub c3_link_flat: Vec<(String, String, String, String)>, // (group_name, link_name, url, info) filtered by itype
+    pub c3_link_flat: Vec<(String, String, String, String, String)>, // (group_name, link_name, url, info, color) filtered by itype
     // Cont3xt stats
     pub c3_stats_tab: C3StatsTab,
     pub c3_stats_data: Vec<serde_json::Value>,       // integration stats

@@ -308,6 +308,11 @@ impl App {
         self.c3_fetch_views().await;
         self.c3_fetch_overviews().await;
         self.c3_fetch_link_groups().await;
+
+        // Auto-search if there's a saved expression
+        if !self.expression.is_empty() {
+            self.c3_request_search();
+        }
     }
 
     async fn pl_switch_to_wise(&mut self, url: &str) {

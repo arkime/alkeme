@@ -577,6 +577,16 @@ pub(super) fn format_number(n: u64) -> String {
     result
 }
 
+/// Parse a hex color string like "#ff0000" or "ff0000" into a ratatui Color::Rgb.
+pub(super) fn parse_hex_color(hex: &str) -> Option<Color> {
+    let hex = hex.strip_prefix('#').unwrap_or(hex);
+    if hex.len() != 6 { return None; }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some(Color::Rgb(r, g, b))
+}
+
 pub(super) fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = app.status_msg.split('\n')
         .map(|l| Line::from(vec![

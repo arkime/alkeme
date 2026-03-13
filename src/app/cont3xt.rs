@@ -646,7 +646,7 @@ impl App {
                     &link.url, &indicator, &itype, start, now,
                     &all_indicators_by_itype, &top_indicators_by_itype,
                 );
-                self.c3_link_flat.push((group.name.clone(), link.name.clone(), url, link.info.clone()));
+                self.c3_link_flat.push((group.name.clone(), link.name.clone(), url, link.info.clone(), link.color.clone()));
             }
         }
         if self.c3_link_popup_selected >= self.c3_link_flat.len() {
