@@ -78,7 +78,7 @@ Monitor all your Arkime clusters at a glance with health status, throughput, and
 - **JSON export** — press `J` to save all search results as a combined JSON file with a filename prompt
 - **JSON import** — `--cont3xt-read-json` loads previously saved results for browsing without re-running searches; search bar shows `[file: ...]` indicator; cleared on new search
 - **Search tags** — press `t` to set comma-separated tags sent with search queries; also settable via `--cont3xt-tags` CLI option; shown in the search bar title
-- **Settings** — manage integration views with CRUD operations; set view/edit roles with a role selector; 4 sub-tabs (Views, Integrations, Overviews, LinkGroups) — Views fully implemented, others under construction
+- **Settings** — manage integration views with CRUD operations; set view/edit roles with a role selector; configure per-integration settings (API keys, passwords, URLs) with disable/enable toggle; 4 sub-tabs (Views, Integrations, Overviews, LinkGroups)
 
 ### Parliament
 - **Cluster dashboard** — groups displayed with clusters showing health status (●green/●yellow/●red), bytes/sec, drops/sec, active sessions, node counts, ES info, and inline issues
@@ -269,9 +269,10 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --cont3xt-re
 | `t` | Edit search tags (comma-separated, sent with queries) |
 | `1` / `2` / `3` / `4` | Switch Settings sub-tab (Views/Integrations/Overviews/LinkGroups) |
 | `n` | New view (Settings Views) |
-| `e` / `Enter` | Edit view (Settings Views) |
-| `d` / `x` | Delete view (Settings Views) |
-| `Ctrl+S` | Save view editor |
+| `e` / `Enter` | Edit view (Settings Views); open integration editor (Settings Integrations) |
+| `d` / `x` | Delete view (Settings Views); toggle disabled (Settings Integrations) |
+| `p` | Toggle password visibility (Integration editor) |
+| `Ctrl+S` | Save (view editor / integration settings) |
 | `←` / `→` | Previous / next page (History); jump to top/bottom (results); scroll detail |
 | `D` | HTTP debug log (↑/↓ navigate, Enter expand, Esc collapse) |
 | `h` / `?` | Show help |

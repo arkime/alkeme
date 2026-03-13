@@ -39,7 +39,8 @@ src/
   app/keys_wise.rs     - WISE key handler
   api/mod.rs           - ArkimeClient + FetchClient: HTTP calls (reqwest + digest_auth), finish_response(), digest_auth_header()
   api/types.rs         - Shared types (structs, enums, parsing functions), str_val()
-  api/auth.rs          - Web + Okta authentication flows
+  api/auth.rs          - Web authentication, Okta login dispatcher, authenticated HTTP methods
+  api/auth_okta.rs     - Okta IDX (Identity Engine), classic authn, MFA flows
   api/viewer.rs        - Viewer API methods (vr_*), vr_get_sorted_filtered(), vr_bulk_tag_op()
   api/cont3xt.rs       - Cont3xt API methods (c3_*)
   api/parliament.rs    - Parliament API methods (pl_*)
@@ -50,9 +51,11 @@ src/
   ui/files.rs          - Files tab rendering
   ui/arkime.rs         - Summary tab + owl animation rendering
   ui/cont3xt.rs        - Cont3xt search/results/card rendering
+  ui/cont3xt_settings.rs - Cont3xt settings UI (views editor, role popup, integration editor)
   ui/parliament.rs     - Parliament dashboard + issues rendering
   ui/wise.rs           - WISE stats + query rendering
-  ui/popups.rs         - Help overlays, debug log, action menus
+  ui/popups.rs         - Debug log, action menus, column/layout editors, packets viewer
+  ui/help.rs           - Context-sensitive help overlay
 ```
 
 ## Shared helpers
