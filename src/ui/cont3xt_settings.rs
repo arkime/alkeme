@@ -1,6 +1,6 @@
 use super::*;
 use super::arkime;
-use crate::app::{C3SettingsTab, C3LinkGroupLevel, C3LinkEditorField};
+use crate::app::{C3SettingsTab, C3LinkGroupLevel, C3LinkEditorField, C3GroupEditorField};
 
 pub(super) fn c3_draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
     // Split: sub-tab bar (3 lines) + content
@@ -531,11 +531,38 @@ pub(super) fn c3_draw_int_editor(f: &mut Frame, app: &mut App, area: Rect) {
 fn c3_draw_settings_link_groups(f: &mut Frame, app: &mut App, area: Rect) {
     match app.c3_lg_level {
         C3LinkGroupLevel::GroupList => c3_draw_lg_group_list(f, app, area),
+        C3LinkGroupLevel::GroupEditor => {
+            c3_draw_lg_group_list(f, app, area);
+            c3_draw_lg_group_editor(f, app, area);
+        }
         C3LinkGroupLevel::LinkList => c3_draw_lg_link_list(f, app, area),
         C3LinkGroupLevel::LinkEditor => {
             c3_draw_lg_link_list(f, app, area);
             c3_draw_lg_link_editor(f, app, area);
         }
+    }
+
+    // Backup filename prompt overlay
+    if let Some(ref filename) = app.c3_lg_backup_prompt {
+        let popup_width = 60u16.min(area.width.saturating_sub(4));
+        let popup_height = 3u16;
+        let popup_area = center_popup(popup_width, popup_height, area);
+        f.render_widget(Clear, popup_area);
+
+        let title = if app.c3_lg_backup_all { " Backup All Link Groups " } else { " Backup Link Group " };
+        let line = Line::from(vec![
+            Span::styled("Filename: ", Style::default().fg(Color::Yellow)),
+            Span::styled(filename, Style::default().fg(Color::White)),
+            Span::styled("█", Style::default().fg(Color::Gray)),
+        ]);
+        let paragraph = Paragraph::new(line)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan))
+                    .title(title),
+            );
+        f.render_widget(paragraph, popup_area);
     }
 }
 
@@ -607,6 +634,151 @@ fn c3_draw_lg_group_list(f: &mut Frame, app: &mut App, area: Rect) {
     .row_highlight_style(Style::default().bg(Color::DarkGray));
 
     f.render_stateful_widget(table, chunks[1], &mut app.c3_lg_table_state);
+}
+
+fn c3_draw_lg_group_editor(f: &mut Frame, app: &mut App, area: Rect) {
+    let popup_area = center_popup(60, 12, area);
+    f.render_widget(Clear, popup_area);
+
+    let idx = app.c3_lg_group_editor_idx;
+    let title = if let Some(group) = app.c3_lg_groups.get(idx) {
+        format!(" Edit Group: {} ", group.name)
+    } else {
+        " Edit Group ".to_string()
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(title);
+    f.render_widget(block, popup_area);
+
+    let inner = Rect::new(popup_area.x + 1, popup_area.y + 1, popup_area.width - 2, popup_area.height - 2);
+
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),  // Name
+            Constraint::Length(2),  // ViewRoles
+            Constraint::Length(2),  // EditRoles
+            Constraint::Min(1),    // Help
+        ])
+        .split(inner);
+
+    let active = app.c3_lg_group_editor_field;
+
+    // Name field
+    let name_style = if active == C3GroupEditorField::Name {
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let name_label = if active == C3GroupEditorField::Name {
+        format!("▸ Name: {}", app.c3_lg_group_editor_name)
+    } else {
+        format!("  Name: {}", app.c3_lg_group_editor_name)
+    };
+    f.render_widget(Paragraph::new(name_label).style(name_style), sections[0]);
+    if active == C3GroupEditorField::Name {
+        let cursor_x = sections[0].x + 8 + app.c3_lg_group_editor_cursor as u16;
+        f.set_cursor_position((cursor_x, sections[0].y));
+    }
+
+    // View Roles
+    let vr_style = if active == C3GroupEditorField::ViewRoles {
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let vr_display = if app.c3_lg_group_editor_view_roles.is_empty() {
+        "(none)".to_string()
+    } else {
+        app.c3_lg_group_editor_view_roles.join(", ")
+    };
+    let vr_label = if active == C3GroupEditorField::ViewRoles {
+        format!("▸ View Roles: {} [Enter to edit]", vr_display)
+    } else {
+        format!("  View Roles: {}", vr_display)
+    };
+    f.render_widget(Paragraph::new(vr_label).style(vr_style), sections[1]);
+
+    // Edit Roles
+    let er_style = if active == C3GroupEditorField::EditRoles {
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let er_display = if app.c3_lg_group_editor_edit_roles.is_empty() {
+        "(none)".to_string()
+    } else {
+        app.c3_lg_group_editor_edit_roles.join(", ")
+    };
+    let er_label = if active == C3GroupEditorField::EditRoles {
+        format!("▸ Edit Roles: {} [Enter to edit]", er_display)
+    } else {
+        format!("  Edit Roles: {}", er_display)
+    };
+    f.render_widget(Paragraph::new(er_label).style(er_style), sections[2]);
+
+    // Help
+    f.render_widget(
+        Paragraph::new(" ↑/↓:field  Enter:edit roles  Ctrl+S:save  Esc:cancel")
+            .style(Style::default().fg(Color::DarkGray)),
+        sections[3],
+    );
+
+    // Role popup overlay
+    if app.c3_role_popup_open {
+        let roles = if active == C3GroupEditorField::ViewRoles {
+            &app.c3_lg_group_editor_view_roles
+        } else {
+            &app.c3_lg_group_editor_edit_roles
+        };
+        c3_draw_group_role_popup(f, app, area, roles);
+    }
+}
+
+fn c3_draw_group_role_popup(f: &mut Frame, app: &App, area: Rect, selected_roles: &[String]) {
+    let popup_area = center_popup(40, 16, area);
+    f.render_widget(Clear, popup_area);
+
+    let title = if app.c3_role_popup_filtering {
+        format!(" Roles — filter: {}_ ", app.c3_role_popup_filter)
+    } else if !app.c3_role_popup_filter.is_empty() {
+        format!(" Roles — filter: {} ", app.c3_role_popup_filter)
+    } else {
+        " Roles ".to_string()
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Magenta))
+        .title(title);
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let filtered = app.c3_role_popup_filtered_roles();
+    let visible = inner.height as usize;
+    let offset = if app.c3_role_popup_selected >= visible {
+        app.c3_role_popup_selected - visible + 1
+    } else { 0 };
+
+    for (row_idx, &real_idx) in filtered.iter().skip(offset).enumerate() {
+        if row_idx >= visible { break; }
+        if let Some(role) = app.c3_all_roles.get(real_idx) {
+            let checked = selected_roles.contains(role);
+            let marker = if checked { "[x]" } else { "[ ]" };
+            let is_selected = app.c3_role_popup_selected == row_idx + offset;
+            let style = if is_selected {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let text = format!(" {} {}", marker, role);
+            f.render_widget(
+                Paragraph::new(text).style(style),
+                Rect::new(inner.x, inner.y + row_idx as u16, inner.width, 1),
+            );
+        }
+    }
 }
 
 fn c3_draw_lg_link_list(f: &mut Frame, app: &mut App, area: Rect) {

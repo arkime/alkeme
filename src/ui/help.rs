@@ -240,29 +240,98 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
         ]).collect())
     } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::Settings {
-        ("Cont3xt Settings", vec![
+        use crate::app::C3SettingsTab;
+        let mut lines = vec![
             hdr!("Navigation"),
             blank(),
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
             Line::from(vec![key("1 / 2 / 3 / 4"), Span::raw("Switch sub-tab")]),
-            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate views")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate items")]),
             Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
-        ].into_iter().chain(
-            if app.pl_saved_client.is_some() {
-                vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
-            } else { vec![] }
-        ).chain(vec![
+        ];
+        if app.pl_saved_client.is_some() {
+            lines.push(Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")]));
+        }
+        lines.extend_from_slice(&[
             Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
             blank(),
-            Line::from(vec![key("n"), Span::raw("New view")]),
-            Line::from(vec![key("Enter / e"), Span::raw("Edit view")]),
-            Line::from(vec![key("d / x"), Span::raw("Delete view")]),
-            Line::from(vec![key("/"), Span::raw("Filter views")]),
-            Line::from(vec![key("r"), Span::raw("Refresh views")]),
-            Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
-        ]).collect())
+        ]);
+        match app.c3_settings_tab {
+            C3SettingsTab::Views => {
+                lines.extend_from_slice(&[
+                    Line::from(vec![key("n"), Span::raw("New view")]),
+                    Line::from(vec![key("Enter / e"), Span::raw("Edit view")]),
+                    Line::from(vec![key("d / x"), Span::raw("Delete view")]),
+                    Line::from(vec![key("Ctrl+S"), Span::raw("Save view editor")]),
+                    Line::from(vec![key("s / S"), Span::raw("Sort column / direction")]),
+                    Line::from(vec![key("/"), Span::raw("Filter")]),
+                    Line::from(vec![key("r"), Span::raw("Refresh")]),
+                ]);
+            }
+            C3SettingsTab::Integrations => {
+                lines.extend_from_slice(&[
+                    Line::from(vec![key("Enter / e"), Span::raw("Edit integration config")]),
+                    Line::from(vec![key("d"), Span::raw("Toggle disabled")]),
+                    Line::from(vec![key("p"), Span::raw("Toggle password visibility")]),
+                    Line::from(vec![key("Ctrl+S"), Span::raw("Save settings")]),
+                    Line::from(vec![key("s / S"), Span::raw("Sort column / direction")]),
+                    Line::from(vec![key("/"), Span::raw("Filter")]),
+                    Line::from(vec![key("r"), Span::raw("Refresh")]),
+                ]);
+            }
+            C3SettingsTab::LinkGroups => {
+                use crate::app::C3LinkGroupLevel;
+                match app.c3_lg_level {
+                    C3LinkGroupLevel::GroupList => {
+                        lines.extend_from_slice(&[
+                            Line::from(vec![key("Enter"), Span::raw("Edit links in group")]),
+                            Line::from(vec![key("e"), Span::raw("Edit group name/roles")]),
+                            Line::from(vec![key("n"), Span::raw("New group")]),
+                            Line::from(vec![key("d / x"), Span::raw("Delete group")]),
+                            Line::from(vec![key("B"), Span::raw("Backup all groups to file")]),
+                            Line::from(vec![key("s / S"), Span::raw("Sort column / direction")]),
+                            Line::from(vec![key("/"), Span::raw("Filter")]),
+                            Line::from(vec![key("r"), Span::raw("Refresh")]),
+                        ]);
+                    }
+                    C3LinkGroupLevel::GroupEditor => {
+                        lines.extend_from_slice(&[
+                            Line::from(vec![key("↑ / ↓"), Span::raw("Navigate fields")]),
+                            Line::from(vec![key("Enter"), Span::raw("Edit roles (on role field)")]),
+                            Line::from(vec![key("Ctrl+S"), Span::raw("Save group")]),
+                            Line::from(vec![key("Esc"), Span::raw("Cancel / back to list")]),
+                        ]);
+                    }
+                    C3LinkGroupLevel::LinkList => {
+                        lines.extend_from_slice(&[
+                            Line::from(vec![key("Enter"), Span::raw("Edit link")]),
+                            Line::from(vec![key("n / a"), Span::raw("New link / separator (after current)")]),
+                            Line::from(vec![key("N / A"), Span::raw("New link / separator (at end)")]),
+                            Line::from(vec![key("d / x"), Span::raw("Delete link")]),
+                            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Reorder link")]),
+                            Line::from(vec![key("B"), Span::raw("Backup this group to file")]),
+                            Line::from(vec![key("Ctrl+S"), Span::raw("Save group to server")]),
+                            Line::from(vec![key("Esc"), Span::raw("Back to group list")]),
+                        ]);
+                    }
+                    C3LinkGroupLevel::LinkEditor => {
+                        lines.extend_from_slice(&[
+                            Line::from(vec![key("↑ / ↓"), Span::raw("Navigate fields")]),
+                            Line::from(vec![key("Space"), Span::raw("Toggle indicator type")]),
+                            Line::from(vec![key("Ctrl+S"), Span::raw("Apply changes")]),
+                            Line::from(vec![key("Esc"), Span::raw("Cancel / back to link list")]),
+                        ]);
+                    }
+                }
+            }
+            _ => {
+                lines.push(Line::from(vec![Span::raw("Under construction")]));
+            }
+        }
+        lines.push(Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]));
+        ("Cont3xt Settings", lines)
     } else if app.c3_show_overview_popup {
         ("Select Overview", vec![
             hdr!("Navigation"),

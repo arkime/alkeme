@@ -1049,6 +1049,37 @@ impl App {
             return;
         }
 
+        // Link group backup filename prompt
+        if self.c3_lg_backup_prompt.is_some() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.c3_lg_backup_prompt = None;
+                }
+                KeyCode::Enter => {
+                    if let Some(filename) = self.c3_lg_backup_prompt.take() {
+                        if filename.is_empty() {
+                            self.status_msg = "No filename provided".to_string();
+                        } else {
+                            let all = self.c3_lg_backup_all;
+                            self.c3_lg_save_backup(&filename, all);
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    if let Some(ref mut f) = self.c3_lg_backup_prompt {
+                        f.pop();
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(ref mut f) = self.c3_lg_backup_prompt {
+                        f.push(c);
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // Link group settings editor intercept
         if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups {
             match self.c3_lg_level {
@@ -1145,6 +1176,114 @@ impl App {
                     }
                     return;
                 }
+                C3LinkGroupLevel::GroupEditor => {
+                    // Role popup intercept (reuse existing role popup)
+                    if self.c3_role_popup_open {
+                        match key.code {
+                            KeyCode::Esc => { self.c3_role_popup_open = false; }
+                            KeyCode::Char('/') => { self.c3_role_popup_filtering = !self.c3_role_popup_filtering; }
+                            KeyCode::Char(' ') | KeyCode::Enter if !self.c3_role_popup_filtering => {
+                                let filtered = self.c3_role_popup_filtered_roles();
+                                if let Some(&idx) = filtered.get(self.c3_role_popup_selected) {
+                                    if let Some(role) = self.c3_all_roles.get(idx) {
+                                        let role = role.clone();
+                                        let roles = if self.c3_lg_group_editor_field == C3GroupEditorField::ViewRoles {
+                                            &mut self.c3_lg_group_editor_view_roles
+                                        } else {
+                                            &mut self.c3_lg_group_editor_edit_roles
+                                        };
+                                        if let Some(pos) = roles.iter().position(|r| r == &role) {
+                                            roles.remove(pos);
+                                        } else {
+                                            roles.push(role);
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Up | KeyCode::Char('k') if !self.c3_role_popup_filtering => {
+                                let filtered = self.c3_role_popup_filtered_roles();
+                                if self.c3_role_popup_selected > 0 { self.c3_role_popup_selected -= 1; }
+                                else if !filtered.is_empty() { self.c3_role_popup_selected = filtered.len() - 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') if !self.c3_role_popup_filtering => {
+                                let filtered = self.c3_role_popup_filtered_roles();
+                                if self.c3_role_popup_selected + 1 < filtered.len() { self.c3_role_popup_selected += 1; }
+                                else { self.c3_role_popup_selected = 0; }
+                            }
+                            _ if self.c3_role_popup_filtering => {
+                                match key.code {
+                                    KeyCode::Backspace => { self.c3_role_popup_filter.pop(); self.c3_role_popup_selected = 0; }
+                                    KeyCode::Char(c) => { self.c3_role_popup_filter.push(c); self.c3_role_popup_selected = 0; }
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.c3_lg_level = C3LinkGroupLevel::GroupList;
+                        }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            // Save group name + roles
+                            let idx = self.c3_lg_group_editor_idx;
+                            if let Some(group) = self.c3_lg_groups.get_mut(idx) {
+                                group.name = self.c3_lg_group_editor_name.clone();
+                                group.view_roles = self.c3_lg_group_editor_view_roles.clone();
+                                group.edit_roles = self.c3_lg_group_editor_edit_roles.clone();
+                            }
+                            if let Some(group) = self.c3_lg_groups.get(idx) {
+                                let payload = self.c3_lg_build_group_json(group);
+                                let id = group.id.clone();
+                                tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(async {
+                                        match self.client.c3_update_link_group(&id, &payload).await {
+                                            Ok(_) => {
+                                                self.status_msg = "Link group updated".to_string();
+                                                self.c3_fetch_link_groups_settings().await;
+                                                self.c3_fetch_link_groups().await;
+                                            }
+                                            Err(e) => self.status_msg = format!("Save error: {e}"),
+                                        }
+                                    })
+                                });
+                            }
+                            self.c3_lg_level = C3LinkGroupLevel::GroupList;
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            self.c3_lg_group_editor_field = self.c3_lg_group_editor_field.prev();
+                            if self.c3_lg_group_editor_field == C3GroupEditorField::Name {
+                                self.c3_lg_group_editor_cursor = self.c3_lg_group_editor_name.len();
+                            }
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            self.c3_lg_group_editor_field = self.c3_lg_group_editor_field.next();
+                            if self.c3_lg_group_editor_field == C3GroupEditorField::Name {
+                                self.c3_lg_group_editor_cursor = self.c3_lg_group_editor_name.len();
+                            }
+                        }
+                        KeyCode::Enter if self.c3_lg_group_editor_field == C3GroupEditorField::ViewRoles
+                            || self.c3_lg_group_editor_field == C3GroupEditorField::EditRoles => {
+                            if self.c3_all_roles.is_empty() {
+                                tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(async {
+                                        self.c3_fetch_roles().await;
+                                    })
+                                });
+                            }
+                            self.c3_role_popup_open = true;
+                            self.c3_role_popup_selected = 0;
+                            self.c3_role_popup_filter.clear();
+                            self.c3_role_popup_filtering = false;
+                        }
+                        _ if self.c3_lg_group_editor_field == C3GroupEditorField::Name => {
+                            handle_text_input_key(key.code, &mut self.c3_lg_group_editor_name, &mut self.c3_lg_group_editor_cursor);
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
                 C3LinkGroupLevel::LinkList => {
                     // Link list filter mode
                     if self.c3_lg_filtering {
@@ -1184,6 +1323,23 @@ impl App {
                         KeyCode::Char('n') => {
                             let gi = self.c3_lg_editing_group_idx;
                             if let Some(group) = self.c3_lg_groups.get_mut(gi) {
+                                let insert_pos = (self.c3_lg_links_selected + 1).min(group.links.len());
+                                group.links.insert(insert_pos, crate::api::Cont3xtLink {
+                                    name: "New Link".to_string(),
+                                    url: String::new(),
+                                    itypes: vec!["domain".to_string(), "ip".to_string(), "url".to_string()],
+                                    info: String::new(),
+                                    color: String::new(),
+                                    external_doc_name: String::new(),
+                                    external_doc_url: String::new(),
+                                });
+                                self.c3_lg_links_selected = insert_pos;
+                                self.c3_lg_links_table_state.select(Some(self.c3_lg_links_selected));
+                            }
+                        }
+                        KeyCode::Char('N') => {
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get_mut(gi) {
                                 group.links.push(crate::api::Cont3xtLink {
                                     name: "New Link".to_string(),
                                     url: String::new(),
@@ -1198,6 +1354,15 @@ impl App {
                             }
                         }
                         KeyCode::Char('a') => {
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get_mut(gi) {
+                                let insert_pos = (self.c3_lg_links_selected + 1).min(group.links.len());
+                                group.links.insert(insert_pos, crate::api::Cont3xtLink::new_separator());
+                                self.c3_lg_links_selected = insert_pos;
+                                self.c3_lg_links_table_state.select(Some(self.c3_lg_links_selected));
+                            }
+                        }
+                        KeyCode::Char('A') => {
                             let gi = self.c3_lg_editing_group_idx;
                             if let Some(group) = self.c3_lg_groups.get_mut(gi) {
                                 group.links.push(crate::api::Cont3xtLink::new_separator());
@@ -1279,6 +1444,14 @@ impl App {
                             if self.c3_lg_links_selected > 0 {
                                 self.c3_lg_links_selected -= 1;
                                 self.c3_lg_links_table_state.select(Some(self.c3_lg_links_selected));
+                            }
+                        }
+                        KeyCode::Char('B') => {
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get(gi) {
+                                let safe_name = group.name.replace(['/', '\\', ' '], "_");
+                                self.c3_lg_backup_all = false;
+                                self.c3_lg_backup_prompt = Some(format!("{}.json", safe_name));
                             }
                         }
                         _ => {}
@@ -2085,6 +2258,23 @@ impl App {
                     })
                 });
             }
+            KeyCode::Char('e') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups => {
+                let filtered = self.c3_lg_filtered_groups();
+                if let Some(&idx) = filtered.get(self.c3_lg_selected) {
+                    let group = &self.c3_lg_groups[idx];
+                    if group.editable {
+                        self.c3_lg_group_editor_idx = idx;
+                        self.c3_lg_group_editor_name = group.name.clone();
+                        self.c3_lg_group_editor_cursor = group.name.len();
+                        self.c3_lg_group_editor_view_roles = group.view_roles.clone();
+                        self.c3_lg_group_editor_edit_roles = group.edit_roles.clone();
+                        self.c3_lg_group_editor_field = C3GroupEditorField::Name;
+                        self.c3_lg_level = C3LinkGroupLevel::GroupEditor;
+                    } else {
+                        self.status_msg = "Link group is not editable".to_string();
+                    }
+                }
+            }
             KeyCode::Enter if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups => {
                 let filtered = self.c3_lg_filtered_groups();
                 if let Some(&idx) = filtered.get(self.c3_lg_selected) {
@@ -2111,6 +2301,14 @@ impl App {
                     } else {
                         self.status_msg = "Link group is not editable".to_string();
                     }
+                }
+            }
+            KeyCode::Char('B') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups => {
+                if self.c3_lg_groups.is_empty() {
+                    self.status_msg = "No link groups to backup".to_string();
+                } else {
+                    self.c3_lg_backup_all = true;
+                    self.c3_lg_backup_prompt = Some("linkgroups-backup.json".to_string());
                 }
             }
             _ => {}

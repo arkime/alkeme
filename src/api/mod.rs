@@ -348,6 +348,10 @@ impl ArkimeClient {
         self.password = password;
     }
 
+    pub fn username(&self) -> Option<&str> {
+        self.username.as_deref()
+    }
+
     /// Save cookies to a file if a cookie store is configured
     pub fn save_cookies(&self, path: &str, jar_password: Option<&str>) {
         if let Some(ref store) = self.cookie_store {

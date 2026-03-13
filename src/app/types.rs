@@ -419,8 +419,36 @@ impl C3ViewEditorField {
 #[derive(Clone, Copy, PartialEq)]
 pub enum C3LinkGroupLevel {
     GroupList,
+    GroupEditor,
     LinkList,
     LinkEditor,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum C3GroupEditorField {
+    Name,
+    ViewRoles,
+    EditRoles,
+}
+
+impl C3GroupEditorField {
+    pub fn all() -> &'static [C3GroupEditorField] {
+        &[Self::Name, Self::ViewRoles, Self::EditRoles]
+    }
+    pub fn next(&self) -> Self {
+        match self {
+            Self::Name => Self::ViewRoles,
+            Self::ViewRoles => Self::EditRoles,
+            Self::EditRoles => Self::Name,
+        }
+    }
+    pub fn prev(&self) -> Self {
+        match self {
+            Self::Name => Self::EditRoles,
+            Self::ViewRoles => Self::Name,
+            Self::EditRoles => Self::ViewRoles,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]

@@ -505,6 +505,38 @@ impl App {
         })
     }
 
+    pub fn c3_lg_save_backup(&mut self, filename: &str, all: bool) {
+        let json = if all {
+            let groups: Vec<serde_json::Value> = self.c3_lg_groups.iter()
+                .map(|g| self.c3_lg_build_group_json(g))
+                .collect();
+            serde_json::json!({ "linkGroups": groups })
+        } else {
+            let idx = self.c3_lg_editing_group_idx;
+            let group = match self.c3_lg_groups.get(idx) {
+                Some(g) => g,
+                None => {
+                    self.status_msg = "No group selected".to_string();
+                    return;
+                }
+            };
+            self.c3_lg_build_group_json(group)
+        };
+
+        match serde_json::to_string_pretty(&json) {
+            Ok(data) => {
+                match std::fs::write(filename, &data) {
+                    Ok(_) => {
+                        let desc = if all { "All link groups" } else { "Link group" };
+                        self.status_msg = format!("{} saved to {}", desc, filename);
+                    }
+                    Err(e) => self.status_msg = format!("Error writing {}: {}", filename, e),
+                }
+            }
+            Err(e) => self.status_msg = format!("JSON error: {}", e),
+        }
+    }
+
     pub fn c3_lg_filtered_groups(&self) -> Vec<usize> {
         let filter = self.c3_lg_filter.to_lowercase();
         let mut indices: Vec<usize> = self.c3_lg_groups.iter().enumerate()

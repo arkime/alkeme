@@ -9,11 +9,16 @@ async fn prompt_credentials_and_login(client: &mut crate::api::ArkimeClient, url
     crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
 
     println!("Authentication required for {}", url);
-    eprint!("Username: ");
-    std::io::stderr().flush()?;
-    let mut username = String::new();
-    std::io::stdin().read_line(&mut username)?;
-    let username = username.trim().to_string();
+    let username = if let Some(existing) = client.username() {
+        println!("Using username: {}", existing);
+        existing.to_string()
+    } else {
+        eprint!("Username: ");
+        std::io::stderr().flush()?;
+        let mut user = String::new();
+        std::io::stdin().read_line(&mut user)?;
+        user.trim().to_string()
+    };
     let password = rpassword::prompt_password("Password: ")?;
 
     crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
