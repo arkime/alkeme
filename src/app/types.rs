@@ -425,6 +425,25 @@ pub enum C3LinkGroupLevel {
 }
 
 #[derive(Clone, Copy, PartialEq)]
+pub enum C3BackupKind {
+    LinkGroupsAll,
+    LinkGroupSingle,
+    Integrations,
+    Views,
+}
+
+impl C3BackupKind {
+    pub fn title(&self) -> &'static str {
+        match self {
+            Self::LinkGroupsAll => " Backup All Link Groups ",
+            Self::LinkGroupSingle => " Backup Link Group ",
+            Self::Integrations => " Backup Integration Settings ",
+            Self::Views => " Backup Integration Views ",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
 pub enum C3GroupEditorField {
     Name,
     ViewRoles,

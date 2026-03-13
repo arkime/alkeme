@@ -360,8 +360,8 @@ pub struct App {
     pub c3_lg_editor_cursor: usize,
     pub c3_lg_editor_itype_selected: usize,
     // Link group backup prompt
-    pub c3_lg_backup_prompt: Option<String>,
-    pub c3_lg_backup_all: bool,
+    pub c3_backup_prompt: Option<String>,
+    pub c3_backup_kind: C3BackupKind,
     // Group editor (name, viewRoles, editRoles)
     pub c3_lg_group_editor_field: C3GroupEditorField,
     pub c3_lg_group_editor_name: String,
@@ -742,8 +742,8 @@ impl App {
             c3_lg_editor_link_idx: 0,
             c3_lg_editor_cursor: 0,
             c3_lg_editor_itype_selected: 0,
-            c3_lg_backup_prompt: None,
-            c3_lg_backup_all: false,
+            c3_backup_prompt: None,
+            c3_backup_kind: C3BackupKind::LinkGroupsAll,
             c3_lg_group_editor_field: C3GroupEditorField::Name,
             c3_lg_group_editor_name: String::new(),
             c3_lg_group_editor_cursor: 0,
@@ -818,7 +818,7 @@ impl App {
             || self.c3_show_tags_popup
             || self.c3_show_date_popup
             || self.c3_save_json_prompt.is_some()
-            || self.c3_lg_backup_prompt.is_some()
+            || self.c3_backup_prompt.is_some()
             || self.c3_view_editor_open
             || self.c3_role_popup_open
             || self.c3_int_editor_open

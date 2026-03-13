@@ -28,6 +28,29 @@ pub(super) fn c3_draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
             arkime::draw_owl(f, app, chunks[1]);
         }
     }
+
+    // Backup filename prompt overlay (shared across all settings tabs)
+    if let Some(ref filename) = app.c3_backup_prompt {
+        let popup_width = 60u16.min(area.width.saturating_sub(4));
+        let popup_height = 3u16;
+        let popup_area = center_popup(popup_width, popup_height, area);
+        f.render_widget(Clear, popup_area);
+
+        let title = app.c3_backup_kind.title();
+        let line = Line::from(vec![
+            Span::styled("Filename: ", Style::default().fg(Color::Yellow)),
+            Span::styled(filename, Style::default().fg(Color::White)),
+            Span::styled("█", Style::default().fg(Color::Gray)),
+        ]);
+        let paragraph = Paragraph::new(line)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan))
+                    .title(title),
+            );
+        f.render_widget(paragraph, popup_area);
+    }
 }
 
 fn c3_draw_settings_views(f: &mut Frame, app: &mut App, area: Rect) {
@@ -540,29 +563,6 @@ fn c3_draw_settings_link_groups(f: &mut Frame, app: &mut App, area: Rect) {
             c3_draw_lg_link_list(f, app, area);
             c3_draw_lg_link_editor(f, app, area);
         }
-    }
-
-    // Backup filename prompt overlay
-    if let Some(ref filename) = app.c3_lg_backup_prompt {
-        let popup_width = 60u16.min(area.width.saturating_sub(4));
-        let popup_height = 3u16;
-        let popup_area = center_popup(popup_width, popup_height, area);
-        f.render_widget(Clear, popup_area);
-
-        let title = if app.c3_lg_backup_all { " Backup All Link Groups " } else { " Backup Link Group " };
-        let line = Line::from(vec![
-            Span::styled("Filename: ", Style::default().fg(Color::Yellow)),
-            Span::styled(filename, Style::default().fg(Color::White)),
-            Span::styled("█", Style::default().fg(Color::Gray)),
-        ]);
-        let paragraph = Paragraph::new(line)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Cyan))
-                    .title(title),
-            );
-        f.render_widget(paragraph, popup_area);
     }
 }
 

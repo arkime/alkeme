@@ -505,31 +505,59 @@ impl App {
         })
     }
 
-    pub fn c3_lg_save_backup(&mut self, filename: &str, all: bool) {
-        let json = if all {
-            let groups: Vec<serde_json::Value> = self.c3_lg_groups.iter()
-                .map(|g| self.c3_lg_build_group_json(g))
-                .collect();
-            serde_json::json!({ "linkGroups": groups })
-        } else {
-            let idx = self.c3_lg_editing_group_idx;
-            let group = match self.c3_lg_groups.get(idx) {
-                Some(g) => g,
-                None => {
-                    self.status_msg = "No group selected".to_string();
-                    return;
+    pub fn c3_save_backup(&mut self, filename: &str, kind: C3BackupKind) {
+        let json = match kind {
+            C3BackupKind::LinkGroupsAll => {
+                let groups: Vec<serde_json::Value> = self.c3_lg_groups.iter()
+                    .map(|g| self.c3_lg_build_group_json(g))
+                    .collect();
+                serde_json::json!({ "linkGroups": groups })
+            }
+            C3BackupKind::LinkGroupSingle => {
+                let idx = self.c3_lg_editing_group_idx;
+                match self.c3_lg_groups.get(idx) {
+                    Some(g) => self.c3_lg_build_group_json(g),
+                    None => {
+                        self.status_msg = "No group selected".to_string();
+                        return;
+                    }
                 }
-            };
-            self.c3_lg_build_group_json(group)
+            }
+            C3BackupKind::Integrations => {
+                let settings: Vec<serde_json::Value> = self.c3_int_settings.iter().map(|int| {
+                    let values: serde_json::Map<String, serde_json::Value> = int.values.iter()
+                        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                        .collect();
+                    serde_json::json!({
+                        "name": int.name,
+                        "disabled": int.disabled,
+                        "globalConfiged": int.global_configed,
+                        "locked": int.locked,
+                        "values": values,
+                    })
+                }).collect();
+                serde_json::json!({ "integrations": settings })
+            }
+            C3BackupKind::Views => {
+                let views: Vec<serde_json::Value> = self.c3_settings_views.iter().map(|v| {
+                    serde_json::json!({
+                        "id": v.id,
+                        "name": v.name,
+                        "integrations": v.integrations,
+                        "creator": v.creator,
+                        "viewRoles": v.view_roles,
+                        "editRoles": v.edit_roles,
+                    })
+                }).collect();
+                serde_json::json!({ "views": views })
+            }
         };
 
+        let desc = kind.title().trim();
         match serde_json::to_string_pretty(&json) {
             Ok(data) => {
                 match std::fs::write(filename, &data) {
-                    Ok(_) => {
-                        let desc = if all { "All link groups" } else { "Link group" };
-                        self.status_msg = format!("{} saved to {}", desc, filename);
-                    }
+                    Ok(_) => self.status_msg = format!("{} saved to {}", desc, filename),
                     Err(e) => self.status_msg = format!("Error writing {}: {}", filename, e),
                 }
             }

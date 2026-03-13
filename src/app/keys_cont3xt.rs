@@ -1050,28 +1050,27 @@ impl App {
         }
 
         // Link group backup filename prompt
-        if self.c3_lg_backup_prompt.is_some() {
+        if self.c3_backup_prompt.is_some() {
             match key.code {
                 KeyCode::Esc => {
-                    self.c3_lg_backup_prompt = None;
+                    self.c3_backup_prompt = None;
                 }
                 KeyCode::Enter => {
-                    if let Some(filename) = self.c3_lg_backup_prompt.take() {
+                    if let Some(filename) = self.c3_backup_prompt.take() {
                         if filename.is_empty() {
                             self.status_msg = "No filename provided".to_string();
                         } else {
-                            let all = self.c3_lg_backup_all;
-                            self.c3_lg_save_backup(&filename, all);
+                            self.c3_save_backup(&filename, self.c3_backup_kind);
                         }
                     }
                 }
                 KeyCode::Backspace => {
-                    if let Some(ref mut f) = self.c3_lg_backup_prompt {
+                    if let Some(ref mut f) = self.c3_backup_prompt {
                         f.pop();
                     }
                 }
                 KeyCode::Char(c) => {
-                    if let Some(ref mut f) = self.c3_lg_backup_prompt {
+                    if let Some(ref mut f) = self.c3_backup_prompt {
                         f.push(c);
                     }
                 }
@@ -1476,8 +1475,8 @@ impl App {
                             let gi = self.c3_lg_editing_group_idx;
                             if let Some(group) = self.c3_lg_groups.get(gi) {
                                 let safe_name = group.name.replace(['/', '\\', ' '], "_");
-                                self.c3_lg_backup_all = false;
-                                self.c3_lg_backup_prompt = Some(format!("{}.json", safe_name));
+                                self.c3_backup_kind = C3BackupKind::LinkGroupSingle;
+                                self.c3_backup_prompt = Some(format!("{}.json", safe_name));
                             }
                         }
                         KeyCode::Char('h') | KeyCode::Char('?') => {
@@ -2338,8 +2337,24 @@ impl App {
                 if self.c3_lg_groups.is_empty() {
                     self.status_msg = "No link groups to backup".to_string();
                 } else {
-                    self.c3_lg_backup_all = true;
-                    self.c3_lg_backup_prompt = Some("linkgroups-backup.json".to_string());
+                    self.c3_backup_kind = C3BackupKind::LinkGroupsAll;
+                    self.c3_backup_prompt = Some("linkgroups-backup.json".to_string());
+                }
+            }
+            KeyCode::Char('B') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations => {
+                if self.c3_int_settings.is_empty() {
+                    self.status_msg = "No integration settings to backup".to_string();
+                } else {
+                    self.c3_backup_kind = C3BackupKind::Integrations;
+                    self.c3_backup_prompt = Some("integrations-backup.json".to_string());
+                }
+            }
+            KeyCode::Char('B') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views => {
+                if self.c3_settings_views.is_empty() {
+                    self.status_msg = "No views to backup".to_string();
+                } else {
+                    self.c3_backup_kind = C3BackupKind::Views;
+                    self.c3_backup_prompt = Some("views-backup.json".to_string());
                 }
             }
             _ => {}
