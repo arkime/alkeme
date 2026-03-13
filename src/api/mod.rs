@@ -4,6 +4,7 @@ mod parliament;
 mod wise;
 mod types;
 mod auth;
+mod auth_okta;
 
 pub use cont3xt::*;
 pub use parliament::*;

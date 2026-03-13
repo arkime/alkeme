@@ -2,7 +2,9 @@ mod sessions;
 mod stats;
 mod arkime;
 mod popups;
+mod help;
 mod cont3xt;
+mod cont3xt_settings;
 mod parliament;
 mod wise;
 mod files;
@@ -163,7 +165,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         popups::draw_confirm_dialog(f, app, f.area());
     }
     if app.show_help {
-        popups::draw_help(f, app, f.area());
+        help::draw_help(f, app, f.area());
     }
     if app.show_debug {
         popups::draw_debug(f, app, f.area());
