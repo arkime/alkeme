@@ -30,9 +30,12 @@ cargo run -- URL --cont3xt-read-json results.json --app cont3xt  # load saved co
 ```
 src/
   main.rs              - Entry point, clap CLI parsing, terminal setup, event loop (crossterm polling), drain_c3_results()
-  app/mod.rs           - App struct, state, fetch methods, enter_expression_mode(), handle_text_input_key()
+  app/mod.rs           - App struct, state, shared methods, enter_expression_mode(), handle_text_input_key()
+  app/viewer.rs        - Viewer methods (vr_*): sessions, stats, files, columns, layouts
+  app/cont3xt.rs       - Cont3xt methods (c3_*): search, views, history, links, settings
   app/types.rs         - Enums (AppMode, Tab, TimeRange, InputMode, etc.)
   app/keys.rs          - Key dispatch + expression handler
+  app/keys_shared.rs   - Generic column editor + layout popup key handlers (shared trait)
   app/keys_viewer.rs   - Viewer key handlers
   app/keys_cont3xt.rs  - Cont3xt key handler
   app/keys_parliament.rs - Parliament key handler
