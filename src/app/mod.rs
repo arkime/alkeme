@@ -10,7 +10,7 @@ mod cont3xt;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, IntegrationSettings, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLink, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, IntegrationSettings, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats};
 use chrono::{Datelike, Duration, Timelike, Utc};
 use crossterm::event::KeyCode;
 use ratatui::widgets::TableState;
@@ -337,6 +337,26 @@ pub struct App {
     pub c3_int_editor_selected: usize,
     pub c3_int_editor_cursor: usize,
     pub c3_int_editor_show_password: bool,
+    // Link group settings
+    pub c3_lg_level: C3LinkGroupLevel,
+    pub c3_lg_groups: Vec<Cont3xtLinkGroup>,
+    pub c3_lg_selected: usize,
+    pub c3_lg_filter: String,
+    pub c3_lg_filtering: bool,
+    pub c3_lg_sort_col: usize,
+    pub c3_lg_sort_desc: bool,
+    pub c3_lg_table_state: ratatui::widgets::TableState,
+    pub c3_lg_loaded: bool,
+    // Link list within group
+    pub c3_lg_links_selected: usize,
+    pub c3_lg_links_table_state: ratatui::widgets::TableState,
+    pub c3_lg_editing_group_idx: usize,
+    // Link editor
+    pub c3_lg_editor_field: C3LinkEditorField,
+    pub c3_lg_editor_link: Cont3xtLink,
+    pub c3_lg_editor_link_idx: usize,
+    pub c3_lg_editor_cursor: usize,
+    pub c3_lg_editor_itype_selected: usize,
     // Parliament state
     pub pl_groups: Vec<PlGroup>,
     pub pl_stats: HashMap<String, PlClusterStats>,
@@ -682,6 +702,32 @@ impl App {
             c3_int_editor_selected: 0,
             c3_int_editor_cursor: 0,
             c3_int_editor_show_password: false,
+            // Link group settings
+            c3_lg_level: C3LinkGroupLevel::GroupList,
+            c3_lg_groups: Vec::new(),
+            c3_lg_selected: 0,
+            c3_lg_filter: String::new(),
+            c3_lg_filtering: false,
+            c3_lg_sort_col: 0,
+            c3_lg_sort_desc: false,
+            c3_lg_table_state: ratatui::widgets::TableState::default(),
+            c3_lg_loaded: false,
+            c3_lg_links_selected: 0,
+            c3_lg_links_table_state: ratatui::widgets::TableState::default(),
+            c3_lg_editing_group_idx: 0,
+            c3_lg_editor_field: C3LinkEditorField::Name,
+            c3_lg_editor_link: Cont3xtLink {
+                name: String::new(),
+                url: String::new(),
+                itypes: Vec::new(),
+                info: String::new(),
+                color: String::new(),
+                external_doc_name: String::new(),
+                external_doc_url: String::new(),
+            },
+            c3_lg_editor_link_idx: 0,
+            c3_lg_editor_cursor: 0,
+            c3_lg_editor_itype_selected: 0,
             // Parliament state
             pl_groups: Vec::new(),
             pl_stats: HashMap::new(),
@@ -734,7 +780,7 @@ impl App {
     pub fn needs_animation(&self) -> bool {
         match self.app_mode {
             AppMode::Viewer => self.active_tab == Tab::Settings,
-            AppMode::Cont3xt => self.active_tab == Tab::Settings && self.c3_settings_tab != C3SettingsTab::Views && self.c3_settings_tab != C3SettingsTab::Integrations,
+            AppMode::Cont3xt => self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews,
             AppMode::Wise => self.active_tab == Tab::Settings,
             AppMode::Parliament => self.active_tab == Tab::Settings,
         }

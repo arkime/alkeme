@@ -13,13 +13,38 @@ pub struct Cont3xtLink {
     pub url: String,
     pub itypes: Vec<String>,
     pub info: String,
+    pub color: String,
+    pub external_doc_name: String,
+    pub external_doc_url: String,
+}
+
+impl Cont3xtLink {
+    pub fn is_separator(&self) -> bool {
+        self.name == "----------"
+    }
+    pub fn new_separator() -> Self {
+        Cont3xtLink {
+            name: "----------".to_string(),
+            url: "----------".to_string(),
+            itypes: vec!["domain".to_string(), "ip".to_string(), "url".to_string(), "email".to_string(), "hash".to_string(), "phone".to_string(), "text".to_string()],
+            info: String::new(),
+            color: String::new(),
+            external_doc_name: String::new(),
+            external_doc_url: String::new(),
+        }
+    }
 }
 
 /// A link group from /api/linkGroup
 #[derive(Clone)]
 pub struct Cont3xtLinkGroup {
+    pub id: String,
     pub name: String,
+    pub creator: String,
     pub links: Vec<Cont3xtLink>,
+    pub view_roles: Vec<String>,
+    pub edit_roles: Vec<String>,
+    pub editable: bool,
 }
 
 impl ArkimeClient {
@@ -281,10 +306,23 @@ impl ArkimeClient {
         let url = format!("{}/api/linkGroup", self.base_url);
         let body = self.authenticated_get_with_cookie(&url).await?;
         let parsed: Value = serde_json::from_str(&body)?;
+        let current_user = self.username.as_deref().unwrap_or("");
         let mut groups = Vec::new();
         if let Some(arr) = parsed.get("linkGroups").and_then(|v| v.as_array()) {
             for g in arr {
+                let id = g.get("_id").or_else(|| g.get("id"))
+                    .and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let name = str_val(g, "name");
+                let creator = str_val(g, "creator");
+                let editable = g.get("_editable").and_then(|v| v.as_bool()).unwrap_or(false)
+                    || creator == current_user;
+                let parse_roles = |key: &str| -> Vec<String> {
+                    g.get(key).and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default()
+                };
+                let view_roles = parse_roles("viewRoles");
+                let edit_roles = parse_roles("editRoles");
                 let links_arr = g.get("links").and_then(|l| l.as_array());
                 let mut links = Vec::new();
                 if let Some(larr) = links_arr {
@@ -295,17 +333,32 @@ impl ArkimeClient {
                             .and_then(|i| i.as_array())
                             .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
                             .unwrap_or_default();
-                        if lname == "----------" { continue; } // skip separators
                         let info = str_val(l, "infoField");
-                        links.push(Cont3xtLink { name: lname, url: lurl, itypes, info });
+                        let color = str_val(l, "color");
+                        let external_doc_name = str_val(l, "externalDocName");
+                        let external_doc_url = str_val(l, "externalDocUrl");
+                        links.push(Cont3xtLink { name: lname, url: lurl, itypes, info, color, external_doc_name, external_doc_url });
                     }
                 }
-                if !links.is_empty() {
-                    groups.push(Cont3xtLinkGroup { name, links });
-                }
+                groups.push(Cont3xtLinkGroup { id, name, creator, links, view_roles, edit_roles, editable });
             }
         }
         Ok(groups)
+    }
+
+    pub async fn c3_create_link_group(&self, group: &serde_json::Value) -> Result<Value> {
+        let url = format!("{}/api/linkGroup", self.base_url);
+        self.authenticated_post_json(&url, group).await
+    }
+
+    pub async fn c3_update_link_group(&self, id: &str, group: &serde_json::Value) -> Result<Value> {
+        let url = format!("{}/api/linkGroup/{}", self.base_url, urlencoding::encode(id));
+        self.authenticated_put_json(&url, group).await
+    }
+
+    pub async fn c3_delete_link_group(&self, id: &str) -> Result<Value> {
+        let url = format!("{}/api/linkGroup/{}", self.base_url, urlencoding::encode(id));
+        self.authenticated_delete(&url).await
     }
 }
 

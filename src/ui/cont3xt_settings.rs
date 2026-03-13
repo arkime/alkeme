@@ -1,6 +1,6 @@
 use super::*;
 use super::arkime;
-use crate::app::C3SettingsTab;
+use crate::app::{C3SettingsTab, C3LinkGroupLevel, C3LinkEditorField};
 
 pub(super) fn c3_draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
     // Split: sub-tab bar (3 lines) + content
@@ -22,6 +22,7 @@ pub(super) fn c3_draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
     match app.c3_settings_tab {
         C3SettingsTab::Views => c3_draw_settings_views(f, app, chunks[1]),
         C3SettingsTab::Integrations => c3_draw_settings_integrations(f, app, chunks[1]),
+        C3SettingsTab::LinkGroups => c3_draw_settings_link_groups(f, app, chunks[1]),
         _ => {
             arkime::draw_under_construction(f, app, chunks[1]);
             arkime::draw_owl(f, app, chunks[1]);
@@ -522,6 +523,257 @@ pub(super) fn c3_draw_int_editor(f: &mut Frame, app: &mut App, area: Rect) {
     // Footer
     f.render_widget(
         Paragraph::new(" ↑/↓:navigate  Space:toggle  p:passwords  Ctrl+S:save  Esc:close")
+            .style(Style::default().fg(Color::DarkGray)),
+        footer_area,
+    );
+}
+
+fn c3_draw_settings_link_groups(f: &mut Frame, app: &mut App, area: Rect) {
+    match app.c3_lg_level {
+        C3LinkGroupLevel::GroupList => c3_draw_lg_group_list(f, app, area),
+        C3LinkGroupLevel::LinkList => c3_draw_lg_link_list(f, app, area),
+        C3LinkGroupLevel::LinkEditor => {
+            c3_draw_lg_link_list(f, app, area);
+            c3_draw_lg_link_editor(f, app, area);
+        }
+    }
+}
+
+fn c3_draw_lg_group_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Min(0)])
+        .split(area);
+
+    let filter_display = if app.c3_lg_filtering {
+        format!("Filter: {}_", app.c3_lg_filter)
+    } else if !app.c3_lg_filter.is_empty() {
+        format!("Filter: {}", app.c3_lg_filter)
+    } else {
+        String::new()
+    };
+
+    let filtered = app.c3_lg_filtered_groups();
+
+    let toolbar_text = format!(
+        " {} link groups  {}  Enter:edit  n:new  d:delete  s/S:sort  /:filter  r:refresh",
+        filtered.len(),
+        filter_display,
+    );
+    let toolbar = Paragraph::new(toolbar_text)
+        .style(Style::default().fg(Color::DarkGray));
+    f.render_widget(toolbar, chunks[0]);
+
+    if app.c3_lg_filtering {
+        let cursor_x = chunks[0].x + 1 + filtered.len().to_string().len() as u16 + 16 + app.c3_lg_filter.len() as u16;
+        f.set_cursor_position((cursor_x, chunks[0].y));
+    }
+
+    let col_names = [" Name", "Creator", "Links", "Editable"];
+    let header_cells: Vec<Cell> = col_names.iter().enumerate().map(|(i, &name)| {
+        let is_sorted = app.c3_lg_sort_col == i;
+        let label = sort_header_label(name, is_sorted, app.c3_lg_sort_desc);
+        Cell::from(label).style(sort_header_style(is_sorted))
+    }).collect();
+    let header = Row::new(header_cells).height(1);
+
+    let rows: Vec<Row> = filtered.iter().map(|&idx| {
+        let g = &app.c3_lg_groups[idx];
+        let editable_str = if g.editable { "✓" } else { "✗" };
+        let editable_style = if g.editable {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        Row::new(vec![
+            Cell::from(format!(" {}", g.name)),
+            Cell::from(g.creator.clone()),
+            Cell::from(format!("{}", g.links.len())),
+            Cell::from(editable_str).style(editable_style),
+        ])
+    }).collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(25),
+            Constraint::Length(20),
+            Constraint::Length(8),
+            Constraint::Length(10),
+        ],
+    )
+    .header(header)
+    .block(Block::default().borders(Borders::ALL).title(" Link Groups "))
+    .row_highlight_style(Style::default().bg(Color::DarkGray));
+
+    f.render_stateful_widget(table, chunks[1], &mut app.c3_lg_table_state);
+}
+
+fn c3_draw_lg_link_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let gi = app.c3_lg_editing_group_idx;
+    let group = match app.c3_lg_groups.get(gi) {
+        Some(g) => g,
+        None => return,
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Min(0)])
+        .split(area);
+
+    let toolbar_text = format!(
+        " Links in: {}  ({} links)  ↑/↓:nav  Shift+↑/↓:reorder  Enter:edit  n:new  a:separator  d:delete  Ctrl+S:save  Esc:back",
+        group.name, group.links.len()
+    );
+    let toolbar = Paragraph::new(toolbar_text)
+        .style(Style::default().fg(Color::DarkGray));
+    f.render_widget(toolbar, chunks[0]);
+
+    let col_names = [" Name", "URL", "Types"];
+    let header_cells: Vec<Cell> = col_names.iter().map(|&name| {
+        Cell::from(name).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    }).collect();
+    let header = Row::new(header_cells).height(1);
+
+    let rows: Vec<Row> = group.links.iter().map(|link| {
+        if link.is_separator() {
+            Row::new(vec![
+                Cell::from(" ──── separator ────").style(Style::default().fg(Color::DarkGray)),
+                Cell::from("").style(Style::default().fg(Color::DarkGray)),
+                Cell::from("").style(Style::default().fg(Color::DarkGray)),
+            ])
+        } else {
+            let types_str = link.itypes.join(", ");
+            let url_display = if link.url.len() > 50 {
+                format!("{}…", &link.url[..49])
+            } else {
+                link.url.clone()
+            };
+            Row::new(vec![
+                Cell::from(format!(" {}", link.name)),
+                Cell::from(url_display),
+                Cell::from(types_str),
+            ])
+        }
+    }).collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(20),
+            Constraint::Percentage(40),
+            Constraint::Length(30),
+        ],
+    )
+    .header(header)
+    .block(Block::default().borders(Borders::ALL).title(format!(" Links: {} ", group.name)))
+    .row_highlight_style(Style::default().bg(Color::DarkGray));
+
+    f.render_stateful_widget(table, chunks[1], &mut app.c3_lg_links_table_state);
+}
+
+fn c3_draw_lg_link_editor(f: &mut Frame, app: &mut App, area: Rect) {
+    let all_itypes = ["domain", "ip", "url", "email", "hash", "phone", "text"];
+
+    let popup_width = (area.width * 60 / 100).max(50).min(area.width.saturating_sub(4));
+    let popup_height = (area.height * 70 / 100).max(16).min(area.height.saturating_sub(4));
+    let popup_area = center_popup(popup_width, popup_height, area);
+    f.render_widget(Clear, popup_area);
+
+    let title = if app.c3_lg_editor_link.name.is_empty() {
+        " Edit Link ".to_string()
+    } else {
+        format!(" Edit Link: {} ", app.c3_lg_editor_link.name)
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(title);
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let content_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(inner);
+
+    let fields_area = content_chunks[0];
+    let footer_area = content_chunks[1];
+
+    let mut y = fields_area.y;
+    let fields = C3LinkEditorField::all();
+
+    for &field in fields {
+        if y >= fields_area.y + fields_area.height {
+            break;
+        }
+        let is_selected = field == app.c3_lg_editor_field;
+        let label_style = if is_selected {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let label = field.label();
+
+        if field == C3LinkEditorField::Itypes {
+            // Label line
+            let row_area = Rect::new(fields_area.x, y, fields_area.width, 1);
+            f.render_widget(Paragraph::new(format!("  {}:", label)).style(label_style), row_area);
+            y += 1;
+
+            // Render each itype as a checkbox
+            for (ti, &itype) in all_itypes.iter().enumerate() {
+                if y >= fields_area.y + fields_area.height {
+                    break;
+                }
+                let checked = app.c3_lg_editor_link.itypes.iter().any(|t| t == itype);
+                let check_char = if checked { "x" } else { " " };
+                let row_area = Rect::new(fields_area.x, y, fields_area.width, 1);
+                let itype_style = if is_selected && ti == app.c3_lg_editor_itype_selected {
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                } else if is_selected {
+                    Style::default().fg(Color::White)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+                f.render_widget(
+                    Paragraph::new(format!("    [{}] {}", check_char, itype)).style(itype_style),
+                    row_area,
+                );
+                y += 1;
+            }
+        } else {
+            let value = match field {
+                C3LinkEditorField::Name => &app.c3_lg_editor_link.name,
+                C3LinkEditorField::Url => &app.c3_lg_editor_link.url,
+                C3LinkEditorField::Color => &app.c3_lg_editor_link.color,
+                C3LinkEditorField::InfoField => &app.c3_lg_editor_link.info,
+                C3LinkEditorField::ExternalDocName => &app.c3_lg_editor_link.external_doc_name,
+                C3LinkEditorField::ExternalDocUrl => &app.c3_lg_editor_link.external_doc_url,
+                _ => "",
+            };
+            let label_len = label.len() + 4; // "  Label: "
+            let max_val_width = fields_area.width as usize - label_len.min(fields_area.width as usize);
+            let truncated = if value.len() > max_val_width {
+                &value[..max_val_width]
+            } else {
+                value
+            };
+            let row_area = Rect::new(fields_area.x, y, fields_area.width, 1);
+            let text = format!("  {}: {}", label, truncated);
+            f.render_widget(Paragraph::new(text).style(label_style), row_area);
+
+            if is_selected {
+                let cursor_x = row_area.x + label_len as u16 + app.c3_lg_editor_cursor.min(max_val_width) as u16;
+                f.set_cursor_position((cursor_x, y));
+            }
+            y += 1;
+        }
+    }
+
+    f.render_widget(
+        Paragraph::new(" ↑/↓:field  Space:toggle(itypes)  Ctrl+S:apply  Esc:cancel")
             .style(Style::default().fg(Color::DarkGray)),
         footer_area,
     );

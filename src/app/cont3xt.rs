@@ -472,6 +472,60 @@ impl App {
         }
     }
 
+    pub async fn c3_fetch_link_groups_settings(&mut self) {
+        match self.client.c3_get_link_groups().await {
+            Ok(groups) => {
+                self.c3_lg_groups = groups;
+                self.c3_lg_selected = 0;
+                self.c3_lg_table_state.select(Some(0));
+                self.c3_lg_loaded = true;
+            }
+            Err(e) => self.status_msg = format!("Link groups error: {e}"),
+        }
+    }
+
+    pub fn c3_lg_build_group_json(&self, group: &crate::api::Cont3xtLinkGroup) -> serde_json::Value {
+        let links: Vec<serde_json::Value> = group.links.iter().map(|l| {
+            let mut link = serde_json::json!({
+                "name": l.name,
+                "url": l.url,
+                "itypes": l.itypes,
+            });
+            if !l.info.is_empty() { link["infoField"] = serde_json::json!(l.info); }
+            if !l.color.is_empty() { link["color"] = serde_json::json!(l.color); }
+            if !l.external_doc_name.is_empty() { link["externalDocName"] = serde_json::json!(l.external_doc_name); }
+            if !l.external_doc_url.is_empty() { link["externalDocUrl"] = serde_json::json!(l.external_doc_url); }
+            link
+        }).collect();
+        serde_json::json!({
+            "name": group.name,
+            "links": links,
+            "viewRoles": group.view_roles,
+            "editRoles": group.edit_roles,
+        })
+    }
+
+    pub fn c3_lg_filtered_groups(&self) -> Vec<usize> {
+        let filter = self.c3_lg_filter.to_lowercase();
+        let mut indices: Vec<usize> = self.c3_lg_groups.iter().enumerate()
+            .filter(|(_, g)| filter.is_empty() || g.name.to_lowercase().contains(&filter) || g.creator.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect();
+        let groups = &self.c3_lg_groups;
+        let col = self.c3_lg_sort_col;
+        let desc = self.c3_lg_sort_desc;
+        indices.sort_by(|&a, &b| {
+            let cmp = match col {
+                0 => groups[a].name.to_lowercase().cmp(&groups[b].name.to_lowercase()),
+                1 => groups[a].creator.to_lowercase().cmp(&groups[b].creator.to_lowercase()),
+                2 => groups[a].links.len().cmp(&groups[b].links.len()),
+                _ => groups[a].editable.cmp(&groups[b].editable),
+            };
+            if desc { cmp.reverse() } else { cmp }
+        });
+        indices
+    }
+
     /// Build the flat list of links filtered by selected result's itype
     /// Get the integration name of the currently selected tree item (if it's a Result)
     pub fn c3_current_integration_name(&self) -> Option<String> {
@@ -527,6 +581,9 @@ impl App {
         self.c3_link_flat.clear();
         for group in &self.c3_link_groups {
             for link in &group.links {
+                if link.is_separator() {
+                    continue;
+                }
                 if !link.itypes.iter().any(|t| *t == itype) {
                     continue;
                 }
@@ -563,5 +620,29 @@ impl App {
             .collect();
         matching.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         matching.get(self.c3_overview_popup_selected).map(|o| (*o).clone())
+    }
+
+    pub fn c3_lg_editor_field_value(&self) -> &str {
+        match self.c3_lg_editor_field {
+            C3LinkEditorField::Name => &self.c3_lg_editor_link.name,
+            C3LinkEditorField::Url => &self.c3_lg_editor_link.url,
+            C3LinkEditorField::Color => &self.c3_lg_editor_link.color,
+            C3LinkEditorField::InfoField => &self.c3_lg_editor_link.info,
+            C3LinkEditorField::ExternalDocName => &self.c3_lg_editor_link.external_doc_name,
+            C3LinkEditorField::ExternalDocUrl => &self.c3_lg_editor_link.external_doc_url,
+            C3LinkEditorField::Itypes => "",
+        }
+    }
+
+    pub fn c3_lg_editor_field_value_mut(&mut self) -> &mut String {
+        match self.c3_lg_editor_field {
+            C3LinkEditorField::Name => &mut self.c3_lg_editor_link.name,
+            C3LinkEditorField::Url => &mut self.c3_lg_editor_link.url,
+            C3LinkEditorField::Color => &mut self.c3_lg_editor_link.color,
+            C3LinkEditorField::InfoField => &mut self.c3_lg_editor_link.info,
+            C3LinkEditorField::ExternalDocName => &mut self.c3_lg_editor_link.external_doc_name,
+            C3LinkEditorField::ExternalDocUrl => &mut self.c3_lg_editor_link.external_doc_url,
+            C3LinkEditorField::Itypes => &mut self.c3_lg_editor_link.name, // unreachable in practice
+        }
     }
 }

@@ -634,7 +634,6 @@ impl App {
             let action = action.clone();
             match key.code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    // action is "delete_view:{id}"
                     if let Some(id) = action.strip_prefix("delete_view:") {
                         let id = id.to_string();
                         let status = tokio::task::block_in_place(|| {
@@ -653,6 +652,25 @@ impl App {
                                 });
                             }
                             Err(e) => self.status_msg = format!("Error deleting view: {e}"),
+                        }
+                    } else if let Some(id) = action.strip_prefix("delete_link_group:") {
+                        let id = id.to_string();
+                        let status = tokio::task::block_in_place(|| {
+                            tokio::runtime::Handle::current().block_on(
+                                self.client.c3_delete_link_group(&id)
+                            )
+                        });
+                        match status {
+                            Ok(_) => {
+                                self.status_msg = "Link group deleted".to_string();
+                                tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(async {
+                                        self.c3_fetch_link_groups_settings().await;
+                                        self.c3_fetch_link_groups().await;
+                                    })
+                                });
+                            }
+                            Err(e) => self.status_msg = format!("Error deleting link group: {e}"),
                         }
                     }
                     self.c3_settings_confirm = None;
@@ -1031,6 +1049,268 @@ impl App {
             return;
         }
 
+        // Link group settings editor intercept
+        if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups {
+            match self.c3_lg_level {
+                C3LinkGroupLevel::LinkEditor => {
+                    let all_itypes = ["domain", "ip", "url", "email", "hash", "phone", "text"];
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.c3_lg_level = C3LinkGroupLevel::LinkList;
+                        }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            // Apply edits back to the group's link
+                            let gi = self.c3_lg_editing_group_idx;
+                            let li = self.c3_lg_editor_link_idx;
+                            if let Some(group) = self.c3_lg_groups.get_mut(gi) {
+                                if let Some(link) = group.links.get_mut(li) {
+                                    *link = self.c3_lg_editor_link.clone();
+                                }
+                            }
+                            self.c3_lg_level = C3LinkGroupLevel::LinkList;
+                        }
+                        KeyCode::Up | KeyCode::Char('k') if self.c3_lg_editor_field == C3LinkEditorField::Itypes => {
+                            if self.c3_lg_editor_itype_selected > 0 {
+                                self.c3_lg_editor_itype_selected -= 1;
+                            }
+                        }
+                        KeyCode::Down | KeyCode::Char('j') if self.c3_lg_editor_field == C3LinkEditorField::Itypes => {
+                            if self.c3_lg_editor_itype_selected + 1 < all_itypes.len() {
+                                self.c3_lg_editor_itype_selected += 1;
+                            }
+                        }
+                        KeyCode::Char(' ') if self.c3_lg_editor_field == C3LinkEditorField::Itypes => {
+                            let itype = all_itypes[self.c3_lg_editor_itype_selected].to_string();
+                            if let Some(pos) = self.c3_lg_editor_link.itypes.iter().position(|t| t == &itype) {
+                                self.c3_lg_editor_link.itypes.remove(pos);
+                            } else {
+                                self.c3_lg_editor_link.itypes.push(itype);
+                            }
+                        }
+                        KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
+                            let fields = C3LinkEditorField::all();
+                            if let Some(pos) = fields.iter().position(|f| *f == self.c3_lg_editor_field) {
+                                self.c3_lg_editor_field = fields[(pos + 1) % fields.len()];
+                                self.c3_lg_editor_cursor = self.c3_lg_editor_field_value().len();
+                                self.c3_lg_editor_itype_selected = 0;
+                            }
+                        }
+                        KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => {
+                            let fields = C3LinkEditorField::all();
+                            if let Some(pos) = fields.iter().position(|f| *f == self.c3_lg_editor_field) {
+                                self.c3_lg_editor_field = fields[(pos + fields.len() - 1) % fields.len()];
+                                self.c3_lg_editor_cursor = self.c3_lg_editor_field_value().len();
+                                self.c3_lg_editor_itype_selected = 0;
+                            }
+                        }
+                        _ if self.c3_lg_editor_field != C3LinkEditorField::Itypes => {
+                            // Text input for non-itypes fields
+                            match key.code {
+                                KeyCode::Char(c) => {
+                                    let pos = self.c3_lg_editor_cursor;
+                                    self.c3_lg_editor_field_value_mut().insert(pos, c);
+                                    self.c3_lg_editor_cursor += 1;
+                                }
+                                KeyCode::Backspace => {
+                                    if self.c3_lg_editor_cursor > 0 {
+                                        self.c3_lg_editor_cursor -= 1;
+                                        let pos = self.c3_lg_editor_cursor;
+                                        self.c3_lg_editor_field_value_mut().remove(pos);
+                                    }
+                                }
+                                KeyCode::Delete => {
+                                    let len = self.c3_lg_editor_field_value().len();
+                                    let pos = self.c3_lg_editor_cursor;
+                                    if pos < len {
+                                        self.c3_lg_editor_field_value_mut().remove(pos);
+                                    }
+                                }
+                                KeyCode::Left => {
+                                    self.c3_lg_editor_cursor = self.c3_lg_editor_cursor.saturating_sub(1);
+                                }
+                                KeyCode::Right => {
+                                    let len = self.c3_lg_editor_field_value().len();
+                                    if self.c3_lg_editor_cursor < len {
+                                        self.c3_lg_editor_cursor += 1;
+                                    }
+                                }
+                                KeyCode::Home => self.c3_lg_editor_cursor = 0,
+                                KeyCode::End => {
+                                    self.c3_lg_editor_cursor = self.c3_lg_editor_field_value().len();
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                C3LinkGroupLevel::LinkList => {
+                    // Link list filter mode
+                    if self.c3_lg_filtering {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Enter => {
+                                self.c3_lg_filtering = false;
+                            }
+                            KeyCode::Backspace => {
+                                self.c3_lg_filter.pop();
+                            }
+                            KeyCode::Char(c) => {
+                                self.c3_lg_filter.push(c);
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.c3_lg_level = C3LinkGroupLevel::GroupList;
+                        }
+                        KeyCode::Enter => {
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get(gi) {
+                                if let Some(link) = group.links.get(self.c3_lg_links_selected) {
+                                    if !link.is_separator() {
+                                        self.c3_lg_editor_link = link.clone();
+                                        self.c3_lg_editor_link_idx = self.c3_lg_links_selected;
+                                        self.c3_lg_editor_field = C3LinkEditorField::Name;
+                                        self.c3_lg_editor_cursor = link.name.len();
+                                        self.c3_lg_editor_itype_selected = 0;
+                                        self.c3_lg_level = C3LinkGroupLevel::LinkEditor;
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('n') => {
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get_mut(gi) {
+                                group.links.push(crate::api::Cont3xtLink {
+                                    name: "New Link".to_string(),
+                                    url: String::new(),
+                                    itypes: vec!["domain".to_string(), "ip".to_string(), "url".to_string()],
+                                    info: String::new(),
+                                    color: String::new(),
+                                    external_doc_name: String::new(),
+                                    external_doc_url: String::new(),
+                                });
+                                self.c3_lg_links_selected = group.links.len() - 1;
+                                self.c3_lg_links_table_state.select(Some(self.c3_lg_links_selected));
+                            }
+                        }
+                        KeyCode::Char('a') => {
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get_mut(gi) {
+                                group.links.push(crate::api::Cont3xtLink::new_separator());
+                                self.c3_lg_links_selected = group.links.len() - 1;
+                                self.c3_lg_links_table_state.select(Some(self.c3_lg_links_selected));
+                            }
+                        }
+                        KeyCode::Char('d') | KeyCode::Char('x') => {
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get_mut(gi) {
+                                if self.c3_lg_links_selected < group.links.len() {
+                                    group.links.remove(self.c3_lg_links_selected);
+                                    if self.c3_lg_links_selected >= group.links.len() && !group.links.is_empty() {
+                                        self.c3_lg_links_selected = group.links.len() - 1;
+                                    }
+                                    self.c3_lg_links_table_state.select(Some(self.c3_lg_links_selected));
+                                }
+                            }
+                        }
+                        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            // Reorder: swap with previous
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get_mut(gi) {
+                                if self.c3_lg_links_selected > 0 {
+                                    group.links.swap(self.c3_lg_links_selected, self.c3_lg_links_selected - 1);
+                                    self.c3_lg_links_selected -= 1;
+                                    self.c3_lg_links_table_state.select(Some(self.c3_lg_links_selected));
+                                }
+                            }
+                        }
+                        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            // Reorder: swap with next
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get_mut(gi) {
+                                if self.c3_lg_links_selected + 1 < group.links.len() {
+                                    group.links.swap(self.c3_lg_links_selected, self.c3_lg_links_selected + 1);
+                                    self.c3_lg_links_selected += 1;
+                                    self.c3_lg_links_table_state.select(Some(self.c3_lg_links_selected));
+                                }
+                            }
+                        }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            // Save the group to server
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get(gi) {
+                                let group_json = self.c3_lg_build_group_json(group);
+                                let group_id = group.id.clone();
+                                tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(async {
+                                        match self.client.c3_update_link_group(&group_id, &group_json).await {
+                                            Ok(_) => {
+                                                self.status_msg = "Link group saved".to_string();
+                                                self.c3_fetch_link_groups_settings().await;
+                                                self.c3_fetch_link_groups().await;
+                                            }
+                                            Err(e) => {
+                                                self.status_msg = format!("Error saving link group: {e}");
+                                            }
+                                        }
+                                    })
+                                });
+                                // Stay in link list, re-select the group we were editing
+                                let new_idx = self.c3_lg_groups.iter().position(|g| g.id == group_id).unwrap_or(0);
+                                self.c3_lg_editing_group_idx = new_idx;
+                                self.c3_lg_links_selected = 0;
+                                self.c3_lg_links_table_state.select(Some(0));
+                            }
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            let gi = self.c3_lg_editing_group_idx;
+                            if let Some(group) = self.c3_lg_groups.get(gi) {
+                                if self.c3_lg_links_selected + 1 < group.links.len() {
+                                    self.c3_lg_links_selected += 1;
+                                    self.c3_lg_links_table_state.select(Some(self.c3_lg_links_selected));
+                                }
+                            }
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            if self.c3_lg_links_selected > 0 {
+                                self.c3_lg_links_selected -= 1;
+                                self.c3_lg_links_table_state.select(Some(self.c3_lg_links_selected));
+                            }
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                C3LinkGroupLevel::GroupList => {
+                    // Group list filter mode
+                    if self.c3_lg_filtering {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Enter => {
+                                self.c3_lg_filtering = false;
+                            }
+                            KeyCode::Backspace => {
+                                self.c3_lg_filter.pop();
+                                self.c3_lg_selected = 0;
+                                self.c3_lg_table_state.select(Some(0));
+                            }
+                            KeyCode::Char(c) => {
+                                self.c3_lg_filter.push(c);
+                                self.c3_lg_selected = 0;
+                                self.c3_lg_table_state.select(Some(0));
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+                    // handled below in the main match
+                }
+            }
+        }
+
         // Integration settings filter
         if self.c3_int_settings_filtering {
             match key.code {
@@ -1317,6 +1597,12 @@ impl App {
                         self.c3_int_settings_selected = (self.c3_int_settings_selected + self.visible_rows).min(filtered.len() - 1);
                         self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups {
+                    let filtered = self.c3_lg_filtered_groups();
+                    if !filtered.is_empty() {
+                        self.c3_lg_selected = (self.c3_lg_selected + self.visible_rows).min(filtered.len() - 1);
+                        self.c3_lg_table_state.select(Some(self.c3_lg_selected));
+                    }
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -1348,6 +1634,9 @@ impl App {
                 } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations {
                     self.c3_int_settings_selected = self.c3_int_settings_selected.saturating_sub(self.visible_rows);
                     self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected));
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups {
+                    self.c3_lg_selected = self.c3_lg_selected.saturating_sub(self.visible_rows);
+                    self.c3_lg_table_state.select(Some(self.c3_lg_selected));
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -1393,6 +1682,12 @@ impl App {
                         self.c3_int_settings_selected += 1;
                         self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups {
+                    let filtered = self.c3_lg_filtered_groups();
+                    if self.c3_lg_selected + 1 < filtered.len() {
+                        self.c3_lg_selected += 1;
+                        self.c3_lg_table_state.select(Some(self.c3_lg_selected));
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1423,6 +1718,11 @@ impl App {
                         self.c3_int_settings_selected -= 1;
                         self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups {
+                    if self.c3_lg_selected > 0 {
+                        self.c3_lg_selected -= 1;
+                        self.c3_lg_table_state.select(Some(self.c3_lg_selected));
+                    }
                 }
             }
             KeyCode::PageDown => {
@@ -1445,6 +1745,9 @@ impl App {
                 } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations {
                     self.c3_int_settings_selected = 0;
                     self.c3_int_settings_table_state.select(Some(0));
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups {
+                    self.c3_lg_selected = 0;
+                    self.c3_lg_table_state.select(Some(0));
                 } else if self.active_tab == Tab::Settings {
                     self.c3_settings_views_selected = 0;
                     self.c3_settings_views_table_state.select(Some(0));
@@ -1464,6 +1767,12 @@ impl App {
                     if !filtered.is_empty() {
                         self.c3_int_settings_selected = filtered.len() - 1;
                         self.c3_int_settings_table_state.select(Some(self.c3_int_settings_selected));
+                    }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups {
+                    let filtered = self.c3_lg_filtered_groups();
+                    if !filtered.is_empty() {
+                        self.c3_lg_selected = filtered.len() - 1;
+                        self.c3_lg_table_state.select(Some(self.c3_lg_selected));
                     }
                 } else if self.active_tab == Tab::Settings {
                     let filtered = self.c3_settings_filtered_views();
@@ -1620,6 +1929,11 @@ impl App {
             }
             KeyCode::Char('4') if self.active_tab == Tab::Settings => {
                 self.c3_settings_tab = C3SettingsTab::LinkGroups;
+                if !self.c3_lg_loaded {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(self.c3_fetch_link_groups_settings())
+                    });
+                }
             }
             KeyCode::Char('r') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views => {
                 tokio::task::block_in_place(|| {
@@ -1727,6 +2041,76 @@ impl App {
                     self.c3_int_editor_selected = 0;
                     self.c3_int_editor_cursor = self.c3_int_editor_values.first().map(|v| v.1.len()).unwrap_or(0);
                     self.c3_int_editor_show_password = false;
+                }
+            }
+            // Link group settings keys (GroupList level)
+            KeyCode::Char('r') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups => {
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(self.c3_fetch_link_groups_settings())
+                });
+            }
+            KeyCode::Char('s') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups => {
+                self.c3_lg_sort_col = (self.c3_lg_sort_col + 1) % 4;
+                self.c3_lg_selected = 0;
+                self.c3_lg_table_state.select(Some(0));
+            }
+            KeyCode::Char('S') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups => {
+                self.c3_lg_sort_desc = !self.c3_lg_sort_desc;
+                self.c3_lg_selected = 0;
+                self.c3_lg_table_state.select(Some(0));
+            }
+            KeyCode::Char('/') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups => {
+                self.c3_lg_filtering = true;
+            }
+            KeyCode::Char('n') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups => {
+                // Create a new empty group
+                let body = serde_json::json!({
+                    "name": "New Group",
+                    "links": [],
+                    "viewRoles": [],
+                    "editRoles": [],
+                });
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        match self.client.c3_create_link_group(&body).await {
+                            Ok(_) => {
+                                self.status_msg = "Link group created".to_string();
+                                self.c3_fetch_link_groups_settings().await;
+                                self.c3_fetch_link_groups().await;
+                            }
+                            Err(e) => {
+                                self.status_msg = format!("Error creating link group: {e}");
+                            }
+                        }
+                    })
+                });
+            }
+            KeyCode::Enter if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups => {
+                let filtered = self.c3_lg_filtered_groups();
+                if let Some(&idx) = filtered.get(self.c3_lg_selected) {
+                    let group = &self.c3_lg_groups[idx];
+                    if group.editable {
+                        self.c3_lg_editing_group_idx = idx;
+                        self.c3_lg_links_selected = 0;
+                        self.c3_lg_links_table_state.select(Some(0));
+                        self.c3_lg_level = C3LinkGroupLevel::LinkList;
+                    } else {
+                        self.status_msg = "Link group is not editable".to_string();
+                    }
+                }
+            }
+            KeyCode::Char('d') | KeyCode::Char('x') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups => {
+                let filtered = self.c3_lg_filtered_groups();
+                if let Some(&idx) = filtered.get(self.c3_lg_selected) {
+                    let group = &self.c3_lg_groups[idx];
+                    if group.editable {
+                        self.c3_settings_confirm = Some((
+                            format!("delete_link_group:{}", group.id),
+                            format!("Delete link group \"{}\"?", group.name),
+                        ));
+                    } else {
+                        self.status_msg = "Link group is not editable".to_string();
+                    }
                 }
             }
             _ => {}

@@ -416,6 +416,41 @@ impl C3ViewEditorField {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum C3LinkGroupLevel {
+    GroupList,
+    LinkList,
+    LinkEditor,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum C3LinkEditorField {
+    Name,
+    Url,
+    Itypes,
+    Color,
+    InfoField,
+    ExternalDocName,
+    ExternalDocUrl,
+}
+
+impl C3LinkEditorField {
+    pub fn all() -> &'static [C3LinkEditorField] {
+        &[Self::Name, Self::Url, Self::Itypes, Self::Color, Self::InfoField, Self::ExternalDocName, Self::ExternalDocUrl]
+    }
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Name => "Name",
+            Self::Url => "URL",
+            Self::Itypes => "Indicator Types",
+            Self::Color => "Color",
+            Self::InfoField => "Info",
+            Self::ExternalDocName => "External Doc Name",
+            Self::ExternalDocUrl => "External Doc URL",
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum AppMode {
     Viewer,
