@@ -876,6 +876,14 @@ impl App {
                             self.c3_view_editor_field = self.c3_view_editor_field.prev();
                         }
                         KeyCode::Enter | KeyCode::Char(' ') => {
+                            if self.c3_all_roles.is_empty() {
+                                tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(async {
+                                        self.c3_fetch_roles().await;
+                                    })
+                                });
+                                self.c3_rebuild_view_editor_roles();
+                            }
                             self.c3_role_popup_open = true;
                             self.c3_role_popup_for_edit = false;
                             self.c3_role_popup_selected = 0;
@@ -899,6 +907,14 @@ impl App {
                             self.c3_view_editor_field = self.c3_view_editor_field.prev();
                         }
                         KeyCode::Enter | KeyCode::Char(' ') => {
+                            if self.c3_all_roles.is_empty() {
+                                tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(async {
+                                        self.c3_fetch_roles().await;
+                                    })
+                                });
+                                self.c3_rebuild_view_editor_roles();
+                            }
                             self.c3_role_popup_open = true;
                             self.c3_role_popup_for_edit = true;
                             self.c3_role_popup_selected = 0;

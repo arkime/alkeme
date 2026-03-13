@@ -265,6 +265,18 @@ impl App {
             .collect()
     }
 
+    /// Rebuild view editor role lists from c3_all_roles, preserving any already-selected roles
+    pub fn c3_rebuild_view_editor_roles(&mut self) {
+        let prev_view: std::collections::HashSet<String> = self.c3_view_editor_view_roles.iter()
+            .filter(|(_, sel)| *sel).map(|(n, _)| n.clone()).collect();
+        let prev_edit: std::collections::HashSet<String> = self.c3_view_editor_edit_roles.iter()
+            .filter(|(_, sel)| *sel).map(|(n, _)| n.clone()).collect();
+        self.c3_view_editor_view_roles = self.c3_all_roles.iter()
+            .map(|r| (r.clone(), prev_view.contains(r))).collect();
+        self.c3_view_editor_edit_roles = self.c3_all_roles.iter()
+            .map(|r| (r.clone(), prev_edit.contains(r))).collect();
+    }
+
     pub fn c3_stats_current_data(&self) -> &Vec<serde_json::Value> {
         match self.c3_stats_tab {
             C3StatsTab::Integrations => &self.c3_stats_data,
