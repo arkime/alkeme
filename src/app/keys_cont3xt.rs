@@ -1185,7 +1185,7 @@ impl App {
                             KeyCode::Esc => { self.c3_role_popup_open = false; }
                             KeyCode::Char('/') => { self.c3_role_popup_filtering = !self.c3_role_popup_filtering; }
                             KeyCode::Char(' ') | KeyCode::Enter if !self.c3_role_popup_filtering => {
-                                let filtered = self.c3_role_popup_filtered_roles();
+                                let filtered = self.c3_all_roles_filtered();
                                 if let Some(&idx) = filtered.get(self.c3_role_popup_selected) {
                                     if let Some(role) = self.c3_all_roles.get(idx) {
                                         let role = role.clone();
@@ -1203,12 +1203,12 @@ impl App {
                                 }
                             }
                             KeyCode::Up | KeyCode::Char('k') if !self.c3_role_popup_filtering => {
-                                let filtered = self.c3_role_popup_filtered_roles();
+                                let filtered = self.c3_all_roles_filtered();
                                 if self.c3_role_popup_selected > 0 { self.c3_role_popup_selected -= 1; }
                                 else if !filtered.is_empty() { self.c3_role_popup_selected = filtered.len() - 1; }
                             }
                             KeyCode::Down | KeyCode::Char('j') if !self.c3_role_popup_filtering => {
-                                let filtered = self.c3_role_popup_filtered_roles();
+                                let filtered = self.c3_all_roles_filtered();
                                 if self.c3_role_popup_selected + 1 < filtered.len() { self.c3_role_popup_selected += 1; }
                                 else { self.c3_role_popup_selected = 0; }
                             }
@@ -1512,6 +1512,361 @@ impl App {
             }
         }
 
+        // Overview settings editor intercept
+        if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews {
+            match self.c3_ov_level {
+                C3OverviewLevel::FieldEditor => {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.c3_ov_level = C3OverviewLevel::FieldList;
+                        }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            // Apply field edits back to the overview's field
+                            let ov_idx = self.c3_ov_editor_idx;
+                            let fi = self.c3_ov_field_editor_idx;
+                            if let Some(ov) = self.c3_ov_list.get_mut(ov_idx) {
+                                if let Some(field) = ov.fields.get_mut(fi) {
+                                    field.from = self.c3_ov_field_editor_from.clone();
+                                    field.field = self.c3_ov_field_editor_field_name.clone();
+                                    let alias = self.c3_ov_field_editor_alias.trim().to_string();
+                                    field.alias = if alias.is_empty() { None } else { Some(alias) };
+                                }
+                            }
+                            tokio::task::block_in_place(|| {
+                                tokio::runtime::Handle::current().block_on(self.c3_ov_save())
+                            });
+                            self.c3_ov_level = C3OverviewLevel::FieldList;
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            self.c3_ov_field_editor_field = self.c3_ov_field_editor_field.prev();
+                            self.c3_ov_field_editor_cursor = match self.c3_ov_field_editor_field {
+                                C3OvFieldEditorField::From => self.c3_ov_field_editor_from.len(),
+                                C3OvFieldEditorField::Field => self.c3_ov_field_editor_field_name.len(),
+                                C3OvFieldEditorField::Alias => self.c3_ov_field_editor_alias.len(),
+                            };
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            self.c3_ov_field_editor_field = self.c3_ov_field_editor_field.next();
+                            self.c3_ov_field_editor_cursor = match self.c3_ov_field_editor_field {
+                                C3OvFieldEditorField::From => self.c3_ov_field_editor_from.len(),
+                                C3OvFieldEditorField::Field => self.c3_ov_field_editor_field_name.len(),
+                                C3OvFieldEditorField::Alias => self.c3_ov_field_editor_alias.len(),
+                            };
+                        }
+                        KeyCode::Char('h') | KeyCode::Char('?') => {
+                            self.show_help = true;
+                        }
+                        _ => {
+                            let (text, cursor) = match self.c3_ov_field_editor_field {
+                                C3OvFieldEditorField::From => (&mut self.c3_ov_field_editor_from, &mut self.c3_ov_field_editor_cursor),
+                                C3OvFieldEditorField::Field => (&mut self.c3_ov_field_editor_field_name, &mut self.c3_ov_field_editor_cursor),
+                                C3OvFieldEditorField::Alias => (&mut self.c3_ov_field_editor_alias, &mut self.c3_ov_field_editor_cursor),
+                            };
+                            handle_text_input_key(key.code, text, cursor);
+                        }
+                    }
+                    return;
+                }
+                C3OverviewLevel::Editor => {
+                    // Role popup intercept (reuse existing role popup)
+                    if self.c3_role_popup_open {
+                        match key.code {
+                            KeyCode::Esc => { self.c3_role_popup_open = false; }
+                            KeyCode::Char('/') => { self.c3_role_popup_filtering = !self.c3_role_popup_filtering; }
+                            KeyCode::Char(' ') | KeyCode::Enter if !self.c3_role_popup_filtering => {
+                                let filtered = self.c3_all_roles_filtered();
+                                if let Some(&idx) = filtered.get(self.c3_role_popup_selected) {
+                                    if let Some(role) = self.c3_all_roles.get(idx) {
+                                        let role = role.clone();
+                                        let roles = if self.c3_role_popup_for_edit {
+                                            &mut self.c3_ov_editor_edit_roles
+                                        } else {
+                                            &mut self.c3_ov_editor_view_roles
+                                        };
+                                        if let Some(pos) = roles.iter().position(|r| r == &role) {
+                                            roles.remove(pos);
+                                        } else {
+                                            roles.push(role);
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Up | KeyCode::Char('k') if !self.c3_role_popup_filtering => {
+                                let filtered = self.c3_all_roles_filtered();
+                                if self.c3_role_popup_selected > 0 { self.c3_role_popup_selected -= 1; }
+                                else if !filtered.is_empty() { self.c3_role_popup_selected = filtered.len() - 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') if !self.c3_role_popup_filtering => {
+                                let filtered = self.c3_all_roles_filtered();
+                                if self.c3_role_popup_selected + 1 < filtered.len() { self.c3_role_popup_selected += 1; }
+                                else { self.c3_role_popup_selected = 0; }
+                            }
+                            _ if self.c3_role_popup_filtering => {
+                                match key.code {
+                                    KeyCode::Backspace => { self.c3_role_popup_filter.pop(); self.c3_role_popup_selected = 0; }
+                                    KeyCode::Char(c) => { self.c3_role_popup_filter.push(c); self.c3_role_popup_selected = 0; }
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.c3_ov_level = C3OverviewLevel::List;
+                        }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            // Apply editor fields back to the overview
+                            let idx = self.c3_ov_editor_idx;
+                            if let Some(ov) = self.c3_ov_list.get_mut(idx) {
+                                ov.name = self.c3_ov_editor_name.clone();
+                                ov.title = self.c3_ov_editor_title.clone();
+                                ov.itype = self.c3_ov_editor_itype.clone();
+                                ov.view_roles = self.c3_ov_editor_view_roles.clone();
+                                ov.edit_roles = self.c3_ov_editor_edit_roles.clone();
+                            }
+                            tokio::task::block_in_place(|| {
+                                tokio::runtime::Handle::current().block_on(self.c3_ov_save())
+                            });
+                            self.c3_ov_level = C3OverviewLevel::List;
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            self.c3_ov_editor_field = self.c3_ov_editor_field.prev();
+                            self.c3_ov_editor_cursor = match self.c3_ov_editor_field {
+                                C3OverviewEditorField::Name => self.c3_ov_editor_name.len(),
+                                C3OverviewEditorField::Title => self.c3_ov_editor_title.len(),
+                                C3OverviewEditorField::Itype => self.c3_ov_editor_itype.len(),
+                                _ => 0,
+                            };
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            self.c3_ov_editor_field = self.c3_ov_editor_field.next();
+                            self.c3_ov_editor_cursor = match self.c3_ov_editor_field {
+                                C3OverviewEditorField::Name => self.c3_ov_editor_name.len(),
+                                C3OverviewEditorField::Title => self.c3_ov_editor_title.len(),
+                                C3OverviewEditorField::Itype => self.c3_ov_editor_itype.len(),
+                                _ => 0,
+                            };
+                        }
+                        KeyCode::Enter if self.c3_ov_editor_field == C3OverviewEditorField::ViewRoles
+                            || self.c3_ov_editor_field == C3OverviewEditorField::EditRoles => {
+                            if self.c3_all_roles.is_empty() {
+                                tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(async {
+                                        self.c3_fetch_roles().await;
+                                    })
+                                });
+                            }
+                            self.c3_role_popup_open = true;
+                            self.c3_role_popup_for_edit = self.c3_ov_editor_field == C3OverviewEditorField::EditRoles;
+                            self.c3_role_popup_selected = 0;
+                            self.c3_role_popup_filter.clear();
+                            self.c3_role_popup_filtering = false;
+                        }
+                        KeyCode::Enter => {
+                            // Enter field list for this overview
+                            self.c3_ov_fields_selected = 0;
+                            self.c3_ov_fields_table_state.select(Some(0));
+                            self.c3_ov_fields_filter.clear();
+                            self.c3_ov_fields_filtering = false;
+                            self.c3_ov_level = C3OverviewLevel::FieldList;
+                        }
+                        _ if matches!(self.c3_ov_editor_field, C3OverviewEditorField::Name | C3OverviewEditorField::Title | C3OverviewEditorField::Itype) => {
+                            let (text, cursor) = match self.c3_ov_editor_field {
+                                C3OverviewEditorField::Name => (&mut self.c3_ov_editor_name, &mut self.c3_ov_editor_cursor),
+                                C3OverviewEditorField::Title => (&mut self.c3_ov_editor_title, &mut self.c3_ov_editor_cursor),
+                                C3OverviewEditorField::Itype => (&mut self.c3_ov_editor_itype, &mut self.c3_ov_editor_cursor),
+                                _ => unreachable!(),
+                            };
+                            handle_text_input_key(key.code, text, cursor);
+                        }
+                        KeyCode::Char('h') | KeyCode::Char('?') => {
+                            self.show_help = true;
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                C3OverviewLevel::FieldList => {
+                    // Field list filter input mode
+                    if self.c3_ov_fields_filtering {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Enter => {
+                                self.c3_ov_fields_filtering = false;
+                            }
+                            KeyCode::Backspace => {
+                                self.c3_ov_fields_filter.pop();
+                                self.c3_ov_fields_selected = 0;
+                                self.c3_ov_fields_table_state.select(Some(0));
+                            }
+                            KeyCode::Char(c) => {
+                                self.c3_ov_fields_filter.push(c);
+                                self.c3_ov_fields_selected = 0;
+                                self.c3_ov_fields_table_state.select(Some(0));
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+                    let filtered = self.c3_ov_filtered_fields();
+                    let has_filter = !self.c3_ov_fields_filter.is_empty();
+                    let real_idx = filtered.get(self.c3_ov_fields_selected).copied();
+                    match key.code {
+                        KeyCode::Esc => {
+                            if has_filter {
+                                self.c3_ov_fields_filter.clear();
+                                self.c3_ov_fields_selected = 0;
+                                self.c3_ov_fields_table_state.select(Some(0));
+                            } else {
+                                self.c3_ov_level = C3OverviewLevel::List;
+                            }
+                        }
+                        KeyCode::Char('/') => {
+                            self.c3_ov_fields_filtering = true;
+                        }
+                        KeyCode::Enter | KeyCode::Char('e') => {
+                            if let Some(ri) = real_idx {
+                                let ov_idx = self.c3_ov_editor_idx;
+                                if let Some(ov) = self.c3_ov_list.get(ov_idx) {
+                                    if let Some(field) = ov.fields.get(ri) {
+                                        self.c3_ov_field_editor_idx = ri;
+                                        self.c3_ov_field_editor_from = field.from.clone();
+                                        self.c3_ov_field_editor_field_name = field.field.clone();
+                                        self.c3_ov_field_editor_alias = field.alias.clone().unwrap_or_default();
+                                        self.c3_ov_field_editor_field = C3OvFieldEditorField::From;
+                                        self.c3_ov_field_editor_cursor = field.from.len();
+                                        self.c3_ov_level = C3OverviewLevel::FieldEditor;
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('d') | KeyCode::Char('x') => {
+                            if let Some(ri) = real_idx {
+                                let ov_idx = self.c3_ov_editor_idx;
+                                if let Some(ov) = self.c3_ov_list.get_mut(ov_idx) {
+                                    if ri < ov.fields.len() {
+                                        ov.fields.remove(ri);
+                                        let new_filtered = self.c3_ov_filtered_fields();
+                                        if self.c3_ov_fields_selected >= new_filtered.len() && !new_filtered.is_empty() {
+                                            self.c3_ov_fields_selected = new_filtered.len() - 1;
+                                        }
+                                        self.c3_ov_fields_table_state.select(Some(self.c3_ov_fields_selected));
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('n') | KeyCode::Char('a') if !has_filter => {
+                            let ov_idx = self.c3_ov_editor_idx;
+                            if let Some(ov) = self.c3_ov_list.get_mut(ov_idx) {
+                                let insert_pos = real_idx.map(|r| r + 1).unwrap_or(ov.fields.len()).min(ov.fields.len());
+                                ov.fields.insert(insert_pos, crate::api::Cont3xtOverviewField {
+                                    field_type: "linked".to_string(),
+                                    from: String::new(),
+                                    field: String::new(),
+                                    alias: None,
+                                    custom: None,
+                                });
+                                self.c3_ov_fields_selected += 1;
+                                self.c3_ov_fields_table_state.select(Some(self.c3_ov_fields_selected));
+                            }
+                        }
+                        KeyCode::Char('N') | KeyCode::Char('A') if !has_filter => {
+                            let ov_idx = self.c3_ov_editor_idx;
+                            if let Some(ov) = self.c3_ov_list.get_mut(ov_idx) {
+                                ov.fields.push(crate::api::Cont3xtOverviewField {
+                                    field_type: "linked".to_string(),
+                                    from: String::new(),
+                                    field: String::new(),
+                                    alias: None,
+                                    custom: None,
+                                });
+                                self.c3_ov_fields_selected = ov.fields.len() - 1;
+                                self.c3_ov_fields_table_state.select(Some(self.c3_ov_fields_selected));
+                            }
+                        }
+                        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter => {
+                            if let Some(ri) = real_idx {
+                                let ov_idx = self.c3_ov_editor_idx;
+                                if let Some(ov) = self.c3_ov_list.get_mut(ov_idx) {
+                                    if ri > 0 {
+                                        ov.fields.swap(ri, ri - 1);
+                                        self.c3_ov_fields_selected = self.c3_ov_fields_selected.saturating_sub(1);
+                                        self.c3_ov_fields_table_state.select(Some(self.c3_ov_fields_selected));
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter => {
+                            if let Some(ri) = real_idx {
+                                let ov_idx = self.c3_ov_editor_idx;
+                                if let Some(ov) = self.c3_ov_list.get_mut(ov_idx) {
+                                    if ri + 1 < ov.fields.len() {
+                                        ov.fields.swap(ri, ri + 1);
+                                        self.c3_ov_fields_selected += 1;
+                                        self.c3_ov_fields_table_state.select(Some(self.c3_ov_fields_selected));
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            tokio::task::block_in_place(|| {
+                                tokio::runtime::Handle::current().block_on(self.c3_ov_save())
+                            });
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            if self.c3_ov_fields_selected + 1 < filtered.len() {
+                                self.c3_ov_fields_selected += 1;
+                                self.c3_ov_fields_table_state.select(Some(self.c3_ov_fields_selected));
+                            }
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            if self.c3_ov_fields_selected > 0 {
+                                self.c3_ov_fields_selected -= 1;
+                                self.c3_ov_fields_table_state.select(Some(self.c3_ov_fields_selected));
+                            }
+                        }
+                        KeyCode::Char('B') => {
+                            let ov_idx = self.c3_ov_editor_idx;
+                            if let Some(ov) = self.c3_ov_list.get(ov_idx) {
+                                let safe_name = ov.name.replace(['/', '\\', ' '], "_");
+                                self.c3_backup_kind = C3BackupKind::OverviewSingle;
+                                self.c3_backup_prompt = Some(format!("{}.json", safe_name));
+                            }
+                        }
+                        KeyCode::Char('h') | KeyCode::Char('?') => {
+                            self.show_help = true;
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                C3OverviewLevel::List => {
+                    // List filter mode
+                    if self.c3_ov_filtering {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Enter => {
+                                self.c3_ov_filtering = false;
+                            }
+                            KeyCode::Backspace => {
+                                self.c3_ov_filter.pop();
+                                self.c3_ov_selected = 0;
+                                self.c3_ov_table_state.select(Some(0));
+                            }
+                            KeyCode::Char(c) => {
+                                self.c3_ov_filter.push(c);
+                                self.c3_ov_selected = 0;
+                                self.c3_ov_table_state.select(Some(0));
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+                    // handled below in the main match
+                }
+            }
+        }
+
         // Integration settings filter
         if self.c3_int_settings_filtering {
             match key.code {
@@ -1804,9 +2159,13 @@ impl App {
                         self.c3_lg_selected = (self.c3_lg_selected + self.visible_rows).min(filtered.len() - 1);
                         self.c3_lg_table_state.select(Some(self.c3_lg_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews {
+                    let filtered = self.c3_ov_filtered_list();
+                    if !filtered.is_empty() {
+                        self.c3_ov_selected = (self.c3_ov_selected + self.visible_rows).min(filtered.len() - 1);
+                        self.c3_ov_table_state.select(Some(self.c3_ov_selected));
+                    }
                 }
-            }
-            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 if self.active_tab == Tab::Search {
                     match self.c3_focus {
                         Cont3xtFocus::Results => {
@@ -1838,6 +2197,9 @@ impl App {
                 } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups {
                     self.c3_lg_selected = self.c3_lg_selected.saturating_sub(self.visible_rows);
                     self.c3_lg_table_state.select(Some(self.c3_lg_selected));
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews {
+                    self.c3_ov_selected = self.c3_ov_selected.saturating_sub(self.visible_rows);
+                    self.c3_ov_table_state.select(Some(self.c3_ov_selected));
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -1889,6 +2251,12 @@ impl App {
                         self.c3_lg_selected += 1;
                         self.c3_lg_table_state.select(Some(self.c3_lg_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews {
+                    let filtered = self.c3_ov_filtered_list();
+                    if self.c3_ov_selected + 1 < filtered.len() {
+                        self.c3_ov_selected += 1;
+                        self.c3_ov_table_state.select(Some(self.c3_ov_selected));
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1924,6 +2292,11 @@ impl App {
                         self.c3_lg_selected -= 1;
                         self.c3_lg_table_state.select(Some(self.c3_lg_selected));
                     }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews {
+                    if self.c3_ov_selected > 0 {
+                        self.c3_ov_selected -= 1;
+                        self.c3_ov_table_state.select(Some(self.c3_ov_selected));
+                    }
                 }
             }
             KeyCode::PageDown => {
@@ -1949,6 +2322,9 @@ impl App {
                 } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::LinkGroups {
                     self.c3_lg_selected = 0;
                     self.c3_lg_table_state.select(Some(0));
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews {
+                    self.c3_ov_selected = 0;
+                    self.c3_ov_table_state.select(Some(0));
                 } else if self.active_tab == Tab::Settings {
                     self.c3_settings_views_selected = 0;
                     self.c3_settings_views_table_state.select(Some(0));
@@ -1974,6 +2350,12 @@ impl App {
                     if !filtered.is_empty() {
                         self.c3_lg_selected = filtered.len() - 1;
                         self.c3_lg_table_state.select(Some(self.c3_lg_selected));
+                    }
+                } else if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews {
+                    let filtered = self.c3_ov_filtered_list();
+                    if !filtered.is_empty() {
+                        self.c3_ov_selected = filtered.len() - 1;
+                        self.c3_ov_table_state.select(Some(self.c3_ov_selected));
                     }
                 } else if self.active_tab == Tab::Settings {
                     let filtered = self.c3_settings_filtered_views();
@@ -2135,6 +2517,14 @@ impl App {
             }
             KeyCode::Char('4') if self.active_tab == Tab::Settings => {
                 self.c3_settings_tab = C3SettingsTab::Overviews;
+                if !self.c3_ov_loaded {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(async {
+                            self.c3_fetch_overviews().await;
+                            self.c3_ov_loaded = true;
+                        })
+                    });
+                }
             }
             KeyCode::Char('r') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Views => {
                 tokio::task::block_in_place(|| {
@@ -2339,6 +2729,97 @@ impl App {
                 } else {
                     self.c3_backup_kind = C3BackupKind::LinkGroupsAll;
                     self.c3_backup_prompt = Some("linkgroups-backup.json".to_string());
+                }
+            }
+            // Overview settings keys (List level)
+            KeyCode::Char('r') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews => {
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        self.c3_fetch_overviews().await;
+                        self.c3_ov_loaded = true;
+                    })
+                });
+            }
+            KeyCode::Char('s') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews => {
+                self.c3_ov_sort_col = (self.c3_ov_sort_col + 1) % 5;
+                self.c3_ov_selected = 0;
+                self.c3_ov_table_state.select(Some(0));
+            }
+            KeyCode::Char('S') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews => {
+                self.c3_ov_sort_desc = !self.c3_ov_sort_desc;
+                self.c3_ov_selected = 0;
+                self.c3_ov_table_state.select(Some(0));
+            }
+            KeyCode::Char('/') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews => {
+                self.c3_ov_filtering = true;
+            }
+            KeyCode::Char('n') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews => {
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(self.c3_ov_create())
+                });
+            }
+            KeyCode::Char('e') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews => {
+                let filtered = self.c3_ov_filtered_list();
+                if let Some(&idx) = filtered.get(self.c3_ov_selected) {
+                    let ov = &self.c3_ov_list[idx];
+                    if ov.editable {
+                        self.c3_ov_editor_idx = idx;
+                        self.c3_ov_editor_name = ov.name.clone();
+                        self.c3_ov_editor_title = ov.title.clone();
+                        self.c3_ov_editor_itype = ov.itype.clone();
+                        self.c3_ov_editor_view_roles = ov.view_roles.clone();
+                        self.c3_ov_editor_edit_roles = ov.edit_roles.clone();
+                        self.c3_ov_editor_field = C3OverviewEditorField::Name;
+                        self.c3_ov_editor_cursor = ov.name.len();
+                        self.c3_ov_level = C3OverviewLevel::Editor;
+                    } else {
+                        self.status_msg = "Overview is not editable".to_string();
+                    }
+                }
+            }
+            KeyCode::Enter if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews => {
+                let filtered = self.c3_ov_filtered_list();
+                if let Some(&idx) = filtered.get(self.c3_ov_selected) {
+                    let ov = &self.c3_ov_list[idx];
+                    if ov.editable {
+                        self.c3_ov_editor_idx = idx;
+                        self.c3_ov_editor_name = ov.name.clone();
+                        self.c3_ov_editor_title = ov.title.clone();
+                        self.c3_ov_editor_itype = ov.itype.clone();
+                        self.c3_ov_editor_view_roles = ov.view_roles.clone();
+                        self.c3_ov_editor_edit_roles = ov.edit_roles.clone();
+                        self.c3_ov_editor_field = C3OverviewEditorField::Name;
+                        self.c3_ov_editor_cursor = ov.name.len();
+                        // Go directly to field list
+                        self.c3_ov_fields_selected = 0;
+                        self.c3_ov_fields_table_state.select(Some(0));
+                        self.c3_ov_fields_filter.clear();
+                        self.c3_ov_fields_filtering = false;
+                        self.c3_ov_level = C3OverviewLevel::FieldList;
+                    } else {
+                        self.status_msg = "Overview is not editable".to_string();
+                    }
+                }
+            }
+            KeyCode::Char('d') | KeyCode::Char('x') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews => {
+                let filtered = self.c3_ov_filtered_list();
+                if let Some(&idx) = filtered.get(self.c3_ov_selected) {
+                    let ov = &self.c3_ov_list[idx];
+                    if ov.editable {
+                        tokio::task::block_in_place(|| {
+                            tokio::runtime::Handle::current().block_on(self.c3_ov_delete())
+                        });
+                    } else {
+                        self.status_msg = "Overview is not editable".to_string();
+                    }
+                }
+            }
+            KeyCode::Char('B') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews => {
+                if self.c3_ov_list.is_empty() {
+                    self.status_msg = "No overviews to backup".to_string();
+                } else {
+                    self.c3_backup_kind = C3BackupKind::OverviewsAll;
+                    self.c3_backup_prompt = Some("overviews-backup.json".to_string());
                 }
             }
             KeyCode::Char('B') if self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Integrations => {

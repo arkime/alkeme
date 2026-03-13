@@ -61,6 +61,7 @@ impl App {
                         }
                     }
                 }
+                self.c3_ov_list = overviews.clone();
                 self.c3_overviews = overviews;
             }
             Err(e) => {
@@ -251,6 +252,15 @@ impl App {
         };
         roles.iter().enumerate()
             .filter(|(_, (name, _))| filter.is_empty() || name.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Filtered indices into c3_all_roles (for link group / overview role popups)
+    pub fn c3_all_roles_filtered(&self) -> Vec<usize> {
+        let filter = self.c3_role_popup_filter.to_lowercase();
+        self.c3_all_roles.iter().enumerate()
+            .filter(|(_, name)| filter.is_empty() || name.to_lowercase().contains(&filter))
             .map(|(i, _)| i)
             .collect()
     }
@@ -551,6 +561,22 @@ impl App {
                 }).collect();
                 serde_json::json!({ "views": views })
             }
+            C3BackupKind::OverviewsAll => {
+                let overviews: Vec<serde_json::Value> = self.c3_ov_list.iter()
+                    .map(|o| self.c3_ov_build_json(o))
+                    .collect();
+                serde_json::json!({ "overviews": overviews })
+            }
+            C3BackupKind::OverviewSingle => {
+                let idx = self.c3_ov_editor_idx;
+                match self.c3_ov_list.get(idx) {
+                    Some(o) => self.c3_ov_build_json(o),
+                    None => {
+                        self.status_msg = "No overview selected".to_string();
+                        return;
+                    }
+                }
+            }
         };
 
         let desc = kind.title().trim();
@@ -603,6 +629,158 @@ impl App {
             .map(|(i, _)| i)
             .collect()
     }
+
+    pub fn c3_ov_filtered_list(&self) -> Vec<usize> {
+        let filter = self.c3_ov_filter.to_lowercase();
+        let mut indices: Vec<usize> = self.c3_ov_list.iter().enumerate()
+            .filter(|(_, o)| filter.is_empty()
+                || o.name.to_lowercase().contains(&filter)
+                || o.itype.to_lowercase().contains(&filter)
+                || o.creator.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect();
+        let list = &self.c3_ov_list;
+        let col = self.c3_ov_sort_col;
+        let desc = self.c3_ov_sort_desc;
+        indices.sort_by(|&a, &b| {
+            let cmp = match col {
+                0 => list[a].name.to_lowercase().cmp(&list[b].name.to_lowercase()),
+                1 => list[a].itype.to_lowercase().cmp(&list[b].itype.to_lowercase()),
+                2 => list[a].is_default.cmp(&list[b].is_default),
+                3 => list[a].creator.to_lowercase().cmp(&list[b].creator.to_lowercase()),
+                _ => list[a].fields.len().cmp(&list[b].fields.len()),
+            };
+            if desc { cmp.reverse() } else { cmp }
+        });
+        indices
+    }
+
+    pub fn c3_ov_filtered_fields(&self) -> Vec<usize> {
+        let idx = self.c3_ov_editor_idx;
+        let ov = match self.c3_ov_list.get(idx) {
+            Some(o) => o,
+            None => return Vec::new(),
+        };
+        let filter = self.c3_ov_fields_filter.to_lowercase();
+        ov.fields.iter().enumerate()
+            .filter(|(_, f)| {
+                filter.is_empty()
+                    || f.from.to_lowercase().contains(&filter)
+                    || f.field.to_lowercase().contains(&filter)
+                    || f.alias.as_deref().unwrap_or("").to_lowercase().contains(&filter)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    pub fn c3_ov_build_json(&self, ov: &crate::api::Cont3xtOverview) -> serde_json::Value {
+        let fields: Vec<serde_json::Value> = ov.fields.iter().map(|f| {
+            if let Some(ref custom) = f.custom {
+                custom.clone()
+            } else {
+                let mut obj = serde_json::json!({
+                    "type": f.field_type,
+                    "from": f.from,
+                    "field": f.field,
+                });
+                if let Some(ref alias) = f.alias {
+                    obj["alias"] = serde_json::json!(alias);
+                }
+                obj
+            }
+        }).collect();
+        serde_json::json!({
+            "name": ov.name,
+            "title": ov.title,
+            "iType": ov.itype,
+            "fields": fields,
+            "viewRoles": ov.view_roles,
+            "editRoles": ov.edit_roles,
+        })
+    }
+
+    pub async fn c3_ov_save(&mut self) {
+        let idx = self.c3_ov_editor_idx;
+        // Apply editor fields to the overview
+        if let Some(ov) = self.c3_ov_list.get_mut(idx) {
+            ov.name = self.c3_ov_editor_name.clone();
+            ov.title = self.c3_ov_editor_title.clone();
+            ov.itype = self.c3_ov_editor_itype.clone();
+            ov.view_roles = self.c3_ov_editor_view_roles.clone();
+            ov.edit_roles = self.c3_ov_editor_edit_roles.clone();
+        }
+        // Build JSON from (now updated) overview
+        let (id, json) = match self.c3_ov_list.get(idx) {
+            Some(ov) => (ov.id.clone(), self.c3_ov_build_json(ov)),
+            None => return,
+        };
+        match self.client.c3_update_overview(&id, &json).await {
+            Ok(_) => self.status_msg = "Overview saved".to_string(),
+            Err(e) => self.status_msg = format!("Error saving overview: {e}"),
+        }
+    }
+
+    pub async fn c3_ov_create(&mut self) {
+        let json = serde_json::json!({
+            "name": "New Overview",
+            "title": "",
+            "iType": "domain",
+            "fields": [],
+            "viewRoles": [],
+            "editRoles": [],
+        });
+        match self.client.c3_create_overview(&json).await {
+            Ok(resp) => {
+                self.status_msg = "Overview created".to_string();
+                // Extract new ID from response
+                if let Some(id) = resp.get("overview").and_then(|o| o.get("_id")).and_then(|v| v.as_str()) {
+                    self.c3_ov_list.push(crate::api::Cont3xtOverview {
+                        id: id.to_string(),
+                        name: "New Overview".to_string(),
+                        title: String::new(),
+                        itype: "domain".to_string(),
+                        is_default: false,
+                        creator: String::new(),
+                        editable: true,
+                        view_roles: Vec::new(),
+                        edit_roles: Vec::new(),
+                        fields: Vec::new(),
+                    });
+                    // Select the new overview
+                    let filtered = self.c3_ov_filtered_list();
+                    if let Some(pos) = filtered.iter().position(|&i| i == self.c3_ov_list.len() - 1) {
+                        self.c3_ov_selected = pos;
+                        self.c3_ov_table_state.select(Some(pos));
+                    }
+                } else {
+                    self.c3_fetch_overviews().await;
+                }
+            }
+            Err(e) => self.status_msg = format!("Error creating overview: {e}"),
+        }
+    }
+
+    pub async fn c3_ov_delete(&mut self) {
+        let filtered = self.c3_ov_filtered_list();
+        let real_idx = match filtered.get(self.c3_ov_selected) {
+            Some(&i) => i,
+            None => return,
+        };
+        let id = self.c3_ov_list[real_idx].id.clone();
+        match self.client.c3_delete_overview(&id).await {
+            Ok(_) => {
+                self.c3_ov_list.remove(real_idx);
+                let new_filtered = self.c3_ov_filtered_list();
+                if self.c3_ov_selected >= new_filtered.len() {
+                    self.c3_ov_selected = new_filtered.len().saturating_sub(1);
+                }
+                self.c3_ov_table_state.select(Some(self.c3_ov_selected));
+                self.status_msg = "Overview deleted".to_string();
+            }
+            Err(e) => self.status_msg = format!("Error deleting overview: {e}"),
+        }
+    }
+
     /// Get the integration name of the currently selected tree item (if it's a Result)
     pub fn c3_current_integration_name(&self) -> Option<String> {
         if let Some(C3TreeItem::Result(idx)) = self.c3_tree_order.get(self.c3_selected) {

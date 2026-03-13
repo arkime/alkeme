@@ -1,6 +1,5 @@
 use super::*;
-use super::arkime;
-use crate::app::{C3SettingsTab, C3LinkGroupLevel, C3LinkEditorField, C3GroupEditorField};
+use crate::app::{C3SettingsTab, C3LinkGroupLevel, C3LinkEditorField, C3GroupEditorField, C3OverviewLevel, C3OverviewEditorField, C3OvFieldEditorField};
 
 pub(super) fn c3_draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
     // Split: sub-tab bar (3 lines) + content
@@ -23,10 +22,7 @@ pub(super) fn c3_draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
         C3SettingsTab::Views => c3_draw_settings_views(f, app, chunks[1]),
         C3SettingsTab::Integrations => c3_draw_settings_integrations(f, app, chunks[1]),
         C3SettingsTab::LinkGroups => c3_draw_settings_link_groups(f, app, chunks[1]),
-        _ => {
-            arkime::draw_under_construction(f, app, chunks[1]);
-            arkime::draw_owl(f, app, chunks[1]);
-        }
+        C3SettingsTab::Overviews => c3_draw_settings_overviews(f, app, chunks[1]),
     }
 
     // Backup filename prompt overlay (shared across all settings tabs)
@@ -755,7 +751,7 @@ fn c3_draw_group_role_popup(f: &mut Frame, app: &App, area: Rect, selected_roles
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
 
-    let filtered = app.c3_role_popup_filtered_roles();
+    let filtered = app.c3_all_roles_filtered();
     let visible = inner.height as usize;
     let offset = if app.c3_role_popup_selected >= visible {
         app.c3_role_popup_selected - visible + 1
@@ -973,6 +969,304 @@ fn c3_draw_lg_link_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(
         Paragraph::new(" ↑/↓:field  Space:toggle(itypes)  Ctrl+S:apply  Esc:cancel")
+            .style(Style::default().fg(Color::DarkGray)),
+        footer_area,
+    );
+}
+
+// ============== Overview Settings ==============
+
+fn c3_draw_settings_overviews(f: &mut Frame, app: &mut App, area: Rect) {
+    match app.c3_ov_level {
+        C3OverviewLevel::List => c3_draw_ov_list(f, app, area),
+        C3OverviewLevel::Editor => {
+            c3_draw_ov_list(f, app, area);
+            c3_draw_ov_editor(f, app, area);
+            if app.c3_role_popup_open {
+                let roles = if app.c3_role_popup_for_edit {
+                    &app.c3_ov_editor_edit_roles
+                } else {
+                    &app.c3_ov_editor_view_roles
+                };
+                c3_draw_group_role_popup(f, app, area, roles);
+            }
+        }
+        C3OverviewLevel::FieldList => c3_draw_ov_field_list(f, app, area),
+        C3OverviewLevel::FieldEditor => {
+            c3_draw_ov_field_list(f, app, area);
+            c3_draw_ov_field_editor(f, app, area);
+        }
+    }
+}
+
+fn c3_draw_ov_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Min(0)])
+        .split(area);
+
+    let filter_display = if app.c3_ov_filtering {
+        format!("  Filter: {}_", app.c3_ov_filter)
+    } else if !app.c3_ov_filter.is_empty() {
+        format!("  Filter: {}", app.c3_ov_filter)
+    } else {
+        String::new()
+    };
+
+    let filtered = app.c3_ov_filtered_list();
+    let toolbar_text = format!(
+        " Overviews  ({}{} items){}",
+        if !app.c3_ov_filter.is_empty() { format!("{}/", filtered.len()) } else { String::new() },
+        app.c3_ov_list.len(),
+        filter_display,
+    );
+    let toolbar = Paragraph::new(toolbar_text).style(Style::default().fg(Color::DarkGray));
+    f.render_widget(toolbar, chunks[0]);
+
+    let sort_cols = ["Name", "IType", "Default", "Creator", "Fields"];
+    let header_cells: Vec<Cell> = sort_cols.iter().enumerate().map(|(i, &name)| {
+        let label = sort_header_label(name, i == app.c3_ov_sort_col, app.c3_ov_sort_desc);
+        Cell::from(format!(" {label}")).style(sort_header_style(i == app.c3_ov_sort_col))
+    }).collect();
+    let header = Row::new(header_cells).height(1);
+
+    let rows: Vec<Row> = filtered.iter().map(|&idx| {
+        let ov = &app.c3_ov_list[idx];
+        let default_str = if ov.is_default { "★" } else { "" };
+        let shared = if !ov.editable { " 🔗" } else { "" };
+        Row::new(vec![
+            Cell::from(format!(" {}{}", ov.name, shared)),
+            Cell::from(ov.itype.clone()),
+            Cell::from(default_str.to_string()),
+            Cell::from(ov.creator.clone()),
+            Cell::from(format!("{}", ov.fields.len())),
+        ])
+    }).collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(20),
+            Constraint::Length(10),
+            Constraint::Length(8),
+            Constraint::Length(15),
+            Constraint::Length(8),
+        ],
+    )
+    .header(header)
+    .block(Block::default().borders(Borders::ALL).title(" Overviews "))
+    .row_highlight_style(Style::default().bg(Color::DarkGray));
+
+    f.render_stateful_widget(table, chunks[1], &mut app.c3_ov_table_state);
+}
+
+fn c3_draw_ov_editor(f: &mut Frame, app: &mut App, area: Rect) {
+    let idx = app.c3_ov_editor_idx;
+    let ov = match app.c3_ov_list.get(idx) {
+        Some(o) => o,
+        None => return,
+    };
+
+    let popup_width = (area.width * 60 / 100).max(50).min(area.width.saturating_sub(4));
+    let popup_height = 12u16.min(area.height.saturating_sub(4));
+    let popup_area = center_popup(popup_width, popup_height, area);
+    f.render_widget(Clear, popup_area);
+
+    let title = format!(" Edit Overview: {} ", ov.name);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(title);
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let content_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(inner);
+
+    let fields_area = content_chunks[0];
+    let footer_area = content_chunks[1];
+
+    let mut y = fields_area.y;
+    for &field in C3OverviewEditorField::all() {
+        if y >= fields_area.y + fields_area.height { break; }
+        let is_selected = field == app.c3_ov_editor_field;
+        let label_style = if is_selected {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let label = field.label();
+        let value = match field {
+            C3OverviewEditorField::Name => app.c3_ov_editor_name.clone(),
+            C3OverviewEditorField::Title => app.c3_ov_editor_title.clone(),
+            C3OverviewEditorField::Itype => app.c3_ov_editor_itype.clone(),
+            C3OverviewEditorField::ViewRoles => app.c3_ov_editor_view_roles.join(", "),
+            C3OverviewEditorField::EditRoles => app.c3_ov_editor_edit_roles.join(", "),
+        };
+
+        let label_len = label.len() + 4;
+        let max_val_width = fields_area.width as usize - label_len.min(fields_area.width as usize);
+        let truncated = if value.len() > max_val_width {
+            &value[..max_val_width]
+        } else {
+            &value
+        };
+        let row_area = Rect::new(fields_area.x, y, fields_area.width, 1);
+
+        let is_role_field = field == C3OverviewEditorField::ViewRoles || field == C3OverviewEditorField::EditRoles;
+        if is_role_field {
+            let role_hint = if is_selected { " (Enter to edit)" } else { "" };
+            let text = format!("  {}: {}{}", label, truncated, role_hint);
+            f.render_widget(Paragraph::new(text).style(label_style), row_area);
+        } else {
+            let text = format!("  {}: {}", label, truncated);
+            f.render_widget(Paragraph::new(text).style(label_style), row_area);
+            if is_selected {
+                let cursor_x = row_area.x + label_len as u16 + app.c3_ov_editor_cursor.min(max_val_width) as u16;
+                f.set_cursor_position((cursor_x, y));
+            }
+        }
+        y += 1;
+    }
+
+    f.render_widget(
+        Paragraph::new(" ↑/↓:field  Enter:edit roles/fields  Ctrl+S:save  Esc:cancel")
+            .style(Style::default().fg(Color::DarkGray)),
+        footer_area,
+    );
+}
+
+fn c3_draw_ov_field_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let idx = app.c3_ov_editor_idx;
+    let ov = match app.c3_ov_list.get(idx) {
+        Some(o) => o,
+        None => return,
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Min(0)])
+        .split(area);
+
+    let filter_display = if app.c3_ov_fields_filtering {
+        format!("  Filter: {}_", app.c3_ov_fields_filter)
+    } else if !app.c3_ov_fields_filter.is_empty() {
+        format!("  Filter: {}", app.c3_ov_fields_filter)
+    } else {
+        String::new()
+    };
+
+    let filtered = app.c3_ov_filtered_fields();
+    let toolbar_text = format!(
+        " Fields in: {}  ({}{} fields){}",
+        ov.name,
+        if !app.c3_ov_fields_filter.is_empty() { format!("{}/", filtered.len()) } else { String::new() },
+        ov.fields.len(),
+        filter_display,
+    );
+    let toolbar = Paragraph::new(toolbar_text).style(Style::default().fg(Color::DarkGray));
+    f.render_widget(toolbar, chunks[0]);
+
+    let col_names = [" Integration", "Field", "Alias", "Type"];
+    let header_cells: Vec<Cell> = col_names.iter().map(|&name| {
+        Cell::from(name).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    }).collect();
+    let header = Row::new(header_cells).height(1);
+
+    let rows: Vec<Row> = filtered.iter().map(|&fi| {
+        let field = &ov.fields[fi];
+        let alias_str = field.alias.as_deref().unwrap_or("");
+        if field.field_type == "custom" {
+            Row::new(vec![
+                Cell::from(" (custom)".to_string()).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(field.field.clone()).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(alias_str.to_string()).style(Style::default().fg(Color::DarkGray)),
+                Cell::from("custom".to_string()).style(Style::default().fg(Color::DarkGray)),
+            ])
+        } else {
+            Row::new(vec![
+                Cell::from(format!(" {}", field.from)),
+                Cell::from(field.field.clone()),
+                Cell::from(alias_str.to_string()),
+                Cell::from(field.field_type.clone()),
+            ])
+        }
+    }).collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(20),
+            Constraint::Percentage(30),
+            Constraint::Percentage(20),
+            Constraint::Length(10),
+        ],
+    )
+    .header(header)
+    .block(Block::default().borders(Borders::ALL).title(format!(" Fields: {} ", ov.name)))
+    .row_highlight_style(Style::default().bg(Color::DarkGray));
+
+    f.render_stateful_widget(table, chunks[1], &mut app.c3_ov_fields_table_state);
+}
+
+fn c3_draw_ov_field_editor(f: &mut Frame, app: &mut App, area: Rect) {
+    let popup_width = (area.width * 50 / 100).max(45).min(area.width.saturating_sub(4));
+    let popup_height = 8u16.min(area.height.saturating_sub(4));
+    let popup_area = center_popup(popup_width, popup_height, area);
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" Edit Field ");
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let content_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(inner);
+
+    let fields_area = content_chunks[0];
+    let footer_area = content_chunks[1];
+
+    let mut y = fields_area.y;
+    for &field in C3OvFieldEditorField::all() {
+        if y >= fields_area.y + fields_area.height { break; }
+        let is_selected = field == app.c3_ov_field_editor_field;
+        let label_style = if is_selected {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let label = field.label();
+        let value = match field {
+            C3OvFieldEditorField::From => &app.c3_ov_field_editor_from,
+            C3OvFieldEditorField::Field => &app.c3_ov_field_editor_field_name,
+            C3OvFieldEditorField::Alias => &app.c3_ov_field_editor_alias,
+        };
+
+        let label_len = label.len() + 4;
+        let max_val_width = fields_area.width as usize - label_len.min(fields_area.width as usize);
+        let truncated = if value.len() > max_val_width { &value[..max_val_width] } else { value };
+
+        let row_area = Rect::new(fields_area.x, y, fields_area.width, 1);
+        let text = format!("  {}: {}", label, truncated);
+        f.render_widget(Paragraph::new(text).style(label_style), row_area);
+
+        if is_selected {
+            let cursor_x = row_area.x + label_len as u16 + app.c3_ov_field_editor_cursor.min(max_val_width) as u16;
+            f.set_cursor_position((cursor_x, y));
+        }
+        y += 1;
+    }
+
+    f.render_widget(
+        Paragraph::new(" ↑/↓:field  Ctrl+S:save  Esc:cancel")
             .style(Style::default().fg(Color::DarkGray)),
         footer_area,
     );

@@ -329,8 +329,50 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
                     }
                 }
             }
-            _ => {
-                lines.push(Line::from(vec![Span::raw("Under construction")]));
+            C3SettingsTab::Overviews => {
+                use crate::app::C3OverviewLevel;
+                match app.c3_ov_level {
+                    C3OverviewLevel::List => {
+                        lines.extend_from_slice(&[
+                            Line::from(vec![key("Enter"), Span::raw("Open field list")]),
+                            Line::from(vec![key("e"), Span::raw("Edit overview info")]),
+                            Line::from(vec![key("n"), Span::raw("New overview")]),
+                            Line::from(vec![key("d / x"), Span::raw("Delete overview")]),
+                            Line::from(vec![key("B"), Span::raw("Backup all overviews to file")]),
+                            Line::from(vec![key("s / S"), Span::raw("Sort column / direction")]),
+                            Line::from(vec![key("/"), Span::raw("Filter")]),
+                            Line::from(vec![key("r"), Span::raw("Refresh")]),
+                        ]);
+                    }
+                    C3OverviewLevel::Editor => {
+                        lines.extend_from_slice(&[
+                            Line::from(vec![key("↑ / ↓"), Span::raw("Navigate fields")]),
+                            Line::from(vec![key("Enter"), Span::raw("Edit roles / open field list")]),
+                            Line::from(vec![key("Ctrl+S"), Span::raw("Save overview")]),
+                            Line::from(vec![key("Esc"), Span::raw("Cancel / back to list")]),
+                        ]);
+                    }
+                    C3OverviewLevel::FieldList => {
+                        lines.extend_from_slice(&[
+                            Line::from(vec![key("Enter / e"), Span::raw("Edit field")]),
+                            Line::from(vec![key("n / a"), Span::raw("New field (after current)")]),
+                            Line::from(vec![key("N / A"), Span::raw("New field (at end)")]),
+                            Line::from(vec![key("d / x"), Span::raw("Delete field")]),
+                            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Reorder field")]),
+                            Line::from(vec![key("/"), Span::raw("Filter fields")]),
+                            Line::from(vec![key("B"), Span::raw("Backup this overview to file")]),
+                            Line::from(vec![key("Ctrl+S"), Span::raw("Save overview to server")]),
+                            Line::from(vec![key("Esc"), Span::raw("Clear filter / back to list")]),
+                        ]);
+                    }
+                    C3OverviewLevel::FieldEditor => {
+                        lines.extend_from_slice(&[
+                            Line::from(vec![key("↑ / ↓"), Span::raw("Navigate fields")]),
+                            Line::from(vec![key("Ctrl+S"), Span::raw("Apply changes")]),
+                            Line::from(vec![key("Esc"), Span::raw("Cancel / back to field list")]),
+                        ]);
+                    }
+                }
             }
         }
         lines.push(Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]));
