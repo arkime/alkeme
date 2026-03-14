@@ -336,7 +336,7 @@ async fn main() -> Result<()> {
     }
 
     if let Some(tags) = cli.cont3xt_tags {
-        app.c3_tags = tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        app.cont3xt.tags = tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
     }
 
     if let Some(ref path) = cli.cont3xt_save_json {
@@ -352,7 +352,7 @@ async fn main() -> Result<()> {
             eprintln!("Error: --cont3xt-save-json requires a search expression (use --search or --cont3xt-search)");
             std::process::exit(1);
         }
-        app.c3_save_json_path = Some(path.clone());
+        app.cont3xt.save_json_path = Some(path.clone());
     }
 
     // Mode-specific initialization
@@ -366,13 +366,13 @@ async fn main() -> Result<()> {
             app.c3_fetch_views().await;
             if let Some(ref view_arg) = cli.cont3xt_view {
                 // Match by ID first, then by name
-                let found = app.c3_views.iter().find(|v| v.id == *view_arg)
-                    .or_else(|| app.c3_views.iter().find(|v| v.name == *view_arg));
+                let found = app.cont3xt.views.iter().find(|v| v.id == *view_arg)
+                    .or_else(|| app.cont3xt.views.iter().find(|v| v.name == *view_arg));
                 if let Some(view) = found {
                     let integrations = view.integrations.clone();
                     let name = view.name.clone();
-                    app.c3_active_view_id = Some(view.id.clone());
-                    app.c3_active_view_name = Some(name.clone());
+                    app.cont3xt.active_view_id = Some(view.id.clone());
+                    app.cont3xt.active_view_name = Some(name.clone());
                     app.c3_apply_view(&integrations);
                     app.status_msg = format!("Loaded view: {name}");
                 } else {
@@ -428,11 +428,11 @@ fn drain_c3_results(app: &mut App, vec: &[crate::api::Cont3xtResult], consumed: 
                 .and_then(|v| v.as_str()).unwrap_or("").to_string();
             let parent_itype = item.data.get("_link_parent_itype")
                 .and_then(|v| v.as_str()).unwrap_or("").to_string();
-            app.c3_indicator_parents.entry(
+            app.cont3xt.indicator_parents.entry(
                 (item.indicator.clone(), item.itype.clone()),
             ).or_default().push((parent_query, parent_itype));
         } else {
-            app.c3_results.push(item.clone());
+            app.cont3xt.results.push(item.clone());
         }
     }
     vec.len()
@@ -575,43 +575,43 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
 
         // Cont3xt background tasks
         if app.app_mode == app::AppMode::Cont3xt {
-            if app.c3_pending_search {
-                app.c3_pending_search = false;
-                app.c3_searching = true;
+            if app.cont3xt.pending_search {
+                app.cont3xt.pending_search = false;
+                app.cont3xt.searching = true;
                 let query = app.expression.clone();
                 let url = app.client.cont3xt_search_url();
                 let client = app.client.clone_for_fetch();
                 let mut body = serde_json::json!({"query": query});
-                if app.c3_no_cache {
-                    app.c3_no_cache = false;
+                if app.cont3xt.no_cache {
+                    app.cont3xt.no_cache = false;
                     body["skipCache"] = serde_json::json!(1);
                 }
-                if let Some(ref view_id) = app.c3_active_view_id {
+                if let Some(ref view_id) = app.cont3xt.active_view_id {
                     body["viewId"] = serde_json::json!(view_id);
                 }
-                if !app.c3_disabled_integrations.is_empty() {
+                if !app.cont3xt.disabled_integrations.is_empty() {
                     let enabled: Vec<String> = app.c3_enabled_integration_names();
                     body["doIntegrations"] = serde_json::json!(enabled);
                 }
-                if !app.c3_tags.is_empty() {
-                    body["tags"] = serde_json::json!(app.c3_tags);
+                if !app.cont3xt.tags.is_empty() {
+                    body["tags"] = serde_json::json!(app.cont3xt.tags);
                 }
                 let json_body = body.to_string();
                 let shared = c3_streaming_results.clone();
                 let stotal = c3_streaming_total.clone();
                 let ssent = c3_streaming_sent.clone();
-                let disabled = app.c3_disabled_integrations.clone();
+                let disabled = app.cont3xt.disabled_integrations.clone();
                 // Clear shared results for new search
                 if let Ok(mut vec) = shared.lock() { vec.clear(); }
                 stotal.store(0, std::sync::atomic::Ordering::Relaxed);
                 ssent.store(0, std::sync::atomic::Ordering::Relaxed);
-                app.c3_results.clear();
-                app.c3_indicator_parents.clear();
-                app.c3_init_indicators.clear();
-                app.c3_search_total = 0;
-                app.c3_search_sent = 0;
-                app.c3_selected = 0;
-                app.c3_detail_scroll = 0;
+                app.cont3xt.results.clear();
+                app.cont3xt.indicator_parents.clear();
+                app.cont3xt.init_indicators.clear();
+                app.cont3xt.search_total = 0;
+                app.cont3xt.search_sent = 0;
+                app.cont3xt.selected = 0;
+                app.cont3xt.detail_scroll = 0;
                 c3_stream_consumed = 0;
                 c3_search_handle = Some(tokio::spawn(async move {
                     client.fetch_post_json_streaming(&url, &json_body, shared, disabled, stotal, ssent).await
@@ -621,21 +621,21 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             }
 
             // Poll for streaming results and copy into app
-            if app.c3_searching {
+            if app.cont3xt.searching {
                 // Update sent/total from streaming atomics
                 let live_total = c3_streaming_total.load(std::sync::atomic::Ordering::Relaxed);
                 let live_sent = c3_streaming_sent.load(std::sync::atomic::Ordering::Relaxed);
                 if live_total > 0 {
-                    app.c3_search_total = live_total;
+                    app.cont3xt.search_total = live_total;
                 }
-                app.c3_search_sent = live_sent;
+                app.cont3xt.search_sent = live_sent;
                 if let Ok(vec) = c3_streaming_results.lock() {
                     if vec.len() > c3_stream_consumed {
                         c3_stream_consumed = drain_c3_results(app, &vec, c3_stream_consumed);
                         app.popup_bg_cache = None; // background changed
                         app.status_msg = format!(
                             "Searching... {} results so far",
-                            app.c3_results.len()
+                            app.cont3xt.results.len()
                         );
                         needs_redraw = true;
                     }
@@ -651,11 +651,11 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     }
                     match handle.await {
                         Ok(Ok((total, itype, init_indicators))) => {
-                            let count = app.c3_results.len();
-                            app.c3_search_total = total;
-                            app.c3_search_itype = itype;
-                            app.c3_init_indicators = init_indicators;
-                            app.c3_focus = app::Cont3xtFocus::Results;
+                            let count = app.cont3xt.results.len();
+                            app.cont3xt.search_total = total;
+                            app.cont3xt.search_itype = itype;
+                            app.cont3xt.init_indicators = init_indicators;
+                            app.cont3xt.focus = app::Cont3xtFocus::Results;
                             app.status_msg = format!(
                                 "Search complete: {} integrations returned data",
                                 count
@@ -668,11 +668,11 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                             app.status_msg = format!("Search error: {e}");
                         }
                     }
-                    app.c3_searching = false;
+                    app.cont3xt.searching = false;
                     app.popup_bg_cache = None; // background changed
 
                     // Headless save-json mode: write results and quit
-                    if let Some(path) = app.c3_save_json_path.clone() {
+                    if let Some(path) = app.cont3xt.save_json_path.clone() {
                         app.c3_save_json(&path);
                         return Ok(());
                     }

@@ -258,7 +258,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             hdr!("Actions"),
             blank(),
         ]);
-        match app.c3_settings_tab {
+        match app.cont3xt.settings_tab {
             C3SettingsTab::Views => {
                 lines.extend_from_slice(&[
                     Line::from(vec![key("n"), Span::raw("New view")]),
@@ -285,7 +285,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             }
             C3SettingsTab::LinkGroups => {
                 use crate::app::C3LinkGroupLevel;
-                match app.c3_lg_level {
+                match app.cont3xt.lg_level {
                     C3LinkGroupLevel::GroupList => {
                         lines.extend_from_slice(&[
                             Line::from(vec![key("Enter"), Span::raw("Edit links in group")]),
@@ -331,7 +331,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             }
             C3SettingsTab::Overviews => {
                 use crate::app::C3OverviewLevel;
-                match app.c3_ov_level {
+                match app.cont3xt.ov_level {
                     C3OverviewLevel::List => {
                         lines.extend_from_slice(&[
                             Line::from(vec![key("Enter"), Span::raw("Open field list")]),
@@ -378,7 +378,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
         }
         lines.push(Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]));
         ("Cont3xt Settings", lines)
-    } else if app.c3_show_overview_popup {
+    } else if app.cont3xt.show_overview_popup {
         ("Select Overview", vec![
             hdr!("Navigation"),
             blank(),
@@ -392,7 +392,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("/"), Span::raw("Filter overviews")]),
             Line::from(vec![key("r"), Span::raw("Refresh overviews")]),
         ])
-    } else if app.c3_show_link_popup {
+    } else if app.cont3xt.show_link_popup {
         ("Link Groups", vec![
             hdr!("Navigation"),
             blank(),
@@ -406,7 +406,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("/"), Span::raw("Filter links by name")]),
             Line::from(vec![key("r"), Span::raw("Refresh link groups")]),
         ])
-    } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::Search && app.c3_focus == Cont3xtFocus::Detail {
+    } else if app.app_mode == AppMode::Cont3xt && app.active_tab == Tab::Search && app.cont3xt.focus == Cont3xtFocus::Detail {
         ("Cont3xt Detail", vec![
             hdr!("Navigation"),
             blank(),

@@ -34,54 +34,54 @@ pub(super) fn draw_cont3xt(f: &mut Frame, app: &mut App) {
     }
 
     // Render popup overlays on top
-    if app.c3_show_card_popup {
+    if app.cont3xt.show_card_popup {
         draw_card_popup(f, app, area);
     }
-    if app.c3_show_overview_popup {
+    if app.cont3xt.show_overview_popup {
         draw_overview_popup(f, app, area);
     }
-    if app.c3_show_link_popup {
+    if app.cont3xt.show_link_popup {
         draw_link_popup(f, app, area);
     }
-    if app.c3_show_integration_popup {
+    if app.cont3xt.show_integration_popup {
         draw_integration_popup(f, app, area);
     }
-    if app.c3_save_json_prompt.is_some() {
+    if app.cont3xt.save_json_prompt.is_some() {
         draw_save_json_prompt(f, app, area);
     }
-    if app.c3_show_tags_popup {
+    if app.cont3xt.show_tags_popup {
         draw_tags_popup(f, app, area);
     }
-    if app.c3_show_date_popup {
+    if app.cont3xt.show_date_popup {
         draw_date_popup(f, app, area);
     }
-    if app.c3_view_editor_open {
+    if app.cont3xt.view_editor_open {
         c3_draw_view_editor(f, app, area);
     }
-    if app.c3_role_popup_open {
-        if app.active_tab == Tab::Settings && app.c3_settings_tab == C3SettingsTab::LinkGroups {
-            let active = app.c3_lg_group_editor_field;
+    if app.cont3xt.role_popup_open {
+        if app.active_tab == Tab::Settings && app.cont3xt.settings_tab == C3SettingsTab::LinkGroups {
+            let active = app.cont3xt.lg_group_editor_field;
             let roles = if active == C3GroupEditorField::ViewRoles {
-                &app.c3_lg_group_editor_view_roles
+                &app.cont3xt.lg_group_editor_view_roles
             } else {
-                &app.c3_lg_group_editor_edit_roles
+                &app.cont3xt.lg_group_editor_edit_roles
             };
             c3_draw_group_role_popup(f, app, area, roles);
-        } else if app.active_tab == Tab::Settings && app.c3_settings_tab == C3SettingsTab::Overviews {
-            let roles = if app.c3_role_popup_for_edit {
-                &app.c3_ov_editor_edit_roles
+        } else if app.active_tab == Tab::Settings && app.cont3xt.settings_tab == C3SettingsTab::Overviews {
+            let roles = if app.cont3xt.role_popup_for_edit {
+                &app.cont3xt.ov_editor_edit_roles
             } else {
-                &app.c3_ov_editor_view_roles
+                &app.cont3xt.ov_editor_view_roles
             };
             c3_draw_group_role_popup(f, app, area, roles);
         } else {
             c3_draw_role_popup(f, app, area);
         }
     }
-    if app.c3_int_editor_open {
+    if app.cont3xt.int_editor_open {
         c3_draw_int_editor(f, app, area);
     }
-    if app.c3_ov_fe_popup_open {
+    if app.cont3xt.ov_fe_popup_open {
         c3_draw_ov_fe_selector_popup(f, app, area);
     }
 }
@@ -103,11 +103,11 @@ fn draw_cont3xt_background(f: &mut Frame, app: &mut App) {
     match app.active_tab {
         Tab::Search => {
             draw_cont3xt_search_bar(f, app, chunks[1]);
-            if app.c3_searching {
+            if app.cont3xt.searching {
                 let gauge_area = Rect::new(chunks[2].x, chunks[2].y, chunks[2].width, 1);
                 let results_area = Rect::new(chunks[2].x, chunks[2].y + 1, chunks[2].width, chunks[2].height.saturating_sub(1));
-                let sent = app.c3_search_sent;
-                let total = app.c3_search_total;
+                let sent = app.cont3xt.search_sent;
+                let total = app.cont3xt.search_total;
                 let ratio = if total > 0 { (sent as f64 / total as f64).min(1.0) } else { 0.0 };
                 let label = if total > 0 {
                     format!(" {}/{} ", sent, total)
@@ -151,25 +151,25 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
         &app.expression
     };
 
-    let integrations_label = if let Some(ref name) = app.c3_active_view_name {
+    let integrations_label = if let Some(ref name) = app.cont3xt.active_view_name {
         format!("[view: {name}] ")
-    } else if app.c3_disabled_integrations.is_empty() {
+    } else if app.cont3xt.disabled_integrations.is_empty() {
         "[all] ".to_string()
     } else {
         "[custom] ".to_string()
     };
 
-    let tags_label = if app.c3_tags.is_empty() {
+    let tags_label = if app.cont3xt.tags.is_empty() {
         String::new()
     } else {
-        format!("[tags: {}] ", app.c3_tags.join(","))
+        format!("[tags: {}] ", app.cont3xt.tags.join(","))
     };
 
-    let days = (app.c3_stop_date - app.c3_start_date).num_days();
-    let date_label = format!("[{}: {}d] ", app.c3_date_start_edit, days);
+    let days = (app.cont3xt.stop_date - app.cont3xt.start_date).num_days();
+    let date_label = format!("[{}: {}d] ", app.cont3xt.date_start_edit, days);
 
     let is_editing = app.input_mode == InputMode::Expression;
-    let file_label = if let Some(ref path) = app.c3_loaded_file {
+    let file_label = if let Some(ref path) = app.cont3xt.loaded_file {
         format!("[file: {path}] ")
     } else {
         String::new()
@@ -179,7 +179,7 @@ fn draw_cont3xt_search_bar(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
-    if app.c3_results.is_empty() && app.expression.is_empty() {
+    if app.cont3xt.results.is_empty() && app.expression.is_empty() {
         let block = Block::default().borders(Borders::ALL).title(" Results ");
         let placeholder = Paragraph::new("  Enter an indicator to search (IP, domain, hash, email, ...)")
             .style(Style::default().fg(Color::DarkGray))
@@ -187,9 +187,9 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         f.render_widget(placeholder, area);
         return;
     }
-    if app.c3_results.is_empty() {
+    if app.cont3xt.results.is_empty() {
         let block = Block::default().borders(Borders::ALL).title(" Results ");
-        let text = if app.c3_searching {
+        let text = if app.cont3xt.searching {
             "  Searching...".to_string()
         } else {
             format!("  No results for: {}", app.expression)
@@ -211,7 +211,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     // Left pane: results tree grouped by indicator
-    let results_focused = app.c3_focus == Cont3xtFocus::Results;
+    let results_focused = app.cont3xt.focus == Cont3xtFocus::Results;
     let results_border_style = if results_focused {
         Style::default().fg(Color::Cyan)
     } else {
@@ -220,7 +220,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     let results_block = Block::default()
         .borders(Borders::ALL)
         .border_style(results_border_style)
-        .title(format!(" Results ({}) ", app.c3_results.len()));
+        .title(format!(" Results ({}) ", app.cont3xt.results.len()));
 
     let inner = results_block.inner(horiz[0]);
     f.render_widget(results_block, horiz[0]);
@@ -234,14 +234,14 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     let mut indicator_order: Vec<(String, String)> = Vec::new();
 
     // Start with init-ordered indicators as the canonical order
-    for (itype, query) in &app.c3_init_indicators {
+    for (itype, query) in &app.cont3xt.init_indicators {
         let key = (itype.clone(), query.clone());
         if !indicator_order.contains(&key) {
             indicator_order.push(key);
         }
     }
 
-    for (idx, result) in app.c3_results.iter().enumerate() {
+    for (idx, result) in app.cont3xt.results.iter().enumerate() {
         let key = (result.itype.clone(), result.indicator.clone());
         if !indicator_order.contains(&key) {
             indicator_order.push(key.clone());
@@ -251,7 +251,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Also ensure parent indicators exist in indicator_order even without results
     // This handles chains like URL -> DOMAIN -> IP where URL may have no direct results
-    for ((_child_ind, _child_itype), parents) in &app.c3_indicator_parents {
+    for ((_child_ind, _child_itype), parents) in &app.cont3xt.indicator_parents {
         for (parent_query, parent_itype) in parents {
             let parent_key = (parent_itype.clone(), parent_query.clone());
             if !indicator_order.contains(&parent_key) {
@@ -266,7 +266,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     for key in &indicator_order {
         // c3_indicator_parents is keyed as (indicator, itype), convert to match our (itype, indicator)
         let lookup_key = (key.1.clone(), key.0.clone());
-        if let Some(parents) = app.c3_indicator_parents.get(&lookup_key) {
+        if let Some(parents) = app.cont3xt.indicator_parents.get(&lookup_key) {
             for parent in parents {
                 // parent is (parent_query, parent_itype), convert to (itype, indicator)
                 let parent_key = (parent.1.clone(), parent.0.clone());
@@ -304,7 +304,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     // Only start from root indicators (not children)
     for key in &indicator_order {
         if !has_parent.contains(key) {
-            build_tree(key, 0, &children_of, &indicator_results, &app.c3_results, &mut display_rows);
+            build_tree(key, 0, &children_of, &indicator_results, &app.cont3xt.results, &mut display_rows);
         }
     }
 
@@ -335,11 +335,11 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
             tree_order.push(C3TreeItem::Result(*result_idx));
         }
     }
-    app.c3_tree_order = tree_order;
-    app.c3_tree_roots = tree_roots;
+    app.cont3xt.tree_order = tree_order;
+    app.cont3xt.tree_roots = tree_roots;
 
     // tree_order now has 1:1 mapping with display_rows
-    let selected_display_row = app.c3_selected.min(display_rows.len().saturating_sub(1));
+    let selected_display_row = app.cont3xt.selected.min(display_rows.len().saturating_sub(1));
 
     // Scroll to keep selected visible
     let scroll_offset = if selected_display_row >= visible_height {
@@ -370,7 +370,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
 
         // For result rows, extract _cont3xt.count and severity
         if let Some(idx) = result_idx {
-            if let Some(result) = app.c3_results.get(*idx) {
+            if let Some(result) = app.cont3xt.results.get(*idx) {
                 let count_val = result.data.get("_cont3xt")
                     .and_then(|c| c.get("count"))
                     .and_then(|v| v.as_u64());
@@ -415,27 +415,27 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     // Right pane: detail for selected integration
-    let detail_focused = app.c3_focus == Cont3xtFocus::Detail;
+    let detail_focused = app.cont3xt.focus == Cont3xtFocus::Detail;
     let detail_border_style = if detail_focused {
         Style::default().fg(Color::Cyan)
     } else {
         Style::default().fg(Color::DarkGray)
     };
 
-    let selected_tree_item = app.c3_tree_order.get(app.c3_selected).cloned();
+    let selected_tree_item = app.cont3xt.tree_order.get(app.cont3xt.selected).cloned();
 
     // Determine detail content based on selected tree item type
     let (detail_title, detail_lines) = match &selected_tree_item {
         Some(C3TreeItem::Result(idx)) => {
-            if let Some(result) = app.c3_results.get(*idx) {
-                let card = if !app.c3_raw_view {
-                    app.c3_integrations.iter()
+            if let Some(result) = app.cont3xt.results.get(*idx) {
+                let card = if !app.cont3xt.raw_view {
+                    app.cont3xt.integrations.iter()
                         .find(|i| i.name == result.name)
                         .and_then(|i| i.card.as_ref())
                 } else {
                     None
                 };
-                let view_label = if app.c3_raw_view { " [RAW] " } else { "" };
+                let view_label = if app.cont3xt.raw_view { " [RAW] " } else { "" };
                 let title = format!(" {} — {} {view_label}", result.name, result.indicator);
                 let lines = if let Some(card) = card {
                     render_card_lines(card, &result.data, &result.indicator)
@@ -450,17 +450,17 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         Some(C3TreeItem::Indicator(itype, query)) => {
             let itype_lower = itype.to_lowercase();
             // Use user-selected overview if set, otherwise prefer default, then any
-            let overview = if let Some(selected_id) = app.c3_selected_overviews.get(&itype_lower) {
-                app.c3_overviews.iter().find(|o| o.id == *selected_id)
+            let overview = if let Some(selected_id) = app.cont3xt.selected_overviews.get(&itype_lower) {
+                app.cont3xt.overviews.iter().find(|o| o.id == *selected_id)
             } else {
                 None
-            }.or_else(|| app.c3_overviews.iter().find(|o| o.itype.to_lowercase() == itype_lower && o.is_default))
-             .or_else(|| app.c3_overviews.iter().find(|o| o.itype.to_lowercase() == itype_lower));
+            }.or_else(|| app.cont3xt.overviews.iter().find(|o| o.itype.to_lowercase() == itype_lower && o.is_default))
+             .or_else(|| app.cont3xt.overviews.iter().find(|o| o.itype.to_lowercase() == itype_lower));
             if let Some(overview) = overview {
                 let title_str = overview.title.replace("%{query}", query);
-                let raw_label = if app.c3_raw_view { " [DEBUG] " } else { "" };
+                let raw_label = if app.cont3xt.raw_view { " [DEBUG] " } else { "" };
                 let title = format!(" {}{raw_label}", title_str);
-                let lines = render_overview_lines(overview, itype, query, &app.c3_results, &app.c3_integrations, app.c3_raw_view);
+                let lines = render_overview_lines(overview, itype, query, &app.cont3xt.results, &app.cont3xt.integrations, app.cont3xt.raw_view);
                 (title, lines)
             } else {
                 let title = format!(" {} — {} ", itype, query);
@@ -483,8 +483,8 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         align_table_columns(&mut lines);
 
         // Apply detail filter
-        if !app.c3_detail_filter.is_empty() {
-            let filter_lower = app.c3_detail_filter.to_lowercase();
+        if !app.cont3xt.detail_filter.is_empty() {
+            let filter_lower = app.cont3xt.detail_filter.to_lowercase();
             let len = lines.len();
 
             // Mark data lines that match the filter
@@ -525,19 +525,19 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         }
 
         // Show filter bar if filtering
-        let filter_height = if app.input_mode == InputMode::DetailFilter || !app.c3_detail_filter.is_empty() { 1u16 } else { 0 };
+        let filter_height = if app.input_mode == InputMode::DetailFilter || !app.cont3xt.detail_filter.is_empty() { 1u16 } else { 0 };
         let content_height = detail_inner.height.saturating_sub(filter_height);
 
         let total_lines = lines.len();
 
         // Clamp scroll
         let max_scroll = total_lines.saturating_sub(content_height as usize);
-        let scroll = (app.c3_detail_scroll as usize).min(max_scroll);
-        app.c3_detail_scroll = scroll as u16;
+        let scroll = (app.cont3xt.detail_scroll as usize).min(max_scroll);
+        app.cont3xt.detail_scroll = scroll as u16;
 
         let max_width = detail_inner.width as usize;
-        let hscroll = app.c3_detail_hscroll as usize;
-        let c3_filter_lower = app.c3_detail_filter.to_lowercase();
+        let hscroll = app.cont3xt.detail_hscroll as usize;
+        let c3_filter_lower = app.cont3xt.detail_filter.to_lowercase();
         let rendered_lines: Vec<Line> = lines.iter().map(|line| {
             let spans = match line {
                 JsonLine::KeyValue(key, value) => {
@@ -590,7 +590,7 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         // Filter bar at bottom of detail pane
         if filter_height > 0 {
             let filter_y = detail_inner.y + content_height;
-            let filter_text = format!(" /{}", app.c3_detail_filter);
+            let filter_text = format!(" /{}", app.cont3xt.detail_filter);
             let filter_style = if app.input_mode == InputMode::DetailFilter {
                 Style::default().fg(Color::Yellow)
             } else {
@@ -1091,23 +1091,23 @@ fn c3_draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
     let tabs_widget = Tabs::new(titles)
         .block(Block::default().borders(Borders::ALL))
         .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        .select(C3StatsTab::ALL.iter().position(|&t| t == app.c3_stats_tab).unwrap_or(0));
+        .select(C3StatsTab::ALL.iter().position(|&t| t == app.cont3xt.stats_tab).unwrap_or(0));
     f.render_widget(tabs_widget, chunks[0]);
 
-    let columns = app.c3_stats_tab.columns();
+    let columns = app.cont3xt.stats_tab.columns();
     let all_data = app.c3_stats_current_data();
 
     // Filter
     let mut filtered: Vec<&serde_json::Value> = all_data.iter()
         .filter(|item| {
-            app.c3_stats_filter.is_empty()
+            app.cont3xt.stats_filter.is_empty()
             || item.get("name").and_then(|v| v.as_str()).unwrap_or("")
-                .to_lowercase().contains(&app.c3_stats_filter.to_lowercase())
+                .to_lowercase().contains(&app.cont3xt.stats_filter.to_lowercase())
         })
         .collect();
 
     // Sort
-    let sort_field = columns.get(app.c3_stats_sort_col).map(|c| c.0).unwrap_or("name");
+    let sort_field = columns.get(app.cont3xt.stats_sort_col).map(|c| c.0).unwrap_or("name");
     filtered.sort_by(|a, b| {
         let cmp = if sort_field == "name" {
             let va = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -1118,13 +1118,13 @@ fn c3_draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
             let vb = b.get(sort_field).and_then(|v| v.as_f64()).unwrap_or(0.0);
             va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
         };
-        if app.c3_stats_sort_desc { cmp.reverse() } else { cmp }
+        if app.cont3xt.stats_sort_desc { cmp.reverse() } else { cmp }
     });
 
     // Build header
     let header_cells: Vec<Cell> = columns.iter().enumerate().map(|(i, &(_, label, _))| {
-        let is_sorted = i == app.c3_stats_sort_col;
-        Cell::from(sort_header_label(label, is_sorted, app.c3_stats_sort_desc))
+        let is_sorted = i == app.cont3xt.stats_sort_col;
+        Cell::from(sort_header_label(label, is_sorted, app.cont3xt.stats_sort_desc))
             .style(sort_header_style(is_sorted))
     }).collect();
     let header = Row::new(header_cells).height(1);
@@ -1158,31 +1158,31 @@ fn c3_draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
 
     let widths: Vec<Constraint> = columns.iter().map(|&(_, _, w)| Constraint::Length(w)).collect();
 
-    let filter_info = if app.c3_stats_filtering {
-        format!(" /{}█ ", app.c3_stats_filter)
-    } else if !app.c3_stats_filter.is_empty() {
-        format!(" /{} ", app.c3_stats_filter)
+    let filter_info = if app.cont3xt.stats_filtering {
+        format!(" /{}█ ", app.cont3xt.stats_filter)
+    } else if !app.cont3xt.stats_filter.is_empty() {
+        format!(" /{} ", app.cont3xt.stats_filter)
     } else {
         String::new()
     };
 
-    let title = format!(" {} ({}) {}", app.c3_stats_tab.name(), filtered.len(), filter_info);
+    let title = format!(" {} ({}) {}", app.cont3xt.stats_tab.name(), filtered.len(), filter_info);
     let table = Table::new(rows, widths)
         .header(header)
         .block(Block::default().borders(Borders::ALL).title(title))
         .row_highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan));
-    app.c3_stats_table_state.select(Some(app.c3_stats_selected));
-    f.render_stateful_widget(table, chunks[1], &mut app.c3_stats_table_state);
+    app.cont3xt.stats_table_state.select(Some(app.cont3xt.stats_selected));
+    f.render_stateful_widget(table, chunks[1], &mut app.cont3xt.stats_table_state);
 }
 
 fn c3_draw_history(f: &mut Frame, app: &mut App, area: Rect) {
     let columns = C3_HISTORY_COLUMNS;
 
     // Client-side filter
-    let filter_lower = app.c3_history_filter.to_lowercase();
-    let filtered: Vec<&serde_json::Value> = app.c3_history_data.iter()
+    let filter_lower = app.cont3xt.history_filter.to_lowercase();
+    let filtered: Vec<&serde_json::Value> = app.cont3xt.history_data.iter()
         .filter(|item| {
-            if app.c3_history_filter.is_empty() { return true; }
+            if app.cont3xt.history_filter.is_empty() { return true; }
             item.get("indicator").and_then(|v| v.as_str()).unwrap_or("")
                 .to_lowercase().contains(&filter_lower)
             || item.get("iType").and_then(|v| v.as_str()).unwrap_or("")
@@ -1195,8 +1195,8 @@ fn c3_draw_history(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Build header
     let header_cells: Vec<Cell> = columns.iter().enumerate().map(|(i, &(_, label, _, sortable))| {
-        let is_sorted = i == app.c3_history_sort_col;
-        let text = sort_header_label(label, is_sorted, app.c3_history_sort_desc);
+        let is_sorted = i == app.cont3xt.history_sort_col;
+        let text = sort_header_label(label, is_sorted, app.cont3xt.history_sort_desc);
         let style = if is_sorted {
             sort_header_style(true)
         } else if sortable {
@@ -1251,24 +1251,24 @@ fn c3_draw_history(f: &mut Frame, app: &mut App, area: Rect) {
         if field == "indicator" { Constraint::Min(w) } else { Constraint::Length(w) }
     }).collect();
 
-    let filter_info = if app.c3_history_filtering {
-        format!(" /{}█ ", app.c3_history_filter)
-    } else if !app.c3_history_filter.is_empty() {
-        format!(" /{} ", app.c3_history_filter)
+    let filter_info = if app.cont3xt.history_filtering {
+        format!(" /{}█ ", app.cont3xt.history_filter)
+    } else if !app.cont3xt.history_filter.is_empty() {
+        format!(" /{} ", app.cont3xt.history_filter)
     } else {
         String::new()
     };
 
-    let total_pages = (app.c3_history_total + 99) / 100;
-    let page_start = (app.c3_history_page - 1) * 100 + 1;
-    let page_end = (page_start + app.c3_history_data.len()).saturating_sub(1);
-    let page_info = if app.c3_history_total > 0 {
-        format!(" [{}-{} of {}] ", page_start, page_end, app.c3_history_total)
+    let total_pages = (app.cont3xt.history_total + 99) / 100;
+    let page_start = (app.cont3xt.history_page - 1) * 100 + 1;
+    let page_end = (page_start + app.cont3xt.history_data.len()).saturating_sub(1);
+    let page_info = if app.cont3xt.history_total > 0 {
+        format!(" [{}-{} of {}] ", page_start, page_end, app.cont3xt.history_total)
     } else {
         " [0] ".to_string()
     };
     let nav = if total_pages > 1 {
-        format!("◄ {}/{} ► ", app.c3_history_page, total_pages)
+        format!("◄ {}/{} ► ", app.cont3xt.history_page, total_pages)
     } else { String::new() };
 
     let title = format!(" History{}{}{}", page_info, nav, filter_info);
@@ -1276,8 +1276,8 @@ fn c3_draw_history(f: &mut Frame, app: &mut App, area: Rect) {
         .header(header)
         .block(Block::default().borders(Borders::ALL).title(title))
         .row_highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan));
-    app.c3_history_table_state.select(Some(app.c3_history_selected));
-    f.render_stateful_widget(table, area, &mut app.c3_history_table_state);
+    app.cont3xt.history_table_state.select(Some(app.cont3xt.history_selected));
+    f.render_stateful_widget(table, area, &mut app.cont3xt.history_table_state);
 }
 
 fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
@@ -1286,21 +1286,21 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
     let popup_area = center_popup(popup_width, popup_height, area);
     f.render_widget(Clear, popup_area);
 
-    let (indicator, itype) = match app.c3_tree_order.get(app.c3_selected) {
-        Some(C3TreeItem::Result(idx)) => app.c3_results.get(*idx)
+    let (indicator, itype) = match app.cont3xt.tree_order.get(app.cont3xt.selected) {
+        Some(C3TreeItem::Result(idx)) => app.cont3xt.results.get(*idx)
             .map(|r| (r.indicator.as_str(), r.itype.as_str()))
-            .unwrap_or((app.expression.as_str(), app.c3_search_itype.as_str())),
+            .unwrap_or((app.expression.as_str(), app.cont3xt.search_itype.as_str())),
         Some(C3TreeItem::Indicator(it, q)) => (q.as_str(), it.as_str()),
-        None => (app.expression.as_str(), app.c3_search_itype.as_str()),
+        None => (app.expression.as_str(), app.cont3xt.search_itype.as_str()),
     };
     let title = format!(
         " Links for {} ({}) — {} links ",
-        indicator, itype, app.c3_link_flat.len()
+        indicator, itype, app.cont3xt.link_flat.len()
     );
-    let filter_line = if app.c3_link_popup_filtering {
-        format!("Filter: {}█", app.c3_link_popup_filter)
-    } else if !app.c3_link_popup_filter.is_empty() {
-        format!("Filter: {}", app.c3_link_popup_filter)
+    let filter_line = if app.cont3xt.link_popup_filtering {
+        format!("Filter: {}█", app.cont3xt.link_popup_filter)
+    } else if !app.cont3xt.link_popup_filter.is_empty() {
+        format!("Filter: {}", app.cont3xt.link_popup_filter)
     } else {
         String::new()
     };
@@ -1315,7 +1315,7 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, popup_area);
 
     let content_area = if !filter_line.is_empty() {
-        let filter_style = if app.c3_link_popup_filtering {
+        let filter_style = if app.cont3xt.link_popup_filtering {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::DarkGray)
@@ -1329,7 +1329,7 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
         inner
     };
 
-    if app.c3_link_flat.is_empty() {
+    if app.cont3xt.link_flat.is_empty() {
         f.render_widget(
             Paragraph::new("No links available for this indicator type")
                 .style(Style::default().fg(Color::DarkGray)),
@@ -1339,7 +1339,7 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // Reserve bottom for selected link description
-    let selected_info = app.c3_link_flat.get(app.c3_link_popup_selected)
+    let selected_info = app.cont3xt.link_flat.get(app.cont3xt.link_popup_selected)
         .map(|(_, _, url, info, _)| (url.clone(), info.clone()))
         .unwrap_or_default();
     let has_desc = !selected_info.0.is_empty();
@@ -1357,12 +1357,12 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
 
     // Count display lines up to and including selected item to determine scroll
     let visible = list_area.height as usize;
-    let selected = app.c3_link_popup_selected;
+    let selected = app.cont3xt.link_popup_selected;
 
     // Count total lines up to selected to find its display position
     let mut last_group = String::new();
     let mut selected_line_pos = 0usize;
-    for (i, (group, _, _, _, _)) in app.c3_link_flat.iter().enumerate() {
+    for (i, (group, _, _, _, _)) in app.cont3xt.link_flat.iter().enumerate() {
         if *group != last_group {
             if !last_group.is_empty() {
                 selected_line_pos += 1; // spacer
@@ -1384,7 +1384,7 @@ fn draw_link_popup(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     let mut line_idx = 0usize;
     last_group = String::new();
-    for (i, (group, name, url, _info, color)) in app.c3_link_flat.iter().enumerate() {
+    for (i, (group, name, url, _info, color)) in app.cont3xt.link_flat.iter().enumerate() {
         if *group != last_group {
             if !last_group.is_empty() {
                 if line_idx >= scroll_offset && lines.len() < visible {
@@ -1463,22 +1463,22 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 
     let popup_width = 50u16.min(area.width.saturating_sub(4));
 
-    match app.c3_integration_popup_mode {
+    match app.cont3xt.integration_popup_mode {
         IntegrationPopupMode::Views | IntegrationPopupMode::SaveInput | IntegrationPopupMode::ConfirmDelete => {
             // Views list: "Save Current" + saved views
-            let list_len = app.c3_views.len() + 1; // +1 for "Save Current"
+            let list_len = app.cont3xt.views.len() + 1; // +1 for "Save Current"
             let popup_height = (list_len as u16 + 4).min(area.height.saturating_sub(4)).max(6);
             let popup_area = center_popup(popup_width, popup_height, area);
 
             f.render_widget(Clear, popup_area);
 
-            let bottom_line = match app.c3_integration_popup_mode {
+            let bottom_line = match app.cont3xt.integration_popup_mode {
                 IntegrationPopupMode::SaveInput => {
-                    let cursor = format!(" Name: {}█ ", app.c3_view_save_name);
+                    let cursor = format!(" Name: {}█ ", app.cont3xt.view_save_name);
                     Line::from(Span::styled(cursor, Style::default().fg(Color::Yellow))).centered()
                 }
                 IntegrationPopupMode::ConfirmDelete => {
-                    let name = app.c3_views.get(app.c3_view_selected.saturating_sub(1))
+                    let name = app.cont3xt.views.get(app.cont3xt.view_selected.saturating_sub(1))
                         .map(|v| v.name.as_str()).unwrap_or("?");
                     Line::from(Span::styled(
                         format!(" Delete '{name}'? (y/n) "),
@@ -1498,13 +1498,13 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 
             let visible_height = inner.height as usize;
             let scroll_offset = if list_len > visible_height {
-                let sel = app.c3_view_selected;
+                let sel = app.cont3xt.view_selected;
                 if sel >= visible_height { sel - visible_height + 1 } else { 0 }
             } else { 0 };
 
             for i in scroll_offset..(scroll_offset + visible_height).min(list_len) {
                 let y = inner.y + (i - scroll_offset) as u16;
-                let is_selected = i == app.c3_view_selected;
+                let is_selected = i == app.cont3xt.view_selected;
                 let style = if is_selected {
                     Style::default().fg(Color::Black).bg(Color::Magenta)
                 } else {
@@ -1513,11 +1513,11 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 
                 if i == 0 {
                     // "Save Current" option
-                    let enabled = app.c3_integrations.len() - app.c3_disabled_integrations.len();
+                    let enabled = app.cont3xt.integrations.len() - app.cont3xt.disabled_integrations.len();
                     let label = format!(" 💾 Save Current ({enabled} integrations)");
                     f.render_widget(Paragraph::new(Span::styled(label, style)), Rect::new(inner.x, y, inner.width, 1));
                 } else {
-                    let view = &app.c3_views[i - 1];
+                    let view = &app.cont3xt.views[i - 1];
                     let count = view.integrations.len();
                     let shared = if !view.editable { " 🔗" } else { "" };
                     let label = format!(" {} ({count}){shared}", view.name);
@@ -1536,15 +1536,15 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
             }
         }
         IntegrationPopupMode::Integrations => {
-            let filtered: Vec<(usize, &crate::api::Cont3xtIntegration)> = app.c3_integrations.iter().enumerate()
+            let filtered: Vec<(usize, &crate::api::Cont3xtIntegration)> = app.cont3xt.integrations.iter().enumerate()
                 .filter(|(_, int)| {
-                    app.c3_integration_popup_filter.is_empty()
-                    || int.name.to_lowercase().contains(&app.c3_integration_popup_filter.to_lowercase())
+                    app.cont3xt.integration_popup_filter.is_empty()
+                    || int.name.to_lowercase().contains(&app.cont3xt.integration_popup_filter.to_lowercase())
                 })
                 .collect();
 
-            let disabled_count = app.c3_disabled_integrations.len();
-            let total = app.c3_integrations.len();
+            let disabled_count = app.cont3xt.disabled_integrations.len();
+            let total = app.cont3xt.integrations.len();
             let enabled = total - disabled_count;
 
             let popup_height = (filtered.len() as u16 + 5).min(area.height.saturating_sub(4));
@@ -1552,11 +1552,11 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 
             f.render_widget(Clear, popup_area);
 
-            let bottom_line = if app.c3_integration_popup_filtering {
-                let cursor = format!(" /{}█ ", app.c3_integration_popup_filter);
+            let bottom_line = if app.cont3xt.integration_popup_filtering {
+                let cursor = format!(" /{}█ ", app.cont3xt.integration_popup_filter);
                 Line::from(Span::styled(cursor, Style::default().fg(Color::Yellow))).centered()
-            } else if !app.c3_integration_popup_filter.is_empty() {
-                Line::from(format!(" /{} │ Spc:toggle a:all n:none !:inv v:views ", app.c3_integration_popup_filter)).centered()
+            } else if !app.cont3xt.integration_popup_filter.is_empty() {
+                Line::from(format!(" /{} │ Spc:toggle a:all n:none !:inv v:views ", app.cont3xt.integration_popup_filter)).centered()
             } else {
                 Line::from(" Spc:toggle a:all n:none !:inv /:filter v:views ").centered()
             };
@@ -1570,14 +1570,14 @@ fn draw_integration_popup(f: &mut Frame, app: &App, area: Rect) {
 
             let visible_height = inner.height as usize;
             let scroll_offset = if filtered.len() > visible_height {
-                let sel = app.c3_integration_popup_selected;
+                let sel = app.cont3xt.integration_popup_selected;
                 if sel >= visible_height { sel - visible_height + 1 } else { 0 }
             } else { 0 };
 
             for (i, (_, integ)) in filtered.iter().enumerate().skip(scroll_offset).take(visible_height) {
                 let y = inner.y + (i - scroll_offset) as u16;
-                let is_selected = i == app.c3_integration_popup_selected;
-                let is_disabled = app.c3_disabled_integrations.contains(&integ.name);
+                let is_selected = i == app.cont3xt.integration_popup_selected;
+                let is_disabled = app.cont3xt.disabled_integrations.contains(&integ.name);
 
                 let check = if is_disabled { "✗" } else { "✓" };
                 let check_color = if is_disabled { Color::Red } else { Color::Green };
@@ -1610,13 +1610,13 @@ fn draw_card_popup(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_widget(Clear, popup_area);
 
-    let (title, text) = match app.c3_tree_order.get(app.c3_selected) {
+    let (title, text) = match app.cont3xt.tree_order.get(app.cont3xt.selected) {
         Some(C3TreeItem::Result(idx)) => {
-            let result = match app.c3_results.get(*idx) {
+            let result = match app.cont3xt.results.get(*idx) {
                 Some(r) => r,
                 None => return,
             };
-            let card = app.c3_integrations.iter()
+            let card = app.cont3xt.integrations.iter()
                 .find(|i| i.name == result.name)
                 .and_then(|i| i.card.as_ref());
             let title = format!(" Card: {} ", result.name);
@@ -1657,9 +1657,9 @@ fn draw_card_popup(f: &mut Frame, app: &App, area: Rect) {
         }
         Some(C3TreeItem::Indicator(itype, query)) => {
             let itype_lower = itype.to_lowercase();
-            let overview = app.c3_overviews.iter()
+            let overview = app.cont3xt.overviews.iter()
                 .find(|o| o.itype.to_lowercase() == itype_lower && o.is_default)
-                .or_else(|| app.c3_overviews.iter().find(|o| o.itype.to_lowercase() == itype_lower));
+                .or_else(|| app.cont3xt.overviews.iter().find(|o| o.itype.to_lowercase() == itype_lower));
             let title = format!(" Overview: {} {} ", itype, query);
             let text = if let Some(ov) = overview {
                 let mut lines = Vec::new();
@@ -1697,26 +1697,26 @@ fn draw_card_popup(f: &mut Frame, app: &App, area: Rect) {
     let para = Paragraph::new(text)
         .style(Style::default().fg(Color::White))
         .wrap(Wrap { trim: false })
-        .scroll((app.c3_card_popup_scroll, 0));
+        .scroll((app.cont3xt.card_popup_scroll, 0));
     f.render_widget(para, inner);
 }
 
 fn draw_overview_popup(f: &mut Frame, app: &App, area: Rect) {
-    let (itype, _query) = match app.c3_tree_order.get(app.c3_selected) {
+    let (itype, _query) = match app.cont3xt.tree_order.get(app.cont3xt.selected) {
         Some(C3TreeItem::Indicator(itype, query)) => (itype.clone(), query.clone()),
         _ => return,
     };
     let itype_lower = itype.to_lowercase();
-    let filter_lower = app.c3_overview_popup_filter.to_lowercase();
-    let mut matching: Vec<&crate::api::Cont3xtOverview> = app.c3_overviews.iter()
+    let filter_lower = app.cont3xt.overview_popup_filter.to_lowercase();
+    let mut matching: Vec<&crate::api::Cont3xtOverview> = app.cont3xt.overviews.iter()
         .filter(|o| o.itype.to_lowercase() == itype_lower)
         .filter(|o| filter_lower.is_empty() || o.name.to_lowercase().contains(&filter_lower))
         .collect();
     matching.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
-    let current_id = app.c3_selected_overviews.get(&itype_lower);
+    let current_id = app.cont3xt.selected_overviews.get(&itype_lower);
 
-    let filter_row = if app.c3_overview_popup_filtering || !app.c3_overview_popup_filter.is_empty() { 1u16 } else { 0 };
+    let filter_row = if app.cont3xt.overview_popup_filtering || !app.cont3xt.overview_popup_filter.is_empty() { 1u16 } else { 0 };
     let popup_w = (area.width - 4).min(60);
     let popup_h = (matching.len() as u16 + 4 + filter_row).min(area.height - 4);
     let popup_area = center_popup(popup_w, popup_h, area);
@@ -1731,13 +1731,13 @@ fn draw_overview_popup(f: &mut Frame, app: &App, area: Rect) {
 
     let mut y_offset = 0u16;
 
-    if app.c3_overview_popup_filtering || !app.c3_overview_popup_filter.is_empty() {
-        let filter_style = if app.c3_overview_popup_filtering {
+    if app.cont3xt.overview_popup_filtering || !app.cont3xt.overview_popup_filter.is_empty() {
+        let filter_style = if app.cont3xt.overview_popup_filtering {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::DarkGray)
         };
-        let filter_text = format!(" /{}█", app.c3_overview_popup_filter);
+        let filter_text = format!(" /{}█", app.cont3xt.overview_popup_filter);
         f.render_widget(
             Paragraph::new(Span::styled(filter_text, filter_style)),
             Rect::new(inner.x, inner.y, inner.width, 1),
@@ -1747,7 +1747,7 @@ fn draw_overview_popup(f: &mut Frame, app: &App, area: Rect) {
 
     for (i, ov) in matching.iter().enumerate() {
         if y_offset + i as u16 >= inner.height { break; }
-        let is_selected = i == app.c3_overview_popup_selected;
+        let is_selected = i == app.cont3xt.overview_popup_selected;
         let is_active = Some(&ov.id) == current_id
             || (current_id.is_none() && ov.is_default)
             || (current_id.is_none() && i == 0 && !matching.iter().any(|o| o.is_default));
@@ -1772,7 +1772,7 @@ fn draw_overview_popup(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_save_json_prompt(f: &mut Frame, app: &App, area: Rect) {
-    let filename = match &app.c3_save_json_prompt {
+    let filename = match &app.cont3xt.save_json_prompt {
         Some(f) => f,
         None => return,
     };
@@ -1809,7 +1809,7 @@ fn draw_tags_popup(f: &mut Frame, app: &App, area: Rect) {
     let lines = vec![
         Line::from(vec![
             Span::styled("Tags: ", Style::default().fg(Color::Yellow)),
-            Span::styled(&app.c3_tags_edit, Style::default().fg(Color::White)),
+            Span::styled(&app.cont3xt.tags_edit, Style::default().fg(Color::White)),
             Span::styled("█", Style::default().fg(Color::Gray)),
         ]),
         Line::from(Span::styled(
@@ -1835,21 +1835,21 @@ fn draw_date_popup(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_widget(Clear, popup_area);
 
-    let start_style = if app.c3_date_field == 0 { Style::default().fg(Color::White) } else { Style::default().fg(Color::Gray) };
-    let stop_style = if app.c3_date_field == 1 { Style::default().fg(Color::White) } else { Style::default().fg(Color::Gray) };
+    let start_style = if app.cont3xt.date_field == 0 { Style::default().fg(Color::White) } else { Style::default().fg(Color::Gray) };
+    let stop_style = if app.cont3xt.date_field == 1 { Style::default().fg(Color::White) } else { Style::default().fg(Color::Gray) };
     let cursor = Span::styled("█", Style::default().fg(Color::Gray));
 
     let mut start_spans = vec![
         Span::styled(" Start: ", Style::default().fg(Color::Yellow)),
-        Span::styled(&app.c3_date_start_edit, start_style),
+        Span::styled(&app.cont3xt.date_start_edit, start_style),
     ];
-    if app.c3_date_field == 0 { start_spans.push(cursor.clone()); }
+    if app.cont3xt.date_field == 0 { start_spans.push(cursor.clone()); }
 
     let mut stop_spans = vec![
         Span::styled("  Stop: ", Style::default().fg(Color::Yellow)),
-        Span::styled(&app.c3_date_stop_edit, stop_style),
+        Span::styled(&app.cont3xt.date_stop_edit, stop_style),
     ];
-    if app.c3_date_field == 1 { stop_spans.push(cursor); }
+    if app.cont3xt.date_field == 1 { stop_spans.push(cursor); }
 
     let lines = vec![
         Line::from(start_spans),

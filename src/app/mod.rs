@@ -14,7 +14,7 @@ mod wise;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLink, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, IntegrationSettings, SummaryItem};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, GraphData, HttpLog, SummaryItem};
 use chrono::{Datelike, Duration, Timelike, Utc};
 use crossterm::event::KeyCode;
 use ratatui::widgets::TableState;
@@ -213,208 +213,7 @@ pub struct App {
     pub owl_tick: std::time::Instant,
     pub anim_start: std::time::Instant,
     // Cont3xt state
-    pub c3_integrations: Vec<Cont3xtIntegration>,
-    pub c3_overviews: Vec<Cont3xtOverview>,
-    pub c3_results: Vec<Cont3xtResult>,
-    pub c3_selected: usize,           // index into c3_tree_order
-    pub c3_tree_order: Vec<C3TreeItem>, // tree items in display order
-    pub c3_tree_roots: Vec<usize>,    // indices into c3_tree_order where each root indicator starts
-    pub c3_detail_scroll: u16,        // scroll in detail pane
-    pub c3_detail_hscroll: u16,       // horizontal scroll in detail pane
-    pub c3_detail_filter: String,     // filter string for detail pane
-    pub c3_search_total: u64,
-    pub c3_search_sent: u64,
-    pub c3_search_itype: String,
-    // indicator parent map: (child_indicator, child_itype) -> [(parent_query, parent_itype), ...]
-    pub c3_indicator_parents: HashMap<(String, String), Vec<(String, String)>>,
-    // init-ordered indicators: (itype, query) in the order from the init response
-    pub c3_init_indicators: Vec<(String, String)>,
-    pub c3_focus: Cont3xtFocus,       // which pane has focus
-    pub c3_raw_view: bool,            // show raw JSON instead of card
-    pub c3_show_card_popup: bool,     // show card definition popup
-    pub c3_card_popup_scroll: u16,    // scroll offset for card popup
-    pub c3_show_overview_popup: bool,  // overview selector popup
-    pub c3_overview_popup_selected: usize,
-    pub c3_overview_popup_filter: String,
-    pub c3_overview_popup_filtering: bool,
-    pub c3_selected_overviews: HashMap<String, String>, // itype -> overview id
-    pub c3_disabled_integrations: std::collections::HashSet<String>, // user-toggled off
-    pub c3_show_integration_popup: bool,
-    pub c3_integration_popup_selected: usize,
-    pub c3_integration_popup_filter: String,
-    pub c3_integration_popup_filtering: bool,
-    pub c3_integration_popup_mode: IntegrationPopupMode, // which sub-view of integration popup
-    pub c3_views: Vec<Cont3xtView>,
-    pub c3_view_selected: usize,
-    pub c3_view_save_name: String,
-    pub c3_active_view_id: Option<String>,
-    pub c3_active_view_name: Option<String>,
-    pub c3_searching: bool,           // streaming search in progress
-    pub c3_pending_search: bool,
-    pub c3_no_cache: bool,
-    pub c3_tags: Vec<String>,         // tags sent with search query
-    pub c3_tags_edit: String,         // edit buffer for tags popup
-    pub c3_show_tags_popup: bool,     // tag editor popup visible
-    pub c3_save_json_prompt: Option<String>, // filename prompt for JSON export
-    pub c3_save_json_path: Option<String>,   // headless: save JSON to file and quit when search completes
-    pub c3_loaded_file: Option<String>,      // file path when results loaded from --cont3xt-read-json or similar
-    // Cont3xt date range
-    pub c3_start_date: chrono::DateTime<Utc>,
-    pub c3_stop_date: chrono::DateTime<Utc>,
-    pub c3_show_date_popup: bool,
-    pub c3_date_start_edit: String,   // edit buffer for start date
-    pub c3_date_stop_edit: String,    // edit buffer for stop date
-    pub c3_date_field: u8,            // 0 = start, 1 = stop
-    // Cont3xt link groups
-    pub c3_link_groups: Vec<Cont3xtLinkGroup>,
-    pub c3_show_link_popup: bool,
-    pub c3_link_popup_selected: usize,
-    pub c3_link_popup_filter: String,
-    pub c3_link_popup_filtering: bool,
-    pub c3_link_flat: Vec<(String, String, String, String, String)>, // (group_name, link_name, url, info, color) filtered by itype
-    // Cont3xt stats
-    pub c3_stats_tab: C3StatsTab,
-    pub c3_stats_data: Vec<serde_json::Value>,       // integration stats
-    pub c3_itype_stats_data: Vec<serde_json::Value>, // itype stats
-    pub c3_stats_selected: usize,
-    pub c3_stats_table_state: ratatui::widgets::TableState,
-    pub c3_stats_filter: String,
-    pub c3_stats_filtering: bool,
-    pub c3_stats_sort_col: usize,
-    pub c3_stats_sort_desc: bool,
-    // Cont3xt history
-    pub c3_history_data: Vec<serde_json::Value>,
-    pub c3_history_total: usize,
-    pub c3_history_page: usize,  // 1-indexed
-    pub c3_history_selected: usize,
-    pub c3_history_table_state: ratatui::widgets::TableState,
-    pub c3_history_filter: String,
-    pub c3_history_filtering: bool,
-    pub c3_history_sort_col: usize,
-    pub c3_history_sort_desc: bool,
-    pub c3_history_loaded: bool,
-    // Cont3xt settings
-    pub c3_settings_tab: C3SettingsTab,
-    pub c3_settings_views: Vec<Cont3xtView>,
-    pub c3_settings_views_selected: usize,
-    pub c3_settings_views_table_state: ratatui::widgets::TableState,
-    pub c3_settings_views_filter: String,
-    pub c3_settings_views_filtering: bool,
-    pub c3_settings_views_loaded: bool,
-    pub c3_settings_views_sort: u8,
-    pub c3_settings_views_sort_desc: bool,
-    pub c3_all_roles: Vec<String>,
-    // View editor state
-    pub c3_view_editor_open: bool,
-    pub c3_view_editor_id: Option<String>, // None = new, Some(id) = editing
-    pub c3_view_editor_name: String,
-    pub c3_view_editor_name_cursor: usize,
-    pub c3_view_editor_integrations: Vec<(String, bool)>, // (name, enabled)
-    pub c3_view_editor_integration_selected: usize,
-    pub c3_view_editor_integration_filter: String,
-    pub c3_view_editor_integration_filtering: bool,
-    pub c3_view_editor_view_roles: Vec<(String, bool)>, // (role, selected)
-    pub c3_view_editor_edit_roles: Vec<(String, bool)>, // (role, selected)
-    pub c3_view_editor_field: C3ViewEditorField,
-    // Role popup state (sub-popup within view editor)
-    pub c3_role_popup_open: bool,
-    pub c3_role_popup_for_edit: bool, // false = viewRoles, true = editRoles
-    pub c3_role_popup_selected: usize,
-    pub c3_role_popup_filter: String,
-    pub c3_role_popup_filtering: bool,
-    // Settings confirm dialog
-    pub c3_settings_confirm: Option<(String, String)>, // (action, message)
-    // Integration settings
-    pub c3_int_settings: Vec<IntegrationSettings>,
-    pub c3_int_settings_selected: usize,
-    pub c3_int_settings_table_state: ratatui::widgets::TableState,
-    pub c3_int_settings_filter: String,
-    pub c3_int_settings_filtering: bool,
-    pub c3_int_settings_loaded: bool,
-    pub c3_int_settings_sort: u8,   // 0=Name, 1=Status
-    pub c3_int_settings_sort_desc: bool,
-    pub c3_int_settings_dirty: bool,
-    // Integration config editor
-    pub c3_int_editor_open: bool,
-    pub c3_int_editor_idx: usize,
-    pub c3_int_editor_values: Vec<(String, String, bool, bool, bool, String)>, // (field_name, value, is_password, is_boolean, required, help)
-    pub c3_int_editor_selected: usize,
-    pub c3_int_editor_cursor: usize,
-    pub c3_int_editor_show_password: bool,
-    // Link group settings
-    pub c3_lg_level: C3LinkGroupLevel,
-    pub c3_lg_groups: Vec<Cont3xtLinkGroup>,
-    pub c3_lg_selected: usize,
-    pub c3_lg_filter: String,
-    pub c3_lg_filtering: bool,
-    pub c3_lg_sort_col: usize,
-    pub c3_lg_sort_desc: bool,
-    pub c3_lg_table_state: ratatui::widgets::TableState,
-    pub c3_lg_loaded: bool,
-    // Link list within group
-    pub c3_lg_links_selected: usize,
-    pub c3_lg_links_table_state: ratatui::widgets::TableState,
-    pub c3_lg_editing_group_idx: usize,
-    pub c3_lg_links_filter: String,
-    pub c3_lg_links_filtering: bool,
-    // Link editor
-    pub c3_lg_editor_field: C3LinkEditorField,
-    pub c3_lg_editor_link: Cont3xtLink,
-    pub c3_lg_editor_link_idx: usize,
-    pub c3_lg_editor_cursor: usize,
-    pub c3_lg_editor_itype_selected: usize,
-    // Link group backup prompt
-    pub c3_backup_prompt: Option<String>,
-    pub c3_backup_kind: C3BackupKind,
-    // Group editor (name, viewRoles, editRoles)
-    pub c3_lg_group_editor_field: C3GroupEditorField,
-    pub c3_lg_group_editor_name: String,
-    pub c3_lg_group_editor_cursor: usize,
-    pub c3_lg_group_editor_view_roles: Vec<String>,
-    pub c3_lg_group_editor_edit_roles: Vec<String>,
-    pub c3_lg_group_editor_idx: usize,
-    // Overview settings
-    pub c3_ov_level: C3OverviewLevel,
-    pub c3_ov_list: Vec<crate::api::Cont3xtOverview>,
-    pub c3_ov_selected: usize,
-    pub c3_ov_filter: String,
-    pub c3_ov_filtering: bool,
-    pub c3_ov_sort_col: usize,
-    pub c3_ov_sort_desc: bool,
-    pub c3_ov_table_state: ratatui::widgets::TableState,
-    pub c3_ov_loaded: bool,
-    // Overview editor
-    pub c3_ov_editor_field: C3OverviewEditorField,
-    pub c3_ov_editor_cursor: usize,
-    pub c3_ov_editor_idx: usize,
-    pub c3_ov_editor_name: String,
-    pub c3_ov_editor_title: String,
-    pub c3_ov_editor_itype: String,
-    pub c3_ov_editor_view_roles: Vec<String>,
-    pub c3_ov_editor_edit_roles: Vec<String>,
-    // Overview field list
-    pub c3_ov_fields_selected: usize,
-    pub c3_ov_fields_table_state: ratatui::widgets::TableState,
-    pub c3_ov_fields_filter: String,
-    pub c3_ov_fields_filtering: bool,
-    // Overview field editor
-    pub c3_ov_field_editor_field: C3OvFieldEditorField,
-    pub c3_ov_field_editor_cursor: usize,
-    pub c3_ov_field_editor_idx: usize,
-    pub c3_ov_field_editor_from: String,
-    pub c3_ov_field_editor_field_name: String,
-    pub c3_ov_field_editor_label: String,
-    pub c3_ov_field_editor_is_custom: bool,
-    pub c3_ov_fe_json_lines: Vec<String>,
-    pub c3_ov_fe_json_line: usize,
-    pub c3_ov_fe_json_col: usize,
-    pub c3_ov_fe_json_scroll: usize,
-    pub c3_ov_fe_popup_open: bool,
-    pub c3_ov_fe_popup_for_field: bool, // false=From, true=Field
-    pub c3_ov_fe_popup_items: Vec<String>,
-    pub c3_ov_fe_popup_selected: usize,
-    pub c3_ov_fe_popup_filter: String,
-    pub c3_ov_fe_popup_filtering: bool,
+    pub cont3xt: Cont3xtState,
     // Parliament state
     pub parliament: ParliamentState,
     pub force_clear: bool, // force terminal clear after okta redirect
@@ -606,198 +405,7 @@ impl App {
             owl_tick: std::time::Instant::now(),
             anim_start: std::time::Instant::now(),
             // Cont3xt state
-            c3_integrations: Vec::new(),
-            c3_overviews: Vec::new(),
-            c3_results: Vec::new(),
-            c3_selected: 0,
-            c3_tree_order: Vec::new(),
-            c3_tree_roots: Vec::new(),
-            c3_detail_scroll: 0,
-            c3_detail_hscroll: 0,
-            c3_detail_filter: String::new(),
-            c3_search_total: 0,
-            c3_search_sent: 0,
-            c3_search_itype: String::new(),
-            c3_indicator_parents: HashMap::new(),
-            c3_init_indicators: Vec::new(),
-            c3_focus: Cont3xtFocus::Results,
-            c3_raw_view: false,
-            c3_show_card_popup: false,
-            c3_card_popup_scroll: 0,
-            c3_show_overview_popup: false,
-            c3_overview_popup_selected: 0,
-            c3_overview_popup_filter: String::new(),
-            c3_overview_popup_filtering: false,
-            c3_selected_overviews: HashMap::new(),
-            c3_disabled_integrations: std::collections::HashSet::new(),
-            c3_show_integration_popup: false,
-            c3_integration_popup_selected: 0,
-            c3_integration_popup_filter: String::new(),
-            c3_integration_popup_filtering: false,
-            c3_integration_popup_mode: IntegrationPopupMode::Integrations,
-            c3_views: Vec::new(),
-            c3_view_selected: 0,
-            c3_view_save_name: String::new(),
-            c3_active_view_id: None,
-            c3_active_view_name: None,
-            c3_searching: false,
-            c3_pending_search: false,
-            c3_no_cache: false,
-            c3_tags: Vec::new(),
-            c3_tags_edit: String::new(),
-            c3_show_tags_popup: false,
-            c3_save_json_prompt: None,
-            c3_save_json_path: None,
-            c3_loaded_file: None,
-            c3_start_date: Utc::now() - Duration::days(7),
-            c3_stop_date: Utc::now(),
-            c3_show_date_popup: false,
-            c3_date_start_edit: String::from("-7d"),
-            c3_date_stop_edit: String::from("now"),
-            c3_date_field: 0,
-            c3_link_groups: Vec::new(),
-            c3_show_link_popup: false,
-            c3_link_popup_selected: 0,
-            c3_link_popup_filter: String::new(),
-            c3_link_popup_filtering: false,
-            c3_link_flat: Vec::new(),
-            c3_stats_tab: C3StatsTab::Integrations,
-            c3_stats_data: Vec::new(),
-            c3_itype_stats_data: Vec::new(),
-            c3_stats_selected: 0,
-            c3_stats_table_state: ratatui::widgets::TableState::default(),
-            c3_stats_filter: String::new(),
-            c3_stats_filtering: false,
-            c3_stats_sort_col: 0,
-            c3_stats_sort_desc: false,
-            c3_history_data: Vec::new(),
-            c3_history_total: 0,
-            c3_history_page: 1,
-            c3_history_selected: 0,
-            c3_history_table_state: ratatui::widgets::TableState::default(),
-            c3_history_filter: String::new(),
-            c3_history_filtering: false,
-            c3_history_sort_col: 0,
-            c3_history_sort_desc: true,
-            c3_history_loaded: false,
-            // Cont3xt settings
-            c3_settings_tab: C3SettingsTab::Views,
-            c3_settings_views: Vec::new(),
-            c3_settings_views_selected: 0,
-            c3_settings_views_table_state: ratatui::widgets::TableState::default(),
-            c3_settings_views_filter: String::new(),
-            c3_settings_views_filtering: false,
-            c3_settings_views_loaded: false,
-            c3_settings_views_sort: 0,
-            c3_settings_views_sort_desc: false,
-            c3_all_roles: Vec::new(),
-            c3_view_editor_open: false,
-            c3_view_editor_id: None,
-            c3_view_editor_name: String::new(),
-            c3_view_editor_name_cursor: 0,
-            c3_view_editor_integrations: Vec::new(),
-            c3_view_editor_integration_selected: 0,
-            c3_view_editor_integration_filter: String::new(),
-            c3_view_editor_integration_filtering: false,
-            c3_view_editor_view_roles: Vec::new(),
-            c3_view_editor_edit_roles: Vec::new(),
-            c3_view_editor_field: C3ViewEditorField::Name,
-            c3_role_popup_open: false,
-            c3_role_popup_for_edit: false,
-            c3_role_popup_selected: 0,
-            c3_role_popup_filter: String::new(),
-            c3_role_popup_filtering: false,
-            c3_settings_confirm: None,
-            // Integration settings
-            c3_int_settings: Vec::new(),
-            c3_int_settings_selected: 0,
-            c3_int_settings_table_state: ratatui::widgets::TableState::default(),
-            c3_int_settings_filter: String::new(),
-            c3_int_settings_filtering: false,
-            c3_int_settings_loaded: false,
-            c3_int_settings_sort: 0,
-            c3_int_settings_sort_desc: false,
-            c3_int_settings_dirty: false,
-            c3_int_editor_open: false,
-            c3_int_editor_idx: 0,
-            c3_int_editor_values: Vec::new(),
-            c3_int_editor_selected: 0,
-            c3_int_editor_cursor: 0,
-            c3_int_editor_show_password: false,
-            // Link group settings
-            c3_lg_level: C3LinkGroupLevel::GroupList,
-            c3_lg_groups: Vec::new(),
-            c3_lg_selected: 0,
-            c3_lg_filter: String::new(),
-            c3_lg_filtering: false,
-            c3_lg_sort_col: 0,
-            c3_lg_sort_desc: false,
-            c3_lg_table_state: ratatui::widgets::TableState::default(),
-            c3_lg_loaded: false,
-            c3_lg_links_selected: 0,
-            c3_lg_links_table_state: ratatui::widgets::TableState::default(),
-            c3_lg_editing_group_idx: 0,
-            c3_lg_links_filter: String::new(),
-            c3_lg_links_filtering: false,
-            c3_lg_editor_field: C3LinkEditorField::Name,
-            c3_lg_editor_link: Cont3xtLink {
-                name: String::new(),
-                url: String::new(),
-                itypes: Vec::new(),
-                info: String::new(),
-                color: String::new(),
-                external_doc_name: String::new(),
-                external_doc_url: String::new(),
-            },
-            c3_lg_editor_link_idx: 0,
-            c3_lg_editor_cursor: 0,
-            c3_lg_editor_itype_selected: 0,
-            c3_backup_prompt: None,
-            c3_backup_kind: C3BackupKind::LinkGroupsAll,
-            c3_lg_group_editor_field: C3GroupEditorField::Name,
-            c3_lg_group_editor_name: String::new(),
-            c3_lg_group_editor_cursor: 0,
-            c3_lg_group_editor_view_roles: Vec::new(),
-            c3_lg_group_editor_edit_roles: Vec::new(),
-            c3_lg_group_editor_idx: 0,
-            c3_ov_level: C3OverviewLevel::List,
-            c3_ov_list: Vec::new(),
-            c3_ov_selected: 0,
-            c3_ov_filter: String::new(),
-            c3_ov_filtering: false,
-            c3_ov_sort_col: 0,
-            c3_ov_sort_desc: false,
-            c3_ov_table_state: ratatui::widgets::TableState::default(),
-            c3_ov_loaded: false,
-            c3_ov_editor_field: C3OverviewEditorField::Name,
-            c3_ov_editor_cursor: 0,
-            c3_ov_editor_idx: 0,
-            c3_ov_editor_name: String::new(),
-            c3_ov_editor_title: String::new(),
-            c3_ov_editor_itype: String::new(),
-            c3_ov_editor_view_roles: Vec::new(),
-            c3_ov_editor_edit_roles: Vec::new(),
-            c3_ov_fields_selected: 0,
-            c3_ov_fields_table_state: ratatui::widgets::TableState::default(),
-            c3_ov_fields_filter: String::new(),
-            c3_ov_fields_filtering: false,
-            c3_ov_field_editor_field: C3OvFieldEditorField::From,
-            c3_ov_field_editor_cursor: 0,
-            c3_ov_field_editor_idx: 0,
-            c3_ov_field_editor_from: String::new(),
-            c3_ov_field_editor_field_name: String::new(),
-            c3_ov_field_editor_label: String::new(),
-            c3_ov_field_editor_is_custom: false,
-            c3_ov_fe_json_lines: Vec::new(),
-            c3_ov_fe_json_line: 0,
-            c3_ov_fe_json_col: 0,
-            c3_ov_fe_json_scroll: 0,
-            c3_ov_fe_popup_open: false,
-            c3_ov_fe_popup_for_field: false,
-            c3_ov_fe_popup_items: Vec::new(),
-            c3_ov_fe_popup_selected: 0,
-            c3_ov_fe_popup_filter: String::new(),
-            c3_ov_fe_popup_filtering: false,
+            cont3xt: Cont3xtState::default(),
             // Parliament state
             parliament: ParliamentState::default(),
             force_clear: false,
@@ -816,7 +424,7 @@ impl App {
     pub fn needs_animation(&self) -> bool {
         match self.app_mode {
             AppMode::Viewer => self.active_tab == Tab::Settings,
-            AppMode::Cont3xt => self.active_tab == Tab::Settings && self.c3_settings_tab == C3SettingsTab::Overviews,
+            AppMode::Cont3xt => self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Overviews,
             AppMode::Wise => self.active_tab == Tab::Settings,
             AppMode::Parliament => self.active_tab == Tab::Settings,
         }
@@ -825,18 +433,18 @@ impl App {
     /// Returns true if any popup overlay is open that could use background caching
     pub fn has_popup_open(&self) -> bool {
         self.confirm_dialog.is_some()
-            || self.c3_show_card_popup
-            || self.c3_show_overview_popup
-            || self.c3_show_link_popup
-            || self.c3_show_integration_popup
-            || self.c3_show_tags_popup
-            || self.c3_show_date_popup
-            || self.c3_save_json_prompt.is_some()
-            || self.c3_backup_prompt.is_some()
-            || self.c3_view_editor_open
-            || self.c3_role_popup_open
-            || self.c3_int_editor_open
-            || self.c3_ov_fe_popup_open
+            || self.cont3xt.show_card_popup
+            || self.cont3xt.show_overview_popup
+            || self.cont3xt.show_link_popup
+            || self.cont3xt.show_integration_popup
+            || self.cont3xt.show_tags_popup
+            || self.cont3xt.show_date_popup
+            || self.cont3xt.save_json_prompt.is_some()
+            || self.cont3xt.backup_prompt.is_some()
+            || self.cont3xt.view_editor_open
+            || self.cont3xt.role_popup_open
+            || self.cont3xt.int_editor_open
+            || self.cont3xt.ov_fe_popup_open
             || self.show_help
             || self.show_debug
     }
@@ -847,11 +455,11 @@ impl App {
             || self.show_help || self.show_debug || self.parliament.show_detail
             || self.vr_show_column_editor || self.vr_show_layout_popup || self.vr_show_view_popup
             || self.vr_stats_show_column_editor || self.vr_stats_show_layout_popup
-            || self.c3_show_integration_popup || self.c3_show_overview_popup
-            || self.c3_show_link_popup || self.c3_show_card_popup
-            || self.c3_show_tags_popup || self.c3_show_date_popup
-            || self.c3_view_editor_open || self.c3_role_popup_open
-            || self.c3_int_editor_open
+            || self.cont3xt.show_integration_popup || self.cont3xt.show_overview_popup
+            || self.cont3xt.show_link_popup || self.cont3xt.show_card_popup
+            || self.cont3xt.show_tags_popup || self.cont3xt.show_date_popup
+            || self.cont3xt.view_editor_open || self.cont3xt.role_popup_open
+            || self.cont3xt.int_editor_open
     }
 
     pub fn tabs(&self) -> &'static [Tab] {

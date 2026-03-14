@@ -615,8 +615,8 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 if is_c3_detail {
-                    self.c3_detail_filter.clear();
-                    self.c3_detail_scroll = 0;
+                    self.cont3xt.detail_filter.clear();
+                    self.cont3xt.detail_scroll = 0;
                 } else if is_stats {
                     if let Some(ref mut detail) = self.vr_stats_detail {
                         detail.filter.clear();
@@ -640,8 +640,8 @@ impl App {
             }
             KeyCode::Char(c) => {
                 if is_c3_detail {
-                    self.c3_detail_filter.push(c);
-                    self.c3_detail_scroll = 0;
+                    self.cont3xt.detail_filter.push(c);
+                    self.cont3xt.detail_scroll = 0;
                 } else if is_stats {
                     if let Some(ref mut detail) = self.vr_stats_detail {
                         detail.filter.push(c);
@@ -661,8 +661,8 @@ impl App {
             }
             KeyCode::Backspace => {
                 if is_c3_detail {
-                    self.c3_detail_filter.pop();
-                    self.c3_detail_scroll = 0;
+                    self.cont3xt.detail_filter.pop();
+                    self.cont3xt.detail_scroll = 0;
                 } else if is_stats {
                     if let Some(ref mut detail) = self.vr_stats_detail {
                         detail.filter.pop();
