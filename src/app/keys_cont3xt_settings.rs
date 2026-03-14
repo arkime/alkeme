@@ -14,6 +14,12 @@ impl App {
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             // Apply edits back to the group's link
                             let gi = self.cont3xt.lg_editing_group_idx;
+                            let is_editable = self.cont3xt.lg_groups.get(gi)
+                                .map(|g| g.editable).unwrap_or(false);
+                            if !is_editable {
+                                self.status_msg = "Link group is not editable".to_string();
+                                return true;
+                            }
                             let li = self.cont3xt.lg_editor_link_idx;
                             if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
                                 if let Some(link) = group.links.get_mut(li) {
@@ -156,6 +162,12 @@ impl App {
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             // Save group name + roles
                             let idx = self.cont3xt.lg_group_editor_idx;
+                            if let Some(group) = self.cont3xt.lg_groups.get(idx) {
+                                if !group.editable {
+                                    self.status_msg = "Link group is read-only".to_string();
+                                    return true;
+                                }
+                            }
                             if let Some(group) = self.cont3xt.lg_groups.get_mut(idx) {
                                 group.name = self.cont3xt.lg_group_editor_name.clone();
                                 group.view_roles = self.cont3xt.lg_group_editor_view_roles.clone();
@@ -240,6 +252,8 @@ impl App {
                     let has_filter = !self.cont3xt.lg_links_filter.is_empty();
                     // Map selected index to real link index
                     let real_idx = filtered.get(self.cont3xt.lg_links_selected).copied();
+                    let is_editable = self.cont3xt.lg_groups.get(self.cont3xt.lg_editing_group_idx)
+                        .map(|g| g.editable).unwrap_or(false);
                     match key.code {
                         KeyCode::Esc => {
                             if has_filter {
@@ -270,7 +284,7 @@ impl App {
                                 }
                             }
                         }
-                        KeyCode::Char('d') | KeyCode::Char('x') => {
+                        KeyCode::Char('d') | KeyCode::Char('x') if is_editable => {
                             if let Some(ri) = real_idx {
                                 let gi = self.cont3xt.lg_editing_group_idx;
                                 if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
@@ -285,7 +299,7 @@ impl App {
                                 }
                             }
                         }
-                        KeyCode::Char('n') if !has_filter => {
+                        KeyCode::Char('n') if !has_filter && is_editable => {
                             let gi = self.cont3xt.lg_editing_group_idx;
                             if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
                                 let insert_pos = real_idx.map(|r| r + 1).unwrap_or(group.links.len()).min(group.links.len());
@@ -302,7 +316,7 @@ impl App {
                                 self.cont3xt.lg_links_table_state.select(Some(self.cont3xt.lg_links_selected));
                             }
                         }
-                        KeyCode::Char('N') if !has_filter => {
+                        KeyCode::Char('N') if !has_filter && is_editable => {
                             let gi = self.cont3xt.lg_editing_group_idx;
                             if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
                                 group.links.push(crate::api::Cont3xtLink {
@@ -318,7 +332,7 @@ impl App {
                                 self.cont3xt.lg_links_table_state.select(Some(self.cont3xt.lg_links_selected));
                             }
                         }
-                        KeyCode::Char('a') if !has_filter => {
+                        KeyCode::Char('a') if !has_filter && is_editable => {
                             let gi = self.cont3xt.lg_editing_group_idx;
                             if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
                                 let insert_pos = real_idx.map(|r| r + 1).unwrap_or(group.links.len()).min(group.links.len());
@@ -327,7 +341,7 @@ impl App {
                                 self.cont3xt.lg_links_table_state.select(Some(self.cont3xt.lg_links_selected));
                             }
                         }
-                        KeyCode::Char('A') if !has_filter => {
+                        KeyCode::Char('A') if !has_filter && is_editable => {
                             let gi = self.cont3xt.lg_editing_group_idx;
                             if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
                                 group.links.push(crate::api::Cont3xtLink::new_separator());
@@ -335,7 +349,7 @@ impl App {
                                 self.cont3xt.lg_links_table_state.select(Some(self.cont3xt.lg_links_selected));
                             }
                         }
-                        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter => {
+                        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter && is_editable => {
                             if let Some(ri) = real_idx {
                                 let gi = self.cont3xt.lg_editing_group_idx;
                                 if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
@@ -347,7 +361,7 @@ impl App {
                                 }
                             }
                         }
-                        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter => {
+                        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter && is_editable => {
                             if let Some(ri) = real_idx {
                                 let gi = self.cont3xt.lg_editing_group_idx;
                                 if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
@@ -363,6 +377,10 @@ impl App {
                             // Save the group to server
                             let gi = self.cont3xt.lg_editing_group_idx;
                             if let Some(group) = self.cont3xt.lg_groups.get(gi) {
+                                if !group.editable {
+                                    self.status_msg = "Link group is read-only".to_string();
+                                    return true;
+                                }
                                 let group_json = self.c3_lg_build_group_json(group);
                                 let group_id = group.id.clone();
                                 tokio::task::block_in_place(|| {
@@ -738,8 +756,14 @@ impl App {
                             self.cont3xt.ov_level = C3OverviewLevel::List;
                         }
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            // Apply editor fields back to the overview
                             let idx = self.cont3xt.ov_editor_idx;
+                            let is_editable = self.cont3xt.ov_list.get(idx)
+                                .map(|ov| ov.editable).unwrap_or(false);
+                            if !is_editable {
+                                self.status_msg = "Overview is not editable".to_string();
+                                return true;
+                            }
+                            // Apply editor fields back to the overview
                             if let Some(ov) = self.cont3xt.ov_list.get_mut(idx) {
                                 ov.name = self.cont3xt.ov_editor_name.clone();
                                 ov.title = self.cont3xt.ov_editor_title.clone();
@@ -833,6 +857,8 @@ impl App {
                     let filtered = self.c3_ov_filtered_fields();
                     let has_filter = !self.cont3xt.ov_fields_filter.is_empty();
                     let real_idx = filtered.get(self.cont3xt.ov_fields_selected).copied();
+                    let is_editable = self.cont3xt.ov_list.get(self.cont3xt.ov_editor_idx)
+                        .map(|ov| ov.editable).unwrap_or(false);
                     match key.code {
                         KeyCode::Esc => {
                             if has_filter {
@@ -882,7 +908,7 @@ impl App {
                                 }
                             }
                         }
-                        KeyCode::Char('d') | KeyCode::Char('x') => {
+                        KeyCode::Char('d') | KeyCode::Char('x') if is_editable => {
                             if let Some(ri) = real_idx {
                                 let ov_idx = self.cont3xt.ov_editor_idx;
                                 if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx) {
@@ -897,7 +923,7 @@ impl App {
                                 }
                             }
                         }
-                        KeyCode::Char('n') | KeyCode::Char('a') if !has_filter => {
+                        KeyCode::Char('n') | KeyCode::Char('a') if !has_filter && is_editable => {
                             let ov_idx = self.cont3xt.ov_editor_idx;
                             if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx) {
                                 let insert_pos = real_idx.map(|r| r + 1).unwrap_or(ov.fields.len()).min(ov.fields.len());
@@ -912,7 +938,7 @@ impl App {
                                 self.cont3xt.ov_fields_table_state.select(Some(self.cont3xt.ov_fields_selected));
                             }
                         }
-                        KeyCode::Char('N') | KeyCode::Char('A') if !has_filter => {
+                        KeyCode::Char('N') | KeyCode::Char('A') if !has_filter && is_editable => {
                             let ov_idx = self.cont3xt.ov_editor_idx;
                             if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx) {
                                 ov.fields.push(crate::api::Cont3xtOverviewField {
@@ -926,7 +952,7 @@ impl App {
                                 self.cont3xt.ov_fields_table_state.select(Some(self.cont3xt.ov_fields_selected));
                             }
                         }
-                        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter => {
+                        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter && is_editable => {
                             if let Some(ri) = real_idx {
                                 let ov_idx = self.cont3xt.ov_editor_idx;
                                 if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx) {
@@ -938,7 +964,7 @@ impl App {
                                 }
                             }
                         }
-                        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter => {
+                        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter && is_editable => {
                             if let Some(ri) = real_idx {
                                 let ov_idx = self.cont3xt.ov_editor_idx;
                                 if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx) {
@@ -1032,6 +1058,15 @@ impl App {
     }
 
     pub(crate) fn c3_save_view_editor(&mut self) {
+        // Block save for non-editable views
+        if let Some(ref id) = self.cont3xt.view_editor_id {
+            if let Some(v) = self.cont3xt.settings_views.iter().find(|v| v.id == *id) {
+                if !v.editable {
+                    self.status_msg = "View is read-only".to_string();
+                    return;
+                }
+            }
+        }
         let name = self.cont3xt.view_editor_name.trim().to_string();
         if name.is_empty() {
             self.status_msg = "View name cannot be empty".to_string();

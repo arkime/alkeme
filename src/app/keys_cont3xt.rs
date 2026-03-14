@@ -1805,11 +1805,7 @@ impl App {
                 let filtered = self.c3_settings_filtered_views();
                 if let Some(&idx) = filtered.get(self.cont3xt.settings_views_selected) {
                     let view = self.cont3xt.settings_views[idx].clone();
-                    if view.editable {
-                        self.c3_open_edit_view_editor(&view);
-                    } else {
-                        self.status_msg = "View is not editable".to_string();
-                    }
+                    self.c3_open_edit_view_editor(&view);
                 }
             }
             KeyCode::Char('d') | KeyCode::Char('x') if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Views => {
@@ -1931,33 +1927,24 @@ impl App {
                 let filtered = self.c3_lg_filtered_groups();
                 if let Some(&idx) = filtered.get(self.cont3xt.lg_selected) {
                     let group = &self.cont3xt.lg_groups[idx];
-                    if group.editable {
-                        self.cont3xt.lg_group_editor_idx = idx;
-                        self.cont3xt.lg_group_editor_name = group.name.clone();
-                        self.cont3xt.lg_group_editor_cursor = group.name.len();
-                        self.cont3xt.lg_group_editor_view_roles = group.view_roles.clone();
-                        self.cont3xt.lg_group_editor_edit_roles = group.edit_roles.clone();
-                        self.cont3xt.lg_group_editor_field = C3GroupEditorField::Name;
-                        self.cont3xt.lg_level = C3LinkGroupLevel::GroupEditor;
-                    } else {
-                        self.status_msg = "Link group is not editable".to_string();
-                    }
+                    self.cont3xt.lg_group_editor_idx = idx;
+                    self.cont3xt.lg_group_editor_name = group.name.clone();
+                    self.cont3xt.lg_group_editor_cursor = group.name.len();
+                    self.cont3xt.lg_group_editor_view_roles = group.view_roles.clone();
+                    self.cont3xt.lg_group_editor_edit_roles = group.edit_roles.clone();
+                    self.cont3xt.lg_group_editor_field = C3GroupEditorField::Name;
+                    self.cont3xt.lg_level = C3LinkGroupLevel::GroupEditor;
                 }
             }
             KeyCode::Enter if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::LinkGroups => {
                 let filtered = self.c3_lg_filtered_groups();
                 if let Some(&idx) = filtered.get(self.cont3xt.lg_selected) {
-                    let group = &self.cont3xt.lg_groups[idx];
-                    if group.editable {
-                        self.cont3xt.lg_editing_group_idx = idx;
-                        self.cont3xt.lg_links_selected = 0;
-                        self.cont3xt.lg_links_table_state.select(Some(0));
-                        self.cont3xt.lg_links_filter.clear();
-                        self.cont3xt.lg_links_filtering = false;
-                        self.cont3xt.lg_level = C3LinkGroupLevel::LinkList;
-                    } else {
-                        self.status_msg = "Link group is not editable".to_string();
-                    }
+                    self.cont3xt.lg_editing_group_idx = idx;
+                    self.cont3xt.lg_links_selected = 0;
+                    self.cont3xt.lg_links_table_state.select(Some(0));
+                    self.cont3xt.lg_links_filter.clear();
+                    self.cont3xt.lg_links_filtering = false;
+                    self.cont3xt.lg_level = C3LinkGroupLevel::LinkList;
                 }
             }
             KeyCode::Char('d') | KeyCode::Char('x') if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::LinkGroups => {
@@ -2013,43 +2000,35 @@ impl App {
                 let filtered = self.c3_ov_filtered_list();
                 if let Some(&idx) = filtered.get(self.cont3xt.ov_selected) {
                     let ov = &self.cont3xt.ov_list[idx];
-                    if ov.editable {
-                        self.cont3xt.ov_editor_idx = idx;
-                        self.cont3xt.ov_editor_name = ov.name.clone();
-                        self.cont3xt.ov_editor_title = ov.title.clone();
-                        self.cont3xt.ov_editor_itype = ov.itype.clone();
-                        self.cont3xt.ov_editor_view_roles = ov.view_roles.clone();
-                        self.cont3xt.ov_editor_edit_roles = ov.edit_roles.clone();
-                        self.cont3xt.ov_editor_field = C3OverviewEditorField::Name;
-                        self.cont3xt.ov_editor_cursor = ov.name.len();
-                        self.cont3xt.ov_level = C3OverviewLevel::Editor;
-                    } else {
-                        self.status_msg = "Overview is not editable".to_string();
-                    }
+                    self.cont3xt.ov_editor_idx = idx;
+                    self.cont3xt.ov_editor_name = ov.name.clone();
+                    self.cont3xt.ov_editor_title = ov.title.clone();
+                    self.cont3xt.ov_editor_itype = ov.itype.clone();
+                    self.cont3xt.ov_editor_view_roles = ov.view_roles.clone();
+                    self.cont3xt.ov_editor_edit_roles = ov.edit_roles.clone();
+                    self.cont3xt.ov_editor_field = C3OverviewEditorField::Name;
+                    self.cont3xt.ov_editor_cursor = ov.name.len();
+                    self.cont3xt.ov_level = C3OverviewLevel::Editor;
                 }
             }
             KeyCode::Enter if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Overviews => {
                 let filtered = self.c3_ov_filtered_list();
                 if let Some(&idx) = filtered.get(self.cont3xt.ov_selected) {
                     let ov = &self.cont3xt.ov_list[idx];
-                    if ov.editable {
-                        self.cont3xt.ov_editor_idx = idx;
-                        self.cont3xt.ov_editor_name = ov.name.clone();
-                        self.cont3xt.ov_editor_title = ov.title.clone();
-                        self.cont3xt.ov_editor_itype = ov.itype.clone();
-                        self.cont3xt.ov_editor_view_roles = ov.view_roles.clone();
-                        self.cont3xt.ov_editor_edit_roles = ov.edit_roles.clone();
-                        self.cont3xt.ov_editor_field = C3OverviewEditorField::Name;
-                        self.cont3xt.ov_editor_cursor = ov.name.len();
-                        // Go directly to field list
-                        self.cont3xt.ov_fields_selected = 0;
-                        self.cont3xt.ov_fields_table_state.select(Some(0));
-                        self.cont3xt.ov_fields_filter.clear();
-                        self.cont3xt.ov_fields_filtering = false;
-                        self.cont3xt.ov_level = C3OverviewLevel::FieldList;
-                    } else {
-                        self.status_msg = "Overview is not editable".to_string();
-                    }
+                    self.cont3xt.ov_editor_idx = idx;
+                    self.cont3xt.ov_editor_name = ov.name.clone();
+                    self.cont3xt.ov_editor_title = ov.title.clone();
+                    self.cont3xt.ov_editor_itype = ov.itype.clone();
+                    self.cont3xt.ov_editor_view_roles = ov.view_roles.clone();
+                    self.cont3xt.ov_editor_edit_roles = ov.edit_roles.clone();
+                    self.cont3xt.ov_editor_field = C3OverviewEditorField::Name;
+                    self.cont3xt.ov_editor_cursor = ov.name.len();
+                    // Go directly to field list
+                    self.cont3xt.ov_fields_selected = 0;
+                    self.cont3xt.ov_fields_table_state.select(Some(0));
+                    self.cont3xt.ov_fields_filter.clear();
+                    self.cont3xt.ov_fields_filtering = false;
+                    self.cont3xt.ov_level = C3OverviewLevel::FieldList;
                 }
             }
             KeyCode::Char('d') | KeyCode::Char('x') if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Overviews => {

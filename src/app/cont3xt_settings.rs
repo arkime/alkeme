@@ -428,6 +428,13 @@ impl App {
 
     pub async fn c3_ov_save(&mut self) {
         let idx = self.cont3xt.ov_editor_idx;
+        // Block save for non-editable overviews
+        if let Some(ov) = self.cont3xt.ov_list.get(idx) {
+            if !ov.editable {
+                self.status_msg = "Overview is read-only".to_string();
+                return;
+            }
+        }
         // Apply editor fields to the overview
         if let Some(ov) = self.cont3xt.ov_list.get_mut(idx) {
             ov.name = self.cont3xt.ov_editor_name.clone();
@@ -450,6 +457,12 @@ impl App {
     /// Save the field editor contents back to the overview field and persist
     pub fn c3_ov_fe_save_field(&mut self) {
         let ov_idx = self.cont3xt.ov_editor_idx;
+        let is_editable = self.cont3xt.ov_list.get(ov_idx)
+            .map(|ov| ov.editable).unwrap_or(false);
+        if !is_editable {
+            self.status_msg = "Overview is not editable".to_string();
+            return;
+        }
         let fi = self.cont3xt.ov_field_editor_idx;
         if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx) {
             if let Some(field) = ov.fields.get_mut(fi) {

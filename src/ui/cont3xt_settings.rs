@@ -146,7 +146,12 @@ pub(super) fn c3_draw_view_editor(f: &mut Frame, app: &App, area: Rect) {
     let popup_area = center_popup(popup_w, popup_h, area);
     f.render_widget(Clear, popup_area);
 
-    let title = if app.cont3xt.view_editor_id.is_some() { " Edit View " } else { " New View " };
+    let is_editable = app.cont3xt.view_editor_id.as_ref()
+        .and_then(|id| app.cont3xt.settings_views.iter().find(|v| v.id == *id))
+        .map(|v| v.editable).unwrap_or(true);
+    let title = if app.cont3xt.view_editor_id.is_some() {
+        if is_editable { " Edit View " } else { " View (read-only) " }
+    } else { " New View " };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
@@ -637,8 +642,13 @@ fn c3_draw_lg_group_editor(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(Clear, popup_area);
 
     let idx = app.cont3xt.lg_group_editor_idx;
+    let is_editable = app.cont3xt.lg_groups.get(idx).map(|g| g.editable).unwrap_or(false);
     let title = if let Some(group) = app.cont3xt.lg_groups.get(idx) {
-        format!(" Edit Group: {} ", group.name)
+        if is_editable {
+            format!(" Edit Group: {} ", group.name)
+        } else {
+            format!(" Group: {} (read-only) ", group.name)
+        }
     } else {
         " Edit Group ".to_string()
     };
@@ -852,7 +862,13 @@ fn c3_draw_lg_link_list(f: &mut Frame, app: &mut App, area: Rect) {
         ],
     )
     .header(header)
-    .block(Block::default().borders(Borders::ALL).title(format!(" Links: {} ", group.name)))
+    .block(Block::default().borders(Borders::ALL).title(
+        if group.editable {
+            format!(" Links: {} ", group.name)
+        } else {
+            format!(" Links: {} (read-only) ", group.name)
+        }
+    ))
     .row_highlight_style(Style::default().bg(Color::DarkGray));
 
     f.render_stateful_widget(table, chunks[1], &mut app.cont3xt.lg_links_table_state);
@@ -866,10 +882,16 @@ fn c3_draw_lg_link_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let popup_area = center_popup(popup_width, popup_height, area);
     f.render_widget(Clear, popup_area);
 
+    let lg_editable = app.cont3xt.lg_groups.get(app.cont3xt.lg_editing_group_idx)
+        .map(|g| g.editable).unwrap_or(false);
     let title = if app.cont3xt.lg_editor_link.name.is_empty() {
-        " Edit Link ".to_string()
+        if lg_editable { " Edit Link ".to_string() } else { " Link (read-only) ".to_string() }
     } else {
-        format!(" Edit Link: {} ", app.cont3xt.lg_editor_link.name)
+        if lg_editable {
+            format!(" Edit Link: {} ", app.cont3xt.lg_editor_link.name)
+        } else {
+            format!(" Link: {} (read-only) ", app.cont3xt.lg_editor_link.name)
+        }
     };
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1066,7 +1088,11 @@ fn c3_draw_ov_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let popup_area = center_popup(popup_width, popup_height, area);
     f.render_widget(Clear, popup_area);
 
-    let title = format!(" Edit Overview: {} ", ov.name);
+    let title = if ov.editable {
+        format!(" Edit Overview: {} ", ov.name)
+    } else {
+        format!(" Overview: {} (read-only) ", ov.name)
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
@@ -1205,7 +1231,13 @@ fn c3_draw_ov_field_list(f: &mut Frame, app: &mut App, area: Rect) {
         ],
     )
     .header(header)
-    .block(Block::default().borders(Borders::ALL).title(format!(" Fields: {} ", ov.name)))
+    .block(Block::default().borders(Borders::ALL).title(
+        if ov.editable {
+            format!(" Fields: {} ", ov.name)
+        } else {
+            format!(" Fields: {} (read-only) ", ov.name)
+        }
+    ))
     .row_highlight_style(Style::default().bg(Color::DarkGray));
 
     f.render_stateful_widget(table, chunks[1], &mut app.cont3xt.ov_fields_table_state);
@@ -1222,10 +1254,12 @@ fn c3_draw_ov_field_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let popup_area = center_popup(popup_width, popup_height, area);
     f.render_widget(Clear, popup_area);
 
+    let ov_editable = app.cont3xt.ov_list.get(app.cont3xt.ov_editor_idx)
+        .map(|ov| ov.editable).unwrap_or(false);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(" Edit Field ");
+        .title(if ov_editable { " Edit Field " } else { " Field (read-only) " });
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
 
