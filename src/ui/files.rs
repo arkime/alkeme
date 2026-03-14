@@ -2,9 +2,9 @@ use super::*;
 use super::stats::{get_nested_value, format_stats_cell_dynamic, format_stats_value};
 
 pub(super) fn draw_files_toolbar(f: &mut Frame, app: &App, area: Rect) {
-    let total = app.vr_files_filtered as usize;
-    let start = app.vr_files_page_start;
-    let end = (start + app.vr_files_data.len()).min(total);
+    let total = app.viewer.files_filtered as usize;
+    let start = app.viewer.files_page_start;
+    let end = (start + app.viewer.files_data.len()).min(total);
     let page_info = if total > 0 {
         format!(" Files [{}-{} of {}] ", start + 1, end, total)
     } else {
@@ -20,9 +20,9 @@ pub(super) fn draw_files_toolbar(f: &mut Frame, app: &App, area: Rect) {
         .split(area);
 
     let filter_display = if app.input_mode == InputMode::Expression {
-        &app.vr_files_filter_edit
+        &app.viewer.files_filter_edit
     } else {
-        &app.vr_files_filter
+        &app.viewer.files_filter
     };
     let is_editing = app.input_mode == InputMode::Expression;
     render_text_input(f, filter_display, app.expression_cursor, is_editing, " Filter (/) ", toolbar_chunks[0]);
@@ -39,17 +39,17 @@ pub(super) fn draw_files_toolbar(f: &mut Frame, app: &App, area: Rect) {
 
 pub(super) fn draw_files(f: &mut Frame, app: &mut App, area: Rect) {
     draw_files_list(f, app, area);
-    if app.vr_files_view == crate::app::StatsView::Detail {
+    if app.viewer.files_view == crate::app::StatsView::Detail {
         draw_files_detail(f, app, area);
     }
 }
 
 fn draw_files_list(f: &mut Frame, app: &mut App, area: Rect) {
-    let columns = app.vr_files_columns.clone();
+    let columns = app.viewer.files_columns.clone();
 
     let header_cells = columns.iter().enumerate().map(|(i, col)| {
-        let is_sorted = i == app.vr_files_sort_column;
-        let text = sort_header_label(&col.label, is_sorted, app.vr_files_sort_desc);
+        let is_sorted = i == app.viewer.files_sort_column;
+        let text = sort_header_label(&col.label, is_sorted, app.viewer.files_sort_desc);
         let style = sort_header_style(is_sorted);
         let line = if col.is_numeric() {
             Line::from(text).alignment(Alignment::Right)
@@ -60,7 +60,7 @@ fn draw_files_list(f: &mut Frame, app: &mut App, area: Rect) {
     });
     let header = Row::new(header_cells).height(1);
 
-    let rows: Vec<Row> = app.vr_files_data.iter().map(|item| {
+    let rows: Vec<Row> = app.viewer.files_data.iter().map(|item| {
         let cells = columns.iter().map(|col| {
             let val = get_nested_value(item, &col.field);
             let text = format_stats_cell_dynamic(col, val, item);
@@ -82,16 +82,16 @@ fn draw_files_list(f: &mut Frame, app: &mut App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(format!(" Files [{} total] ", app.vr_files_total)),
+                .title(format!(" Files [{} total] ", app.viewer.files_total)),
         )
         .row_highlight_style(Style::default().bg(Color::DarkGray));
 
     app.visible_rows = area.height.saturating_sub(4) as usize;
-    f.render_stateful_widget(table, area, &mut app.vr_files_table_state);
+    f.render_stateful_widget(table, area, &mut app.viewer.files_table_state);
 }
 
 fn draw_files_detail(f: &mut Frame, app: &App, area: Rect) {
-    let detail = match &app.vr_files_detail {
+    let detail = match &app.viewer.files_detail {
         Some(d) => d,
         None => return,
     };

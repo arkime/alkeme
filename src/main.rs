@@ -477,11 +477,11 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
 
         // Viewer-specific background tasks
         if app.app_mode == app::AppMode::Viewer {
-            if app.vr_pending_packets_fetch {
-                app.vr_pending_packets_fetch = false;
-                let node = std::mem::take(&mut app.vr_packets_node_pending);
-                let id = std::mem::take(&mut app.vr_packets_id_pending);
-                let raw = app.vr_packets_raw;
+            if app.viewer.pending_packets_fetch {
+                app.viewer.pending_packets_fetch = false;
+                let node = std::mem::take(&mut app.viewer.packets_node_pending);
+                let id = std::mem::take(&mut app.viewer.packets_id_pending);
+                let raw = app.viewer.packets_raw;
                 let url = app.client.vr_packets_url(&node, &id, raw);
                 let client = app.client.clone_for_fetch();
                 packets_handle = Some(tokio::spawn(async move {
@@ -492,10 +492,10 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 continue;
             }
 
-            if app.vr_pending_summary_fetch {
-                app.vr_pending_summary_fetch = false;
-                let field = app.vr_summary_field.clone();
-                let url = app.client.vr_summary_url(&app.expression, app.time_range.date_value(), &app.vr_active_view);
+            if app.viewer.pending_summary_fetch {
+                app.viewer.pending_summary_fetch = false;
+                let field = app.viewer.summary_field.clone();
+                let url = app.client.vr_summary_url(&app.expression, app.time_range.date_value(), &app.viewer.active_view);
                 let client = app.client.clone_for_fetch();
                 summary_handle = Some(tokio::spawn(async move {
                     let body = client.fetch_post(&url, &[("fields", field.as_str())]).await?;
@@ -519,11 +519,11 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     match handle.await {
                         Ok(Ok(items)) => {
                             let count = items.len();
-                            let field = app.vr_summary_field.clone();
-                            app.vr_summary_data = items;
+                            let field = app.viewer.summary_field.clone();
+                            app.viewer.summary_data = items;
                             app.vr_sort_summary_data();
-                            app.vr_summary_selected = 0;
-                            app.vr_summary_table_state.select(Some(0));
+                            app.viewer.summary_selected = 0;
+                            app.viewer.summary_table_state.select(Some(0));
                             app.status_msg = format!("Summary: {} items for {}", count, field);
                         }
                         Ok(Err(e)) => {
@@ -545,10 +545,10 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     let handle = packets_handle.take().unwrap();
                     match handle.await {
                         Ok(Ok(mut data)) => {
-                            data.total = app.vr_packets_total_pending;
-                            app.status_msg = format!("{} packets loaded", app.vr_packets_total_pending);
-                            app.vr_packets_view = Some(data);
-                            app.vr_packets_scroll = 0;
+                            data.total = app.viewer.packets_total_pending;
+                            app.status_msg = format!("{} packets loaded", app.viewer.packets_total_pending);
+                            app.viewer.packets_view = Some(data);
+                            app.viewer.packets_scroll = 0;
                         }
                         Ok(Err(e)) => {
                             app.status_msg = format!("Error fetching packets: {e}");
@@ -566,7 +566,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             // Auto-refresh stats every 30 seconds when on Stats tab
             if app.active_tab == app::Tab::Stats
                 && app.input_mode == app::InputMode::Normal
-                && app.vr_stats_last_refresh.elapsed() >= Duration::from_secs(30)
+                && app.viewer.stats_last_refresh.elapsed() >= Duration::from_secs(30)
             {
                 app.vr_fetch_stats().await;
                 needs_redraw = true;

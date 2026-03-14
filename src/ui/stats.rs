@@ -17,16 +17,16 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
         .collect();
     let tabs = Tabs::new(titles)
         .block(Block::default().borders(Borders::ALL).title(" Stats "))
-        .select(StatsTab::ALL.iter().position(|&t| t == app.vr_stats_tab).unwrap_or(0))
+        .select(StatsTab::ALL.iter().position(|&t| t == app.viewer.stats_tab).unwrap_or(0))
         .style(Style::default().fg(Color::White))
         .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
     f.render_widget(tabs, toolbar_chunks[0]);
 
     // Filter input
     let filter_display = if app.input_mode == InputMode::Expression {
-        &app.vr_stats_filter_edit
+        &app.viewer.stats_filter_edit
     } else {
-        &app.vr_stats_filter
+        &app.viewer.stats_filter
     };
     let is_editing = app.input_mode == InputMode::Expression;
     render_text_input(f, filter_display, app.expression_cursor, is_editing, " Filter (/) ", toolbar_chunks[1]);
@@ -34,7 +34,7 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
 
 pub(super) fn draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
     draw_stats_list(f, app, area);
-    if app.vr_stats_view == StatsView::Detail {
+    if app.viewer.stats_view == StatsView::Detail {
         draw_stats_detail(f, app, area);
     }
 }
@@ -43,8 +43,8 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
     let columns = app.vr_stats_active_columns().clone();
 
     let header_cells = columns.iter().enumerate().map(|(i, col)| {
-        let is_sorted = i == app.vr_stats_sort_column;
-        let text = sort_header_label(&col.label, is_sorted, app.vr_stats_sort_desc);
+        let is_sorted = i == app.viewer.stats_sort_column;
+        let text = sort_header_label(&col.label, is_sorted, app.viewer.stats_sort_desc);
         let style = sort_header_style(is_sorted);
         let line = if col.is_numeric() {
             Line::from(text).alignment(Alignment::Right)
@@ -55,7 +55,7 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
     });
     let header = Row::new(header_cells).height(1);
 
-    let rows: Vec<Row> = app.vr_stats_data.iter().map(|item| {
+    let rows: Vec<Row> = app.viewer.stats_data.iter().map(|item| {
         let cells = columns.iter().map(|col| {
             let val = get_nested_value(item, &col.field);
             let text = format_stats_cell_dynamic(col, val, item);
@@ -74,8 +74,8 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
 
     let title = format!(
         " {} [{} items] ",
-        app.vr_stats_tab.name(),
-        app.vr_stats_data.len()
+        app.viewer.stats_tab.name(),
+        app.viewer.stats_data.len()
     );
 
     let table = Table::new(rows, widths)
@@ -87,7 +87,7 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .row_highlight_style(Style::default().bg(Color::DarkGray));
 
-    f.render_stateful_widget(table, area, &mut app.vr_stats_table_state);
+    f.render_stateful_widget(table, area, &mut app.viewer.stats_table_state);
 }
 
 pub(super) fn get_nested_value<'a>(item: &'a serde_json::Value, field: &str) -> &'a serde_json::Value {
@@ -196,7 +196,7 @@ pub(super) fn format_stats_value(val: &serde_json::Value) -> String {
 }
 
 fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
-    let detail = match &app.vr_stats_detail {
+    let detail = match &app.viewer.stats_detail {
         Some(d) => d,
         None => return,
     };
@@ -211,7 +211,7 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
     let filter_lower = detail.filter.to_lowercase();
 
     // Show exclusion status banner for DB Nodes
-    if app.vr_stats_tab == crate::app::StatsTab::DBStats {
+    if app.viewer.stats_tab == crate::app::StatsTab::DBStats {
         let node_excluded = detail.data.get("nodeExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
         let ip_excluded = detail.data.get("ipExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
         let node_style = if node_excluded {
@@ -236,7 +236,7 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // Build field → friendly label map from all columns for this tab
-    let all_cols = crate::app::stats_tab_all_columns(app.vr_stats_tab);
+    let all_cols = crate::app::stats_tab_all_columns(app.viewer.stats_tab);
     let label_map: std::collections::HashMap<&str, &str> = all_cols.iter()
         .map(|c| (c.field.as_str(), c.label.as_str()))
         .collect();
@@ -270,11 +270,11 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let title = if !detail.filter.is_empty() {
-        format!(" {} Detail [filter: {}] ", app.vr_stats_tab.name(), detail.filter)
+        format!(" {} Detail [filter: {}] ", app.viewer.stats_tab.name(), detail.filter)
     } else if app.input_mode == crate::app::InputMode::DetailFilter {
-        format!(" {} Detail [filter: ] ", app.vr_stats_tab.name())
+        format!(" {} Detail [filter: ] ", app.viewer.stats_tab.name())
     } else {
-        format!(" {} Detail (/ filter, Esc close) ", app.vr_stats_tab.name())
+        format!(" {} Detail (/ filter, Esc close) ", app.viewer.stats_tab.name())
     };
 
     let paragraph = Paragraph::new(lines)

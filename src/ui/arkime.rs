@@ -1,12 +1,12 @@
 use super::*;
 
 pub(super) fn draw_arkime(f: &mut Frame, app: &mut App, area: Rect) {
-    let arkime_title = if let Some(ref v) = app.vr_active_view_name {
+    let arkime_title = if let Some(ref v) = app.viewer.active_view_name {
         format!(" Arkime Summary [view: {}] ", v)
     } else {
         " Arkime Summary ".to_string()
     };
-    if app.vr_summary_field.is_empty() {
+    if app.viewer.summary_field.is_empty() {
         // Show prompt to select a field
         let block = Block::default()
             .borders(Borders::ALL)
@@ -35,8 +35,8 @@ pub(super) fn draw_arkime(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_summary_bar_chart(f: &mut Frame, app: &App, area: Rect) {
-    let metric = app.vr_summary_metric;
-    let data: Vec<(&str, u64)> = app.vr_summary_data.iter()
+    let metric = app.viewer.summary_metric;
+    let data: Vec<(&str, u64)> = app.viewer.summary_data.iter()
         .map(|item| {
             let label = item.item.as_str().unwrap_or("");
             let val = match metric {
@@ -51,7 +51,7 @@ fn draw_summary_bar_chart(f: &mut Frame, app: &App, area: Rect) {
     if data.is_empty() {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(format!(" {} - {} (no data) [G]raph type ", app.vr_summary_field, metric.label()));
+            .title(format!(" {} - {} (no data) [G]raph type ", app.viewer.summary_field, metric.label()));
         f.render_widget(block, area);
         return;
     }
@@ -78,7 +78,7 @@ fn draw_summary_bar_chart(f: &mut Frame, app: &App, area: Rect) {
     let chart = BarChart::default()
         .block(Block::default()
             .borders(Borders::ALL)
-            .title(format!(" {} - {} [G]raph type ", app.vr_summary_field, metric.label())))
+            .title(format!(" {} - {} [G]raph type ", app.viewer.summary_field, metric.label())))
         .data(BarGroup::default().bars(&bars))
         .bar_width(bar_width)
         .bar_gap(1)
@@ -90,10 +90,10 @@ fn draw_summary_bar_chart(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_summary_table(f: &mut Frame, app: &mut App, area: Rect) {
     let sort_lbl = |sort: SummarySort, label: &str| -> String {
-        sort_header_label(label, app.vr_summary_sort == sort, app.vr_summary_sort_desc)
+        sort_header_label(label, app.viewer.summary_sort == sort, app.viewer.summary_sort_desc)
     };
     let sort_sty = |sort: SummarySort| -> Style {
-        sort_header_style(app.vr_summary_sort == sort)
+        sort_header_style(app.viewer.summary_sort == sort)
     };
     let header = Row::new(vec![
         Cell::from(sort_lbl(SummarySort::Value, "Value")).style(sort_sty(SummarySort::Value)),
@@ -104,7 +104,7 @@ fn draw_summary_table(f: &mut Frame, app: &mut App, area: Rect) {
     .height(1)
     .bottom_margin(0);
 
-    let rows: Vec<Row> = app.vr_summary_data.iter().map(|item| {
+    let rows: Vec<Row> = app.viewer.summary_data.iter().map(|item| {
         let label = match &item.item {
             serde_json::Value::String(s) => s.clone(),
             other => other.to_string(),
@@ -131,10 +131,10 @@ fn draw_summary_table(f: &mut Frame, app: &mut App, area: Rect) {
         ],
     )
     .header(header)
-    .block(Block::default().borders(Borders::ALL).title(format!(" {} [f]ield [s]ort [S]ort dir ", app.vr_summary_field)))
+    .block(Block::default().borders(Borders::ALL).title(format!(" {} [f]ield [s]ort [S]ort dir ", app.viewer.summary_field)))
     .row_highlight_style(highlight_style);
 
-    f.render_stateful_widget(table, area, &mut app.vr_summary_table_state);
+    f.render_stateful_widget(table, area, &mut app.viewer.summary_table_state);
 }
 
 pub(super) fn draw_field_selector(f: &mut Frame, app: &App, area: Rect) {
@@ -154,20 +154,20 @@ pub(super) fn draw_field_selector(f: &mut Frame, app: &App, area: Rect) {
 
     // Filter input
     let filter_style = Style::default().fg(Color::Yellow);
-    let filter_display = if app.vr_field_filter.is_empty() {
+    let filter_display = if app.viewer.field_filter.is_empty() {
         "Type to filter fields...".to_string()
     } else {
-        app.vr_field_filter.clone()
+        app.viewer.field_filter.clone()
     };
     let filter_input = Paragraph::new(Span::styled(&filter_display,
-        if app.vr_field_filter.is_empty() { Style::default().fg(Color::DarkGray) } else { filter_style }))
+        if app.viewer.field_filter.is_empty() { Style::default().fg(Color::DarkGray) } else { filter_style }))
         .block(Block::default().borders(Borders::ALL).title(" Select Field "));
     f.render_widget(filter_input, chunks[0]);
 
     // Field list
     let filtered = app.vr_filtered_fields();
     let items: Vec<ListItem> = filtered.iter().enumerate().map(|(i, field)| {
-        let style = if i == app.vr_field_filter_selected {
+        let style = if i == app.viewer.field_filter_selected {
             Style::default().bg(Color::DarkGray).fg(Color::Yellow)
         } else {
             Style::default()

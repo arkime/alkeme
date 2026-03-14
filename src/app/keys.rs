@@ -95,7 +95,7 @@ impl App {
             self.handle_detail_filter_key(key);
             return;
         }
-        if self.vr_detail_action_menu.is_some() {
+        if self.viewer.detail_action_menu.is_some() {
             self.handle_detail_action_key(key).await;
             return;
         }
@@ -103,7 +103,7 @@ impl App {
             self.handle_field_selector_key(key).await;
             return;
         }
-        if self.vr_packets_view.is_some() {
+        if self.viewer.packets_view.is_some() {
             self.handle_packets_key(key);
             return;
         }
@@ -111,31 +111,31 @@ impl App {
             self.handle_expression_key(key).await;
             return;
         }
-        if self.vr_show_column_editor {
+        if self.viewer.show_column_editor {
             self.handle_column_editor_key(key).await;
             return;
         }
-        if self.vr_show_layout_popup {
+        if self.viewer.show_layout_popup {
             self.handle_layout_popup_key(key).await;
             return;
         }
-        if self.vr_stats_show_column_editor {
+        if self.viewer.stats_show_column_editor {
             self.handle_stats_column_editor_key(key).await;
             return;
         }
-        if self.vr_stats_show_layout_popup {
+        if self.viewer.stats_show_layout_popup {
             self.handle_stats_layout_popup_key(key).await;
             return;
         }
-        if self.vr_files_show_column_editor {
+        if self.viewer.files_show_column_editor {
             self.handle_files_column_editor_key(key).await;
             return;
         }
-        if self.vr_files_show_layout_popup {
+        if self.viewer.files_show_layout_popup {
             self.handle_files_layout_popup_key(key).await;
             return;
         }
-        if self.vr_show_view_popup {
+        if self.viewer.show_view_popup {
             self.handle_view_popup_key(key).await;
             return;
         }
@@ -157,20 +157,20 @@ impl App {
             crate::app::AppMode::Viewer => {
                 match self.active_tab {
                     Tab::Stats => {
-                        match self.vr_stats_view {
+                        match self.viewer.stats_view {
                             StatsView::List => self.handle_stats_key(key).await,
                             StatsView::Detail => self.handle_stats_detail_key(key),
                         }
                     }
                     Tab::Files => {
-                        match self.vr_files_view {
+                        match self.viewer.files_view {
                             StatsView::List => self.handle_files_key(key).await,
                             StatsView::Detail => self.handle_files_detail_key(key),
                         }
                     }
                     Tab::Arkime => self.handle_arkime_key(key).await,
                     _ => {
-                        match self.vr_session_view {
+                        match self.viewer.session_view {
                             SessionView::List => self.handle_list_key(key).await,
                             SessionView::Detail => self.handle_detail_key(key).await,
                         }
@@ -202,9 +202,9 @@ impl App {
         } else if is_ws_query {
             &mut self.wise.query_value_edit
         } else if is_stats {
-            &mut self.vr_stats_filter_edit
+            &mut self.viewer.stats_filter_edit
         } else if is_files {
-            &mut self.vr_files_filter_edit
+            &mut self.viewer.files_filter_edit
         } else {
             &mut self.expression_edit
         };
@@ -224,19 +224,19 @@ impl App {
                     self.input_mode = InputMode::Normal;
                     self.ws_run_query().await;
                 } else if is_stats {
-                    self.vr_stats_filter = self.vr_stats_filter_edit.clone();
+                    self.viewer.stats_filter = self.viewer.stats_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
                     self.vr_fetch_stats().await;
                 } else if is_files {
-                    self.vr_files_filter = self.vr_files_filter_edit.clone();
+                    self.viewer.files_filter = self.viewer.files_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
-                    self.vr_files_page_start = 0;
-                    self.vr_files_selected = 0;
+                    self.viewer.files_page_start = 0;
+                    self.viewer.files_selected = 0;
                     self.vr_fetch_files().await;
                 } else {
                     self.expression = self.expression_edit.clone();
                     self.input_mode = InputMode::Normal;
-                    self.vr_page_start = 0;
+                    self.viewer.page_start = 0;
                     match self.app_mode {
                         crate::app::AppMode::Cont3xt => {
                             self.c3_request_search();
@@ -259,9 +259,9 @@ impl App {
                 } else if is_ws_query {
                     self.wise.query_value_edit = self.wise.query_value.clone();
                 } else if is_stats {
-                    self.vr_stats_filter_edit = self.vr_stats_filter.clone();
+                    self.viewer.stats_filter_edit = self.viewer.stats_filter.clone();
                 } else if is_files {
-                    self.vr_files_filter_edit = self.vr_files_filter.clone();
+                    self.viewer.files_filter_edit = self.viewer.files_filter.clone();
                 } else {
                     self.expression_edit = self.expression.clone();
                 }

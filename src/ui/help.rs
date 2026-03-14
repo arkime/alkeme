@@ -8,7 +8,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
         ($s:expr) => { Line::from(Span::styled($s, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))) };
     }
 
-    let (title, help_text) = if app.vr_packets_view.is_some() {
+    let (title, help_text) = if app.viewer.packets_view.is_some() {
         ("Packets", vec![
             hdr!("Navigation"),
             blank(),
@@ -30,7 +30,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![Span::styled("  ██               ", Style::default().fg(Color::Green)), Span::raw("Destination packets")]),
             Line::from(vec![Span::styled("  ██               ", Style::default().fg(Color::DarkGray)), Span::raw("Hex offset")]),
         ])
-    } else if app.vr_session_view == SessionView::Detail && app.active_tab == Tab::Sessions {
+    } else if app.viewer.session_view == SessionView::Detail && app.active_tab == Tab::Sessions {
         ("Session Detail", vec![
             hdr!("Navigation"),
             blank(),
@@ -49,7 +49,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("a"), Span::raw("Session actions")]),
             Line::from(vec![key("A"), Span::raw("All sessions actions")]),
         ])
-    } else if app.active_tab == Tab::Stats && app.vr_stats_view == StatsView::Detail {
+    } else if app.active_tab == Tab::Stats && app.viewer.stats_view == StatsView::Detail {
         ("Stats Detail", vec![
             hdr!("Navigation"),
             blank(),
@@ -84,7 +84,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("Esc"), Span::raw("Close overlay")]),
         ];
-        if app.vr_stats_tab == StatsTab::DBIndices {
+        if app.viewer.stats_tab == StatsTab::DBIndices {
             lines.push(blank());
             lines.push(hdr!("Index Operations"));
             lines.push(blank());
@@ -93,7 +93,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(vec![key("C"), Span::raw("Close index (if open)")]));
             lines.push(Line::from(vec![key("O"), Span::raw("Open index (if closed)")]));
         }
-        if app.vr_stats_tab == StatsTab::DBStats {
+        if app.viewer.stats_tab == StatsTab::DBStats {
             lines.push(blank());
             lines.push(hdr!("Node Operations"));
             lines.push(blank());
@@ -145,7 +145,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("v"), Span::raw("Views")]),
         ])
-    } else if app.vr_show_column_editor {
+    } else if app.viewer.show_column_editor {
         ("Column Editor", vec![
             hdr!("Navigation"),
             blank(),
@@ -162,7 +162,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("a"), Span::raw("Apply changes")]),
             Line::from(vec![key("d"), Span::raw("Reset to defaults")]),
         ])
-    } else if app.vr_show_layout_popup {
+    } else if app.viewer.show_layout_popup {
         ("Layouts", vec![
             hdr!("Navigation"),
             blank(),
@@ -176,7 +176,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("/"), Span::raw("Filter layouts")]),
             Line::from(vec![key("x / Delete"), Span::raw("Delete selected layout")]),
         ])
-    } else if app.vr_show_view_popup {
+    } else if app.viewer.show_view_popup {
         ("Views", vec![
             hdr!("Navigation"),
             blank(),

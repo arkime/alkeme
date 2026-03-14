@@ -14,10 +14,9 @@ mod wise;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, GraphData, HttpLog, SummaryItem};
+use crate::api::{ArkimeClient, HttpLog};
 use chrono::{Datelike, Duration, Timelike, Utc};
 use crossterm::event::KeyCode;
-use ratatui::widgets::TableState;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -65,66 +64,11 @@ pub struct App {
     pub confirm_dialog: Option<ConfirmDialog>,
     pub action_menu: Option<ActionMenu>,
     pub action_prompt: Option<ActionPrompt>,
-    pub vr_date_fields: HashMap<String, String>, // dbField -> type ("seconds" or "date")
-    pub vr_field_exp_map: HashMap<String, String>, // dbField -> exp (expression field name)
-    pub vr_field_friendly_map: HashMap<String, String>, // dbField -> friendlyName
-    pub vr_sessions: Vec<Value>,
-    pub vr_sessions_total: u64,
-    pub vr_sessions_filtered: u64,
-    pub vr_session_fields: Vec<String>,
-    pub vr_columns: Vec<ColumnDef>,
-    pub vr_saved_layouts: Vec<SavedLayout>,
-    pub vr_show_column_editor: bool,
-    pub vr_column_editor_selected: usize,
-    pub vr_column_editor_mode: ColumnEditorMode,
-    pub vr_column_editor_available: Vec<ColumnEditorItem>,
-    pub vr_column_editor_filter: String,
-    pub vr_show_layout_popup: bool,
-    pub vr_layout_popup_mode: LayoutPopupMode,
-    pub vr_layout_popup_selected: usize,
-    pub vr_layout_save_name: String,
-    pub vr_layout_save_cursor: usize,
-    pub vr_layout_delete_name: String,
-    pub vr_layout_filter: String,
-    // View state
-    pub vr_active_view: Option<String>,      // view id for API calls
-    pub vr_active_view_name: Option<String>,  // view name for display
-    pub vr_saved_views: Vec<ArkimeView>,
-    pub vr_show_view_popup: bool,
-    pub vr_view_popup_mode: ViewPopupMode,
-    pub vr_view_popup_selected: usize,
-    pub vr_view_save_name: String,
-    pub vr_view_save_cursor: usize,
-    pub vr_view_save_columns: bool,
-    pub vr_view_delete_id: String,
-    pub vr_view_delete_name: String,
-    pub vr_view_filter: String,
-    pub vr_view_filter_active: bool,
-    pub vr_page_start: u64,
-    pub vr_page_size: u64,
-    pub vr_selected_session: usize,
-    pub vr_table_state: TableState,
-    pub vr_session_view: SessionView,
-    pub vr_session_detail: Option<SessionDetail>,
-    pub vr_detail_action_menu: Option<DetailActionMenu>,
-    pub vr_packets_view: Option<crate::api::PacketsData>,
-    pub vr_packets_scroll: u16,
-    pub vr_packets_raw: bool,
-    pub vr_packets_line: LineMode,
+    pub viewer: ViewerState,
     pub show_loading: bool,
     pub loading_owl_x: u16,
     pub loading_owl_dx: i16,
     pub loading_owl_tick: std::time::Instant,
-    pub vr_pending_packets_fetch: bool,
-    pub vr_pending_summary_fetch: bool,
-    pub vr_packets_node_pending: String,
-    pub vr_packets_id_pending: String,
-    pub vr_packets_total_pending: u64,
-    pub vr_sort_column: usize,
-    pub vr_sort_desc: bool,
-    pub vr_graph_size: GraphSize,
-    pub vr_graph_type: GraphType,
-    pub vr_graph_data: Option<GraphData>,
     pub status_msg: String,
     pub show_debug: bool,
     pub debug_scroll: usize,
@@ -132,78 +76,8 @@ pub struct App {
     pub debug_expanded: bool,
     pub http_log: HttpLog,
     // Stats tab state
-    pub vr_stats_tab: StatsTab,
-    pub vr_stats_data: Vec<Value>,
-    pub vr_stats_total: u64,
-    pub vr_stats_filtered: u64,
-    pub vr_stats_filter: String,
-    pub vr_stats_filter_edit: String,
-    pub vr_stats_selected: usize,
-    pub vr_stats_table_state: TableState,
-    pub vr_stats_view: StatsView,
-    pub vr_stats_detail: Option<StatsDetail>,
-    pub vr_stats_sort_column: usize,
-    pub vr_stats_sort_desc: bool,
-    pub vr_stats_last_refresh: std::time::Instant,
-    // Per-tab dynamic stats columns
-    pub vr_stats_columns: [Vec<StatsColumnDef>; 3],
-    // Stats column editor
-    pub vr_stats_show_column_editor: bool,
-    pub vr_stats_column_editor_selected: usize,
-    pub vr_stats_column_editor_mode: ColumnEditorMode,
-    pub vr_stats_column_editor_items: Vec<StatsColumnEditorItem>,
-    pub vr_stats_column_editor_filter: String,
-    // Stats layout popup (shareables)
-    pub vr_stats_show_layout_popup: bool,
-    pub vr_stats_layout_popup_mode: LayoutPopupMode,
-    pub vr_stats_layout_popup_selected: usize,
-    pub vr_stats_saved_shareables: Vec<SavedShareable>,
-    pub vr_stats_layout_save_name: String,
-    pub vr_stats_layout_save_cursor: usize,
-    pub vr_stats_layout_delete_name: String,
-    pub vr_stats_layout_filter: String,
     pub visible_rows: usize,
     // Files tab state
-    pub vr_files_data: Vec<Value>,
-    pub vr_files_total: u64,
-    pub vr_files_filtered: u64,
-    pub vr_files_filter: String,
-    pub vr_files_filter_edit: String,
-    pub vr_files_selected: usize,
-    pub vr_files_table_state: TableState,
-    pub vr_files_sort_column: usize,
-    pub vr_files_sort_desc: bool,
-    pub vr_files_page_start: usize,
-    pub vr_files_page_size: usize,
-    pub vr_files_columns: Vec<StatsColumnDef>,
-    // Files column editor
-    pub vr_files_show_column_editor: bool,
-    pub vr_files_column_editor_selected: usize,
-    pub vr_files_column_editor_mode: ColumnEditorMode,
-    pub vr_files_column_editor_items: Vec<StatsColumnEditorItem>,
-    pub vr_files_column_editor_filter: String,
-    // Files layout popup (shareables)
-    pub vr_files_show_layout_popup: bool,
-    pub vr_files_layout_popup_mode: LayoutPopupMode,
-    pub vr_files_layout_popup_selected: usize,
-    pub vr_files_saved_shareables: Vec<SavedShareable>,
-    pub vr_files_layout_save_name: String,
-    pub vr_files_layout_save_cursor: usize,
-    pub vr_files_layout_delete_name: String,
-    pub vr_files_layout_filter: String,
-    pub vr_files_view: StatsView,
-    pub vr_files_detail: Option<StatsDetail>,
-    // Arkime (Summary) tab state
-    pub vr_all_fields: Vec<ArkimeField>,
-    pub vr_summary_field: String,
-    pub vr_summary_data: Vec<SummaryItem>,
-    pub vr_summary_metric: SummaryMetric,
-    pub vr_summary_selected: usize,
-    pub vr_summary_table_state: TableState,
-    pub vr_summary_sort: SummarySort,
-    pub vr_summary_sort_desc: bool,
-    pub vr_field_filter: String,
-    pub vr_field_filter_selected: usize,
     // Owl animation
     pub owl_x: f32,
     pub owl_y: f32,
@@ -246,156 +120,18 @@ impl App {
             confirm_dialog: None,
             action_menu: None,
             action_prompt: None,
-            vr_date_fields: HashMap::new(),
-            vr_field_exp_map: HashMap::new(),
-            vr_field_friendly_map: HashMap::new(),
-            vr_sessions: Vec::new(),
-            vr_sessions_total: 0,
-            vr_sessions_filtered: 0,
-            vr_session_fields: vec![
-                "ipProtocol".into(),
-                "firstPacket".into(),
-                "lastPacket".into(),
-                "source.ip".into(),
-                "source.port".into(),
-                "destination.ip".into(),
-                "destination.port".into(),
-                "protocol".into(),
-                "source.packets".into(),
-                "destination.packets".into(),
-                "source.bytes".into(),
-                "destination.bytes".into(),
-            ],
-            vr_columns: default_columns(),
-            vr_saved_layouts: Vec::new(),
-            vr_show_column_editor: false,
-            vr_column_editor_selected: 0,
-            vr_column_editor_mode: ColumnEditorMode::Browse,
-            vr_column_editor_available: Vec::new(),
-            vr_column_editor_filter: String::new(),
-            vr_show_layout_popup: false,
-            vr_layout_popup_mode: LayoutPopupMode::List,
-            vr_layout_popup_selected: 0,
-            vr_layout_save_name: String::new(),
-            vr_layout_save_cursor: 0,
-            vr_layout_delete_name: String::new(),
-            vr_layout_filter: String::new(),
-            vr_active_view: None,
-            vr_active_view_name: None,
-            vr_saved_views: Vec::new(),
-            vr_show_view_popup: false,
-            vr_view_popup_mode: ViewPopupMode::List,
-            vr_view_popup_selected: 0,
-            vr_view_save_name: String::new(),
-            vr_view_save_cursor: 0,
-            vr_view_save_columns: false,
-            vr_view_delete_id: String::new(),
-            vr_view_delete_name: String::new(),
-            vr_view_filter: String::new(),
-            vr_view_filter_active: false,
-            vr_page_start: 0,
-            vr_page_size: 100,
-            vr_selected_session: 0,
-            vr_table_state: TableState::default().with_selected(0),
-            vr_session_view: SessionView::List,
-            vr_session_detail: None,
-            vr_detail_action_menu: None,
-            vr_packets_view: None,
-            vr_packets_scroll: 0,
-            vr_packets_raw: false,
-            vr_packets_line: LineMode::Hex,
+            viewer: ViewerState::default(),
             show_loading: false,
             loading_owl_x: 0,
             loading_owl_dx: 1,
             loading_owl_tick: std::time::Instant::now(),
-            vr_pending_packets_fetch: false,
-            vr_pending_summary_fetch: false,
-            vr_packets_node_pending: String::new(),
-            vr_packets_id_pending: String::new(),
-            vr_packets_total_pending: 0,
-            vr_sort_column: 2,
-            vr_sort_desc: true,
-            vr_graph_size: GraphSize::Off,
-            vr_graph_type: GraphType::Sessions,
-            vr_graph_data: None,
             status_msg: String::new(),
             show_debug: false,
             debug_scroll: 0,
             debug_selected: 0,
             debug_expanded: false,
             http_log,
-            // Stats tab state
-            vr_stats_tab: StatsTab::Capture,
-            vr_stats_data: Vec::new(),
-            vr_stats_total: 0,
-            vr_stats_filtered: 0,
-            vr_stats_filter: String::new(),
-            vr_stats_filter_edit: String::new(),
-            vr_stats_selected: 0,
-            vr_stats_table_state: TableState::default().with_selected(0),
-            vr_stats_view: StatsView::List,
-            vr_stats_detail: None,
-            vr_stats_sort_column: 0,
-            vr_stats_sort_desc: false,
-            vr_stats_last_refresh: std::time::Instant::now(),
-            vr_stats_columns: [
-                stats_columns_from_fields(&capture_default_fields(), &capture_all_columns()),
-                stats_columns_from_fields(&esnodes_default_fields(), &esnodes_all_columns()),
-                stats_columns_from_fields(&esindices_default_fields(), &esindices_all_columns()),
-            ],
-            vr_stats_show_column_editor: false,
-            vr_stats_column_editor_selected: 0,
-            vr_stats_column_editor_mode: ColumnEditorMode::Browse,
-            vr_stats_column_editor_items: Vec::new(),
-            vr_stats_column_editor_filter: String::new(),
-            vr_stats_show_layout_popup: false,
-            vr_stats_layout_popup_mode: LayoutPopupMode::List,
-            vr_stats_layout_popup_selected: 0,
-            vr_stats_saved_shareables: Vec::new(),
-            vr_stats_layout_save_name: String::new(),
-            vr_stats_layout_save_cursor: 0,
-            vr_stats_layout_delete_name: String::new(),
-            vr_stats_layout_filter: String::new(),
             visible_rows: 20,
-            // Files tab
-            vr_files_data: Vec::new(),
-            vr_files_total: 0,
-            vr_files_filtered: 0,
-            vr_files_filter: String::new(),
-            vr_files_filter_edit: String::new(),
-            vr_files_selected: 0,
-            vr_files_table_state: TableState::default(),
-            vr_files_sort_column: 0,
-            vr_files_sort_desc: false,
-            vr_files_page_start: 0,
-            vr_files_page_size: 100,
-            vr_files_columns: stats_columns_from_fields(&files_default_fields(), &files_all_columns()),
-            vr_files_show_column_editor: false,
-            vr_files_column_editor_selected: 0,
-            vr_files_column_editor_mode: ColumnEditorMode::Browse,
-            vr_files_column_editor_items: Vec::new(),
-            vr_files_column_editor_filter: String::new(),
-            vr_files_show_layout_popup: false,
-            vr_files_layout_popup_mode: LayoutPopupMode::List,
-            vr_files_layout_popup_selected: 0,
-            vr_files_saved_shareables: Vec::new(),
-            vr_files_layout_save_name: String::new(),
-            vr_files_layout_save_cursor: 0,
-            vr_files_layout_delete_name: String::new(),
-            vr_files_layout_filter: String::new(),
-            vr_files_view: StatsView::List,
-            vr_files_detail: None,
-            // Arkime (Summary) tab state
-            vr_all_fields: Vec::new(),
-            vr_summary_field: String::new(),
-            vr_summary_data: Vec::new(),
-            vr_summary_metric: SummaryMetric::Sessions,
-            vr_summary_selected: 0,
-            vr_summary_table_state: TableState::default().with_selected(0),
-            vr_summary_sort: SummarySort::Sessions,
-            vr_summary_sort_desc: true,
-            vr_field_filter: String::new(),
-            vr_field_filter_selected: 0,
             // Owl animation
             owl_x: 5.0,
             owl_y: 3.0,
@@ -418,7 +154,7 @@ impl App {
     }
 
     pub fn is_detail_view(&self) -> bool {
-        self.vr_session_view == SessionView::Detail || self.vr_stats_view == StatsView::Detail
+        self.viewer.session_view == SessionView::Detail || self.viewer.stats_view == StatsView::Detail
     }
 
     pub fn needs_animation(&self) -> bool {
@@ -453,8 +189,8 @@ impl App {
     pub fn q_closes_popup(&self) -> bool {
         self.confirm_dialog.is_some()
             || self.show_help || self.show_debug || self.parliament.show_detail
-            || self.vr_show_column_editor || self.vr_show_layout_popup || self.vr_show_view_popup
-            || self.vr_stats_show_column_editor || self.vr_stats_show_layout_popup
+            || self.viewer.show_column_editor || self.viewer.show_layout_popup || self.viewer.show_view_popup
+            || self.viewer.stats_show_column_editor || self.viewer.stats_show_layout_popup
             || self.cont3xt.show_integration_popup || self.cont3xt.show_overview_popup
             || self.cont3xt.show_link_popup || self.cont3xt.show_card_popup
             || self.cont3xt.show_tags_popup || self.cont3xt.show_date_popup
@@ -524,14 +260,14 @@ impl App {
                         Ok(_) => {
                             let label = if kind == "ip" { "IP" } else { "node" };
                             self.status_msg = format!("{} {label} '{value}'", if op == "exclude" { "Excluded" } else { "Included" });
-                            let detail_name = self.vr_stats_detail.as_ref()
+                            let detail_name = self.viewer.stats_detail.as_ref()
                                 .map(|d| crate::api::str_val(&d.data, "name"));
-                            let detail_scroll = self.vr_stats_detail.as_ref().map(|d| d.scroll).unwrap_or(0);
-                            let detail_filter = self.vr_stats_detail.as_ref().map(|d| d.filter.clone()).unwrap_or_default();
+                            let detail_scroll = self.viewer.stats_detail.as_ref().map(|d| d.scroll).unwrap_or(0);
+                            let detail_filter = self.viewer.stats_detail.as_ref().map(|d| d.filter.clone()).unwrap_or_default();
                             self.vr_fetch_stats().await;
                             if let Some(name) = detail_name {
-                                if let Some(row) = self.vr_stats_data.iter().find(|r| crate::api::str_val(r, "name") == name) {
-                                    self.vr_stats_detail = Some(StatsDetail { data: row.clone(), scroll: detail_scroll, filter: detail_filter });
+                                if let Some(row) = self.viewer.stats_data.iter().find(|r| crate::api::str_val(r, "name") == name) {
+                                    self.viewer.stats_detail = Some(StatsDetail { data: row.clone(), scroll: detail_scroll, filter: detail_filter });
                                 }
                             }
                         }

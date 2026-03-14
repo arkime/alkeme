@@ -2,9 +2,9 @@ use super::*;
 
 pub(super) fn draw_sessions(f: &mut Frame, app: &mut App, area: Rect) {
     draw_session_list(f, app, area);
-    if app.vr_session_view == SessionView::Detail {
+    if app.viewer.session_view == SessionView::Detail {
         draw_session_detail(f, app, area);
-        if app.vr_detail_action_menu.is_some() {
+        if app.viewer.detail_action_menu.is_some() {
             draw_detail_action_menu(f, app, area);
         }
     }
@@ -13,25 +13,25 @@ pub(super) fn draw_sessions(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
     // header row + borders = 3 lines overhead
     app.visible_rows = area.height.saturating_sub(3) as usize;
-    let header_cells = app.vr_columns
+    let header_cells = app.viewer.columns
         .iter()
         .enumerate()
         .map(|(i, col)| {
-            let is_sorted = i == app.vr_sort_column;
-            let label = sort_header_label(&col.label, is_sorted, app.vr_sort_desc);
+            let is_sorted = i == app.viewer.sort_column;
+            let label = sort_header_label(&col.label, is_sorted, app.viewer.sort_desc);
             Cell::from(label).style(sort_header_style(is_sorted))
         });
     let header = Row::new(header_cells).height(1);
 
     let rows: Vec<Row> = app
-        .vr_sessions
+        .viewer.sessions
         .iter()
         .map(|session| {
-            let cells = app.vr_columns.iter().enumerate().map(|(col_idx, col)| {
+            let cells = app.viewer.columns.iter().enumerate().map(|(col_idx, col)| {
                 let val = session.get(&col.field).unwrap_or(&serde_json::Value::Null);
                 let text = if col.field == "ipProtocol" && col_idx == 0 {
                     ip_protocol_str(val)
-                } else if let Some(field_type) = app.vr_date_fields.get(col.field.as_str()) {
+                } else if let Some(field_type) = app.viewer.date_fields.get(col.field.as_str()) {
                     format_epoch(val, field_type)
                 } else {
                     match val {
@@ -51,18 +51,18 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let widths: Vec<Constraint> = app.vr_columns.iter()
+    let widths: Vec<Constraint> = app.viewer.columns.iter()
         .map(|col| Constraint::Length(col.width))
         .collect();
 
-    let end = (app.vr_page_start + app.vr_sessions.len() as u64).min(app.vr_sessions_filtered);
-    let view_label = if let Some(ref v) = app.vr_active_view_name {
+    let end = (app.viewer.page_start + app.viewer.sessions.len() as u64).min(app.viewer.sessions_filtered);
+    let view_label = if let Some(ref v) = app.viewer.active_view_name {
         format!(" [view: {}]", v)
     } else {
         String::new()
     };
-    let page_label = if app.vr_sessions_filtered > 0 {
-        format!(" Sessions{} [{}-{} of {}] ◄ ► ", view_label, app.vr_page_start + 1, end, app.vr_sessions_filtered)
+    let page_label = if app.viewer.sessions_filtered > 0 {
+        format!(" Sessions{} [{}-{} of {}] ◄ ► ", view_label, app.viewer.page_start + 1, end, app.viewer.sessions_filtered)
     } else {
         format!(" Sessions{} [0] ", view_label)
     };
@@ -76,11 +76,11 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .row_highlight_style(Style::default().bg(Color::DarkGray));
 
-    f.render_stateful_widget(table, area, &mut app.vr_table_state);
+    f.render_stateful_widget(table, area, &mut app.viewer.table_state);
 }
 
 fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
-    let detail = match &app.vr_session_detail {
+    let detail = match &app.viewer.session_detail {
         Some(d) => d,
         None => return,
     };
@@ -103,7 +103,7 @@ fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
                 if filter_lower.is_empty() {
                     return true;
                 }
-                let friendly = app.vr_field_friendly_map.get(k.as_str())
+                let friendly = app.viewer.field_friendly_map.get(k.as_str())
                     .map(|s| s.as_str())
                     .unwrap_or(k.as_str());
                 k.to_lowercase().contains(&filter_lower)
@@ -113,7 +113,7 @@ fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
         keys.sort();
         for (i, db_field) in keys.iter().enumerate() {
             let val = &obj[*db_field];
-            let val_str = if let Some(field_type) = app.vr_date_fields.get(db_field.as_str()) {
+            let val_str = if let Some(field_type) = app.viewer.date_fields.get(db_field.as_str()) {
                 format_epoch(val, field_type)
             } else {
                 match val {
@@ -131,7 +131,7 @@ fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
                     other => other.to_string(),
                 }
             };
-            let display_name = app.vr_field_friendly_map.get(db_field.as_str())
+            let display_name = app.viewer.field_friendly_map.get(db_field.as_str())
                 .map(|s| s.as_str())
                 .unwrap_or(db_field.as_str());
             let is_selected = i == detail.selected;
@@ -167,7 +167,7 @@ fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
     // Write back the computed scroll
-    if let Some(ref mut d) = app.vr_session_detail {
+    if let Some(ref mut d) = app.viewer.session_detail {
         d.scroll = scroll;
     }
 
@@ -192,7 +192,7 @@ fn draw_session_detail(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 pub(super) fn draw_detail_action_menu(f: &mut Frame, app: &App, area: Rect) {
-    let menu = match &app.vr_detail_action_menu {
+    let menu = match &app.viewer.detail_action_menu {
         Some(m) => m,
         None => return,
     };

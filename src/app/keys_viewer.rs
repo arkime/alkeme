@@ -6,14 +6,14 @@ impl App {
     pub(crate) fn open_action_menu(&mut self, target: ActionTarget) {
         let (session_id, session_node) = match target {
             ActionTarget::Single => {
-                let (id, node) = if self.vr_session_view == SessionView::Detail {
-                    let detail = self.vr_session_detail.as_ref();
+                let (id, node) = if self.viewer.session_view == SessionView::Detail {
+                    let detail = self.viewer.session_detail.as_ref();
                     (
                         detail.and_then(|d| d.data.get("id")).and_then(|v| v.as_str()).map(|s| s.to_string()),
                         detail.and_then(|d| d.data.get("node")).and_then(|v| v.as_str()).map(|s| s.to_string()),
                     )
                 } else {
-                    let session = self.vr_sessions.get(self.vr_selected_session);
+                    let session = self.viewer.sessions.get(self.viewer.selected_session);
                     (
                         session.and_then(|s| s.get("id")).and_then(|v| v.as_str()).map(|s| s.to_string()),
                         session.and_then(|s| s.get("node")).and_then(|v| v.as_str()).map(|s| s.to_string()),
@@ -41,42 +41,42 @@ impl App {
         match key.code {
             KeyCode::Tab => {
                 self.next_tab();
-                if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
+                if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
                     self.vr_fetch_stats().await;
                 }
-                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
                     self.vr_fetch_files().await;
                 }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
-                if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
+                if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
                     self.vr_fetch_stats().await;
                 }
-                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
                     self.vr_fetch_files().await;
                 }
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if !self.vr_sessions.is_empty() {
-                    self.vr_selected_session = (self.vr_selected_session + self.visible_rows).min(self.vr_sessions.len() - 1);
-                    self.vr_table_state.select(Some(self.vr_selected_session));
+                if !self.viewer.sessions.is_empty() {
+                    self.viewer.selected_session = (self.viewer.selected_session + self.visible_rows).min(self.viewer.sessions.len() - 1);
+                    self.viewer.table_state.select(Some(self.viewer.selected_session));
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.vr_selected_session = self.vr_selected_session.saturating_sub(self.visible_rows);
-                self.vr_table_state.select(Some(self.vr_selected_session));
+                self.viewer.selected_session = self.viewer.selected_session.saturating_sub(self.visible_rows);
+                self.viewer.table_state.select(Some(self.viewer.selected_session));
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if !self.vr_sessions.is_empty() {
-                    self.vr_selected_session = (self.vr_selected_session + 1).min(self.vr_sessions.len() - 1);
-                    self.vr_table_state.select(Some(self.vr_selected_session));
+                if !self.viewer.sessions.is_empty() {
+                    self.viewer.selected_session = (self.viewer.selected_session + 1).min(self.viewer.sessions.len() - 1);
+                    self.viewer.table_state.select(Some(self.viewer.selected_session));
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if self.vr_selected_session > 0 {
-                    self.vr_selected_session -= 1;
-                    self.vr_table_state.select(Some(self.vr_selected_session));
+                if self.viewer.selected_session > 0 {
+                    self.viewer.selected_session -= 1;
+                    self.viewer.table_state.select(Some(self.viewer.selected_session));
                 }
             }
             KeyCode::Enter => {
@@ -90,68 +90,68 @@ impl App {
             }
             KeyCode::Char('t') => {
                 self.time_range_next();
-                self.vr_page_start = 0;
+                self.viewer.page_start = 0;
                 self.vr_fetch_sessions().await;
             }
             KeyCode::Char('T') => {
                 self.time_range_prev();
-                self.vr_page_start = 0;
+                self.viewer.page_start = 0;
                 self.vr_fetch_sessions().await;
             }
             KeyCode::Char('s') => {
-                self.vr_sort_column = (self.vr_sort_column + 1) % self.vr_session_fields.len();
-                self.vr_page_start = 0;
+                self.viewer.sort_column = (self.viewer.sort_column + 1) % self.viewer.session_fields.len();
+                self.viewer.page_start = 0;
                 self.vr_fetch_sessions().await;
             }
             KeyCode::Char('S') => {
-                self.vr_sort_desc = !self.vr_sort_desc;
-                self.vr_page_start = 0;
+                self.viewer.sort_desc = !self.viewer.sort_desc;
+                self.viewer.page_start = 0;
                 self.vr_fetch_sessions().await;
             }
             KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if self.vr_sessions_filtered > self.vr_page_size {
-                    let last_page = (self.vr_sessions_filtered - 1) / self.vr_page_size * self.vr_page_size;
-                    if self.vr_page_start != last_page {
-                        self.vr_page_start = last_page;
+                if self.viewer.sessions_filtered > self.viewer.page_size {
+                    let last_page = (self.viewer.sessions_filtered - 1) / self.viewer.page_size * self.viewer.page_size;
+                    if self.viewer.page_start != last_page {
+                        self.viewer.page_start = last_page;
                         self.vr_fetch_sessions().await;
                     }
                 }
             }
             KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if self.vr_page_start > 0 {
-                    self.vr_page_start = 0;
+                if self.viewer.page_start > 0 {
+                    self.viewer.page_start = 0;
                     self.vr_fetch_sessions().await;
                 }
             }
             KeyCode::Right => {
-                let next = self.vr_page_start + self.vr_page_size;
-                if next < self.vr_sessions_filtered {
-                    self.vr_page_start = next;
+                let next = self.viewer.page_start + self.viewer.page_size;
+                if next < self.viewer.sessions_filtered {
+                    self.viewer.page_start = next;
                     self.vr_fetch_sessions().await;
                 }
             }
             KeyCode::Left => {
-                if self.vr_page_start > 0 {
-                    self.vr_page_start = self.vr_page_start.saturating_sub(self.vr_page_size);
+                if self.viewer.page_start > 0 {
+                    self.viewer.page_start = self.viewer.page_start.saturating_sub(self.viewer.page_size);
                     self.vr_fetch_sessions().await;
                 }
             }
             KeyCode::Home => {
-                if self.vr_page_start > 0 {
-                    self.vr_page_start = 0;
+                if self.viewer.page_start > 0 {
+                    self.viewer.page_start = 0;
                     self.vr_fetch_sessions().await;
                 }
             }
             KeyCode::Char('g') => {
-                let was_off = !self.vr_graph_size.is_visible();
-                self.vr_graph_size = self.vr_graph_size.next();
-                if was_off && self.vr_graph_size.is_visible() {
+                let was_off = !self.viewer.graph_size.is_visible();
+                self.viewer.graph_size = self.viewer.graph_size.next();
+                if was_off && self.viewer.graph_size.is_visible() {
                     self.vr_fetch_sessions().await;
                 }
             }
             KeyCode::Char('G') => {
-                if self.vr_graph_size.is_visible() {
-                    self.vr_graph_type = self.vr_graph_type.next();
+                if self.viewer.graph_size.is_visible() {
+                    self.viewer.graph_type = self.viewer.graph_type.next();
                 }
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
@@ -168,10 +168,10 @@ impl App {
             }
             KeyCode::Char('c') | KeyCode::Char('C') => {
                 self.vr_fetch_layouts().await;
-                self.vr_layout_popup_mode = LayoutPopupMode::List;
-                self.vr_layout_popup_selected = 0;
-                self.vr_layout_filter.clear();
-                self.vr_show_layout_popup = true;
+                self.viewer.layout_popup_mode = LayoutPopupMode::List;
+                self.viewer.layout_popup_selected = 0;
+                self.viewer.layout_filter.clear();
+                self.viewer.show_layout_popup = true;
             }
             KeyCode::Char('v') => {
                 self.open_view_popup().await;
@@ -182,26 +182,26 @@ impl App {
 
     pub(crate) async fn handle_column_editor_key(&mut self, key: KeyEvent) {
         let mut state = ColumnEditorState {
-            filter: &mut self.vr_column_editor_filter,
-            selected: &mut self.vr_column_editor_selected,
-            mode: &mut self.vr_column_editor_mode,
-            show: &mut self.vr_show_column_editor,
+            filter: &mut self.viewer.column_editor_filter,
+            selected: &mut self.viewer.column_editor_selected,
+            mode: &mut self.viewer.column_editor_mode,
+            show: &mut self.viewer.show_column_editor,
         };
         let action = handle_column_editor_key_generic(
-            key, &mut state, &mut self.vr_column_editor_available, &mut self.show_help,
+            key, &mut state, &mut self.viewer.column_editor_available, &mut self.show_help,
         );
         match action.as_deref() {
             Some("apply") => {
                 self.vr_apply_column_editor();
-                self.vr_show_column_editor = false;
-                self.vr_page_start = 0;
+                self.viewer.show_column_editor = false;
+                self.viewer.page_start = 0;
                 self.vr_fetch_sessions().await;
             }
             Some("default") => {
-                self.vr_columns = default_columns();
+                self.viewer.columns = default_columns();
                 self.vr_sync_session_fields();
-                self.vr_show_column_editor = false;
-                self.vr_page_start = 0;
+                self.viewer.show_column_editor = false;
+                self.viewer.page_start = 0;
                 self.vr_fetch_sessions().await;
             }
             _ => {}
@@ -209,53 +209,53 @@ impl App {
     }
 
     pub(crate) async fn handle_layout_popup_key(&mut self, key: KeyEvent) {
-        let items: Vec<LayoutItem> = self.vr_saved_layouts.iter()
+        let items: Vec<LayoutItem> = self.viewer.saved_layouts.iter()
             .map(|l| LayoutItem { name: l.name.clone(), shared: false })
             .collect();
         let mut state = LayoutPopupState {
-            mode: &mut self.vr_layout_popup_mode,
-            selected: &mut self.vr_layout_popup_selected,
-            filter: &mut self.vr_layout_filter,
-            save_name: &mut self.vr_layout_save_name,
-            save_cursor: &mut self.vr_layout_save_cursor,
-            show: &mut self.vr_show_layout_popup,
-            delete_name: &mut self.vr_layout_delete_name,
+            mode: &mut self.viewer.layout_popup_mode,
+            selected: &mut self.viewer.layout_popup_selected,
+            filter: &mut self.viewer.layout_filter,
+            save_name: &mut self.viewer.layout_save_name,
+            save_cursor: &mut self.viewer.layout_save_cursor,
+            show: &mut self.viewer.show_layout_popup,
+            delete_name: &mut self.viewer.layout_delete_name,
         };
         let action = handle_layout_popup_key_generic(key, &mut state, &items, &mut self.show_help);
 
         if let Some(cmd) = action {
             if cmd == "edit" {
                 self.vr_build_column_editor();
-                self.vr_show_layout_popup = false;
-                self.vr_show_column_editor = true;
+                self.viewer.show_layout_popup = false;
+                self.viewer.show_column_editor = true;
             } else if cmd == "default" {
-                self.vr_columns = default_columns();
+                self.viewer.columns = default_columns();
                 self.vr_sync_session_fields();
-                self.vr_page_start = 0;
+                self.viewer.page_start = 0;
                 self.vr_fetch_sessions().await;
             } else if let Some(name) = cmd.strip_prefix("confirm_delete:") {
                 match self.client.vr_delete_layout(name).await {
                     Ok(_) => {
-                        self.vr_saved_layouts.retain(|l| l.name != name);
+                        self.viewer.saved_layouts.retain(|l| l.name != name);
                         self.status_msg = format!("Deleted layout '{name}'");
-                        let max = self.vr_saved_layouts.len() + 3;
-                        if self.vr_layout_popup_selected >= max {
-                            self.vr_layout_popup_selected = max.saturating_sub(1);
+                        let max = self.viewer.saved_layouts.len() + 3;
+                        if self.viewer.layout_popup_selected >= max {
+                            self.viewer.layout_popup_selected = max.saturating_sub(1);
                         }
                     }
                     Err(e) => self.status_msg = format!("Error deleting layout: {e}"),
                 }
             } else if let Some(name) = cmd.strip_prefix("save:") {
-                let columns: Vec<String> = self.vr_columns.iter()
+                let columns: Vec<String> = self.viewer.columns.iter()
                     .enumerate()
                     .filter(|(i, c)| !(*i == 0 && c.field == "ipProtocol"))
                     .map(|(_, c)| c.field.clone()).collect();
-                let sort_field = self.vr_columns.get(self.vr_sort_column)
+                let sort_field = self.viewer.columns.get(self.viewer.sort_column)
                     .map(|c| c.field.clone())
                     .unwrap_or_default();
-                let sort_dir = if self.vr_sort_desc { "desc" } else { "asc" };
+                let sort_dir = if self.viewer.sort_desc { "desc" } else { "asc" };
                 self.status_msg = format!("Saving layout '{name}' with {} columns...", columns.len());
-                let exists = self.vr_saved_layouts.iter().any(|l| l.name == name);
+                let exists = self.viewer.saved_layouts.iter().any(|l| l.name == name);
                 let result = if exists {
                     self.client.vr_update_layout(name, &columns, &sort_field, sort_dir).await
                 } else {
@@ -270,9 +270,9 @@ impl App {
                 }
             } else if let Some(idx_str) = cmd.strip_prefix("select:") {
                 if let Ok(idx) = idx_str.parse::<usize>() {
-                    if let Some(layout) = self.vr_saved_layouts.get(idx).cloned() {
+                    if let Some(layout) = self.viewer.saved_layouts.get(idx).cloned() {
                         self.vr_apply_layout(&layout);
-                        self.vr_page_start = 0;
+                        self.viewer.page_start = 0;
                         self.vr_fetch_sessions().await;
                     }
                 }
@@ -284,43 +284,43 @@ impl App {
         self.status_msg = "Fetching views...".into();
         match self.client.vr_get_views().await {
             Ok(views) => {
-                self.vr_saved_views = views;
+                self.viewer.saved_views = views;
                 self.status_msg = String::new();
             }
             Err(e) => {
                 self.status_msg = format!("Error fetching views: {e}");
             }
         }
-        self.vr_view_popup_mode = ViewPopupMode::List;
-        self.vr_view_popup_selected = 0;
-        self.vr_view_filter.clear();
-        self.vr_view_filter_active = false;
-        self.vr_show_view_popup = true;
+        self.viewer.view_popup_mode = ViewPopupMode::List;
+        self.viewer.view_popup_selected = 0;
+        self.viewer.view_filter.clear();
+        self.viewer.view_filter_active = false;
+        self.viewer.show_view_popup = true;
     }
 
     pub fn view_filtered_indices(&self) -> Vec<usize> {
-        let filter_text = self.vr_view_filter.to_lowercase();
+        let filter_text = self.viewer.view_filter.to_lowercase();
         if filter_text.is_empty() {
-            return (0..self.vr_saved_views.len()).collect();
+            return (0..self.viewer.saved_views.len()).collect();
         }
-        self.vr_saved_views.iter().enumerate()
+        self.viewer.saved_views.iter().enumerate()
             .filter(|(_, v)| v.name.to_lowercase().contains(&filter_text) || v.expression.to_lowercase().contains(&filter_text))
             .map(|(i, _)| i)
             .collect()
     }
 
     pub(crate) async fn handle_view_popup_key(&mut self, key: KeyEvent) {
-        match self.vr_view_popup_mode {
+        match self.viewer.view_popup_mode {
             ViewPopupMode::SaveInput => {
                 match key.code {
                     KeyCode::Enter => {
-                        let name = self.vr_view_save_name.trim().to_string();
+                        let name = self.viewer.view_save_name.trim().to_string();
                         if !name.is_empty() && !self.expression.is_empty() {
-                            let col_config = if self.vr_view_save_columns {
-                                let cols: Vec<String> = self.vr_columns.iter().map(|c| c.exp.clone()).collect();
-                                let sort_field = self.vr_session_fields.get(self.vr_sort_column)
+                            let col_config = if self.viewer.view_save_columns {
+                                let cols: Vec<String> = self.viewer.columns.iter().map(|c| c.exp.clone()).collect();
+                                let sort_field = self.viewer.session_fields.get(self.viewer.sort_column)
                                     .cloned().unwrap_or_else(|| "firstPacket".into());
-                                let sort_dir = if self.vr_sort_desc { "desc" } else { "asc" };
+                                let sort_dir = if self.viewer.sort_desc { "desc" } else { "asc" };
                                 Some((cols, sort_field, sort_dir.to_string()))
                             } else {
                                 None
@@ -334,10 +334,10 @@ impl App {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or(&name)
                                         .to_string();
-                                    self.vr_active_view = Some(view_id);
-                                    self.vr_active_view_name = Some(name);
-                                    self.vr_page_start = 0;
-                                    self.vr_show_view_popup = false;
+                                    self.viewer.active_view = Some(view_id);
+                                    self.viewer.active_view_name = Some(name);
+                                    self.viewer.page_start = 0;
+                                    self.viewer.show_view_popup = false;
                                     self.refresh_for_active_tab().await;
                                 }
                                 Err(e) => self.status_msg = format!("Error creating view: {e}"),
@@ -345,16 +345,16 @@ impl App {
                         } else if self.expression.is_empty() {
                             self.status_msg = "Cannot save view: expression is empty".into();
                         }
-                        self.vr_view_popup_mode = ViewPopupMode::List;
+                        self.viewer.view_popup_mode = ViewPopupMode::List;
                     }
                     KeyCode::Esc => {
-                        self.vr_view_popup_mode = ViewPopupMode::List;
+                        self.viewer.view_popup_mode = ViewPopupMode::List;
                     }
                     KeyCode::Tab => {
-                        self.vr_view_save_columns = !self.vr_view_save_columns;
+                        self.viewer.view_save_columns = !self.viewer.view_save_columns;
                     }
                     KeyCode::Backspace | KeyCode::Left | KeyCode::Right | KeyCode::Char(_) => {
-                        handle_text_input_key(key.code, &mut self.vr_view_save_name, &mut self.vr_view_save_cursor);
+                        handle_text_input_key(key.code, &mut self.viewer.view_save_name, &mut self.viewer.view_save_cursor);
                     }
                     _ => {}
                 }
@@ -362,24 +362,24 @@ impl App {
             ViewPopupMode::ConfirmDelete => {
                 match key.code {
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
-                        let id = self.vr_view_delete_id.clone();
-                        let name = self.vr_view_delete_name.clone();
+                        let id = self.viewer.view_delete_id.clone();
+                        let name = self.viewer.view_delete_name.clone();
                         match self.client.vr_delete_view(&id).await {
                             Ok(_) => {
                                 self.status_msg = format!("View '{}' deleted", name);
-                                if self.vr_active_view.as_deref() == Some(&id) {
-                                    self.vr_active_view = None;
-                                    self.vr_active_view_name = None;
+                                if self.viewer.active_view.as_deref() == Some(&id) {
+                                    self.viewer.active_view = None;
+                                    self.viewer.active_view_name = None;
                                 }
-                                self.vr_saved_views.retain(|v| v.id != id);
-                                self.vr_view_popup_selected = 0;
+                                self.viewer.saved_views.retain(|v| v.id != id);
+                                self.viewer.view_popup_selected = 0;
                             }
                             Err(e) => self.status_msg = format!("Error deleting view: {e}"),
                         }
-                        self.vr_view_popup_mode = ViewPopupMode::List;
+                        self.viewer.view_popup_mode = ViewPopupMode::List;
                     }
                     _ => {
-                        self.vr_view_popup_mode = ViewPopupMode::List;
+                        self.viewer.view_popup_mode = ViewPopupMode::List;
                     }
                 }
             }
@@ -389,21 +389,21 @@ impl App {
                 match key.code {
                     KeyCode::Down | KeyCode::Char('j') => {
                         if total_items > 0 {
-                            self.vr_view_popup_selected = (self.vr_view_popup_selected + 1).min(total_items - 1);
+                            self.viewer.view_popup_selected = (self.viewer.view_popup_selected + 1).min(total_items - 1);
                         }
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
-                        self.vr_view_popup_selected = self.vr_view_popup_selected.saturating_sub(1);
+                        self.viewer.view_popup_selected = self.viewer.view_popup_selected.saturating_sub(1);
                     }
                     KeyCode::Char('x') => {
-                        if self.vr_view_popup_selected >= 2 {
-                            let fi = self.vr_view_popup_selected - 2;
+                        if self.viewer.view_popup_selected >= 2 {
+                            let fi = self.viewer.view_popup_selected - 2;
                             if let Some(&idx) = filtered.get(fi) {
-                                let view = &self.vr_saved_views[idx];
+                                let view = &self.viewer.saved_views[idx];
                                 if !view.shared {
-                                    self.vr_view_delete_id = view.id.clone();
-                                    self.vr_view_delete_name = view.name.clone();
-                                    self.vr_view_popup_mode = ViewPopupMode::ConfirmDelete;
+                                    self.viewer.view_delete_id = view.id.clone();
+                                    self.viewer.view_delete_name = view.name.clone();
+                                    self.viewer.view_popup_mode = ViewPopupMode::ConfirmDelete;
                                 } else {
                                     self.status_msg = "Cannot delete shared views".into();
                                 }
@@ -411,66 +411,66 @@ impl App {
                         }
                     }
                     KeyCode::Enter => {
-                        if self.vr_view_popup_selected == 0 {
+                        if self.viewer.view_popup_selected == 0 {
                             // Save current expression as view
                             if self.expression.is_empty() {
                                 self.status_msg = "Cannot save view: expression is empty".into();
                             } else {
-                                self.vr_view_save_name.clear();
-                                self.vr_view_save_cursor = 0;
-                                self.vr_view_save_columns = false;
-                                self.vr_view_popup_mode = ViewPopupMode::SaveInput;
+                                self.viewer.view_save_name.clear();
+                                self.viewer.view_save_cursor = 0;
+                                self.viewer.view_save_columns = false;
+                                self.viewer.view_popup_mode = ViewPopupMode::SaveInput;
                             }
-                        } else if self.vr_view_popup_selected == 1 {
+                        } else if self.viewer.view_popup_selected == 1 {
                             // Clear view
-                            if self.vr_active_view.is_some() {
-                                self.vr_active_view = None;
-                                self.vr_active_view_name = None;
-                                self.vr_page_start = 0;
-                                self.vr_show_view_popup = false;
+                            if self.viewer.active_view.is_some() {
+                                self.viewer.active_view = None;
+                                self.viewer.active_view_name = None;
+                                self.viewer.page_start = 0;
+                                self.viewer.show_view_popup = false;
                                 self.refresh_for_active_tab().await;
                             } else {
-                                self.vr_show_view_popup = false;
+                                self.viewer.show_view_popup = false;
                             }
                         } else {
                             // Select a view
-                            let fi = self.vr_view_popup_selected - 2;
+                            let fi = self.viewer.view_popup_selected - 2;
                             if let Some(&idx) = filtered.get(fi) {
-                                let view_id = self.vr_saved_views[idx].id.clone();
-                                let view_name = self.vr_saved_views[idx].name.clone();
-                                self.vr_active_view = Some(view_id);
-                                self.vr_active_view_name = Some(view_name);
-                                self.vr_page_start = 0;
-                                self.vr_show_view_popup = false;
+                                let view_id = self.viewer.saved_views[idx].id.clone();
+                                let view_name = self.viewer.saved_views[idx].name.clone();
+                                self.viewer.active_view = Some(view_id);
+                                self.viewer.active_view_name = Some(view_name);
+                                self.viewer.page_start = 0;
+                                self.viewer.show_view_popup = false;
                                 self.refresh_for_active_tab().await;
                             }
                         }
                     }
                     KeyCode::Esc | KeyCode::Char('q') => {
-                        if self.vr_view_filter_active {
-                            self.vr_view_filter.clear();
-                            self.vr_view_filter_active = false;
+                        if self.viewer.view_filter_active {
+                            self.viewer.view_filter.clear();
+                            self.viewer.view_filter_active = false;
                         } else {
-                            self.vr_show_view_popup = false;
+                            self.viewer.show_view_popup = false;
                         }
                     }
                     KeyCode::Char('/') => {
-                        if !self.vr_view_filter_active {
-                            self.vr_view_filter_active = true;
-                            self.vr_view_filter.clear();
+                        if !self.viewer.view_filter_active {
+                            self.viewer.view_filter_active = true;
+                            self.viewer.view_filter.clear();
                         }
                     }
                     KeyCode::Char(c) => {
-                        if self.vr_view_filter_active {
-                            self.vr_view_filter.push(c);
-                            self.vr_view_popup_selected = 2; // reset to first view
+                        if self.viewer.view_filter_active {
+                            self.viewer.view_filter.push(c);
+                            self.viewer.view_popup_selected = 2; // reset to first view
                         }
                     }
                     KeyCode::Backspace => {
-                        if self.vr_view_filter_active {
-                            self.vr_view_filter.pop();
-                            if self.vr_view_filter.is_empty() {
-                                self.vr_view_filter_active = false;
+                        if self.viewer.view_filter_active {
+                            self.viewer.view_filter.pop();
+                            if self.viewer.view_filter.is_empty() {
+                                self.viewer.view_filter_active = false;
                             }
                         }
                     }
@@ -483,53 +483,53 @@ impl App {
     pub(crate) async fn handle_detail_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
-                self.vr_session_view = SessionView::List;
-                self.vr_session_detail = None;
+                self.viewer.session_view = SessionView::List;
+                self.viewer.session_detail = None;
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if let Some(ref mut detail) = self.vr_session_detail {
+                if let Some(ref mut detail) = self.viewer.session_detail {
                     detail.selected = (detail.selected + self.visible_rows).min(detail.total_rows.saturating_sub(1));
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if let Some(ref mut detail) = self.vr_session_detail {
+                if let Some(ref mut detail) = self.viewer.session_detail {
                     detail.selected = detail.selected.saturating_sub(self.visible_rows);
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if let Some(ref mut detail) = self.vr_session_detail
+                if let Some(ref mut detail) = self.viewer.session_detail
                     && detail.total_rows > 0 && detail.selected < detail.total_rows - 1 {
                         detail.selected += 1;
                     }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if let Some(ref mut detail) = self.vr_session_detail
+                if let Some(ref mut detail) = self.viewer.session_detail
                     && detail.selected > 0 {
                         detail.selected -= 1;
                     }
             }
             KeyCode::PageDown => {
-                if let Some(ref mut detail) = self.vr_session_detail {
+                if let Some(ref mut detail) = self.viewer.session_detail {
                     detail.selected = (detail.selected + self.visible_rows).min(detail.total_rows.saturating_sub(1));
                 }
             }
             KeyCode::PageUp => {
-                if let Some(ref mut detail) = self.vr_session_detail {
+                if let Some(ref mut detail) = self.viewer.session_detail {
                     detail.selected = detail.selected.saturating_sub(self.visible_rows);
                 }
             }
             KeyCode::Left | KeyCode::Home => {
-                if let Some(ref mut detail) = self.vr_session_detail {
+                if let Some(ref mut detail) = self.viewer.session_detail {
                     detail.selected = 0;
                 }
             }
             KeyCode::Right | KeyCode::End => {
-                if let Some(ref mut detail) = self.vr_session_detail {
+                if let Some(ref mut detail) = self.viewer.session_detail {
                     detail.selected = detail.total_rows.saturating_sub(1);
                 }
             }
             KeyCode::Enter => {
-                if let Some(ref detail) = self.vr_session_detail
+                if let Some(ref detail) = self.viewer.session_detail
                     && let Some(obj) = detail.data.as_object() {
                         let filter_lower = detail.filter.to_lowercase();
                         let mut keys: Vec<&String> = obj.keys()
@@ -538,7 +538,7 @@ impl App {
                                 if filter_lower.is_empty() {
                                     return true;
                                 }
-                                let friendly = self.vr_field_friendly_map.get(k.as_str())
+                                let friendly = self.viewer.field_friendly_map.get(k.as_str())
                                     .map(|s| s.as_str())
                                     .unwrap_or(k.as_str());
                                 k.to_lowercase().contains(&filter_lower)
@@ -569,13 +569,13 @@ impl App {
                                 serde_json::Value::Null => ("-".into(), None),
                                 other => (other.to_string(), None),
                             };
-                            let exp_name = self.vr_field_exp_map.get(db_field.as_str())
+                            let exp_name = self.viewer.field_exp_map.get(db_field.as_str())
                                 .cloned()
                                 .unwrap_or_else(|| (*db_field).clone());
-                            let friendly = self.vr_field_friendly_map.get(db_field.as_str())
+                            let friendly = self.viewer.field_friendly_map.get(db_field.as_str())
                                 .cloned()
                                 .unwrap_or_else(|| (*db_field).clone());
-                            self.vr_detail_action_menu = Some(DetailActionMenu {
+                            self.viewer.detail_action_menu = Some(DetailActionMenu {
                                 field: exp_name,
                                 display: friendly,
                                 value: val_str,
@@ -618,16 +618,16 @@ impl App {
                     self.cont3xt.detail_filter.clear();
                     self.cont3xt.detail_scroll = 0;
                 } else if is_stats {
-                    if let Some(ref mut detail) = self.vr_stats_detail {
+                    if let Some(ref mut detail) = self.viewer.stats_detail {
                         detail.filter.clear();
                         detail.scroll = 0;
                     }
                 } else if is_files {
-                    if let Some(ref mut detail) = self.vr_files_detail {
+                    if let Some(ref mut detail) = self.viewer.files_detail {
                         detail.filter.clear();
                         detail.scroll = 0;
                     }
-                } else if let Some(ref mut detail) = self.vr_session_detail {
+                } else if let Some(ref mut detail) = self.viewer.session_detail {
                     detail.filter.clear();
                     detail.selected = 0;
                     detail.scroll = 0;
@@ -643,16 +643,16 @@ impl App {
                     self.cont3xt.detail_filter.push(c);
                     self.cont3xt.detail_scroll = 0;
                 } else if is_stats {
-                    if let Some(ref mut detail) = self.vr_stats_detail {
+                    if let Some(ref mut detail) = self.viewer.stats_detail {
                         detail.filter.push(c);
                         detail.scroll = 0;
                     }
                 } else if is_files {
-                    if let Some(ref mut detail) = self.vr_files_detail {
+                    if let Some(ref mut detail) = self.viewer.files_detail {
                         detail.filter.push(c);
                         detail.scroll = 0;
                     }
-                } else if let Some(ref mut detail) = self.vr_session_detail {
+                } else if let Some(ref mut detail) = self.viewer.session_detail {
                     detail.filter.push(c);
                     detail.selected = 0;
                     detail.scroll = 0;
@@ -664,16 +664,16 @@ impl App {
                     self.cont3xt.detail_filter.pop();
                     self.cont3xt.detail_scroll = 0;
                 } else if is_stats {
-                    if let Some(ref mut detail) = self.vr_stats_detail {
+                    if let Some(ref mut detail) = self.viewer.stats_detail {
                         detail.filter.pop();
                         detail.scroll = 0;
                     }
                 } else if is_files {
-                    if let Some(ref mut detail) = self.vr_files_detail {
+                    if let Some(ref mut detail) = self.viewer.files_detail {
                         detail.filter.pop();
                         detail.scroll = 0;
                     }
-                } else if let Some(ref mut detail) = self.vr_session_detail {
+                } else if let Some(ref mut detail) = self.viewer.session_detail {
                     detail.filter.pop();
                     detail.selected = 0;
                     detail.scroll = 0;
@@ -685,7 +685,7 @@ impl App {
     }
 
     fn recalc_detail_rows(&mut self) {
-        if let Some(ref mut detail) = self.vr_session_detail
+        if let Some(ref mut detail) = self.viewer.session_detail
             && let Some(obj) = detail.data.as_object() {
                 let filter_lower = detail.filter.to_lowercase();
                 detail.total_rows = obj.keys()
@@ -694,7 +694,7 @@ impl App {
                         if filter_lower.is_empty() {
                             return true;
                         }
-                        let friendly = self.vr_field_friendly_map.get(k.as_str())
+                        let friendly = self.viewer.field_friendly_map.get(k.as_str())
                             .map(|s| s.as_str())
                             .unwrap_or(k.as_str());
                         k.to_lowercase().contains(&filter_lower)
@@ -836,7 +836,7 @@ impl App {
     }
 
     fn visible_session_ids(&self) -> Vec<String> {
-        self.vr_sessions.iter()
+        self.viewer.sessions.iter()
             .filter_map(|s| s.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
             .collect()
     }
@@ -864,7 +864,7 @@ impl App {
                     let ids = self.visible_session_ids();
                     self.client.vr_download_sessions_pcap_ids(&ids).await
                 } else {
-                    self.client.vr_download_sessions_pcap(&self.expression, date, &self.vr_active_view).await
+                    self.client.vr_download_sessions_pcap(&self.expression, date, &self.viewer.active_view).await
                 };
                 match result {
                     Ok(data) => {
@@ -880,9 +880,9 @@ impl App {
                 self.status_msg = "Exporting CSV...".into();
                 let result = if prompt.scope == ActionScope::Visible {
                     let ids = self.visible_session_ids();
-                    self.client.vr_export_sessions_csv_ids(&ids, &self.vr_session_fields).await
+                    self.client.vr_export_sessions_csv_ids(&ids, &self.viewer.session_fields).await
                 } else {
-                    self.client.vr_export_sessions_csv(&self.expression, date, &self.vr_session_fields, &self.vr_active_view).await
+                    self.client.vr_export_sessions_csv(&self.expression, date, &self.viewer.session_fields, &self.viewer.active_view).await
                 };
                 match result {
                     Ok(data) => {
@@ -907,7 +907,7 @@ impl App {
             }
             (ActionKind::AddTags, ActionTarget::All) => {
                 self.status_msg = "Adding tags...".into();
-                match self.client.vr_add_sessions_tags(&self.expression, date, &prompt.input, &self.vr_active_view).await {
+                match self.client.vr_add_sessions_tags(&self.expression, date, &prompt.input, &self.viewer.active_view).await {
                     Ok(_) => {
                         self.status_msg = format!("Tags added: {}", prompt.input);
                         self.vr_fetch_sessions().await;
@@ -928,7 +928,7 @@ impl App {
             }
             (ActionKind::RemoveTags, ActionTarget::All) => {
                 self.status_msg = "Removing tags...".into();
-                match self.client.vr_remove_sessions_tags(&self.expression, date, &prompt.input, &self.vr_active_view).await {
+                match self.client.vr_remove_sessions_tags(&self.expression, date, &prompt.input, &self.viewer.active_view).await {
                     Ok(_) => {
                         self.status_msg = format!("Tags removed: {}", prompt.input);
                         self.vr_fetch_sessions().await;
@@ -941,15 +941,15 @@ impl App {
     }
 
     pub(crate) async fn handle_detail_action_key(&mut self, key: KeyEvent) {
-        let in_values = self.vr_detail_action_menu.as_ref()
+        let in_values = self.viewer.detail_action_menu.as_ref()
             .map(|m| m.values.is_some()).unwrap_or(false);
 
         match key.code {
             KeyCode::Esc => {
-                self.vr_detail_action_menu = None;
+                self.viewer.detail_action_menu = None;
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if let Some(ref mut menu) = self.vr_detail_action_menu {
+                if let Some(ref mut menu) = self.viewer.detail_action_menu {
                     if in_values {
                         let len = menu.values.as_ref().unwrap().len();
                         menu.value_selected = (menu.value_selected + 1).min(len - 1);
@@ -959,7 +959,7 @@ impl App {
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if let Some(ref mut menu) = self.vr_detail_action_menu {
+                if let Some(ref mut menu) = self.viewer.detail_action_menu {
                     if in_values {
                         if menu.value_selected > 0 {
                             menu.value_selected -= 1;
@@ -972,13 +972,13 @@ impl App {
             KeyCode::Enter => {
                 if in_values {
                     // Pick the selected value, then show AND/OR options
-                    if let Some(ref mut menu) = self.vr_detail_action_menu {
+                    if let Some(ref mut menu) = self.viewer.detail_action_menu {
                         let chosen = menu.values.as_ref().unwrap()[menu.value_selected].clone();
                         menu.value = chosen;
                         menu.values = None;
                         menu.selected = 0;
                     }
-                } else if let Some(menu) = self.vr_detail_action_menu.take() {
+                } else if let Some(menu) = self.viewer.detail_action_menu.take() {
                     let needs_quotes = menu.value.parse::<f64>().is_err();
                     let quoted_val = if needs_quotes {
                         format!("\"{}\"", menu.value)
@@ -1014,39 +1014,39 @@ impl App {
     pub(crate) fn handle_packets_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Char('p') | KeyCode::Char('q') => {
-                self.vr_packets_view = None;
-                self.vr_packets_scroll = 0;
+                self.viewer.packets_view = None;
+                self.viewer.packets_scroll = 0;
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.vr_packets_scroll = self.vr_packets_scroll.saturating_sub(self.visible_rows as u16);
+                self.viewer.packets_scroll = self.viewer.packets_scroll.saturating_sub(self.visible_rows as u16);
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.vr_packets_scroll = self.vr_packets_scroll.saturating_add(self.visible_rows as u16);
+                self.viewer.packets_scroll = self.viewer.packets_scroll.saturating_add(self.visible_rows as u16);
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.vr_packets_scroll = self.vr_packets_scroll.saturating_add(1);
+                self.viewer.packets_scroll = self.viewer.packets_scroll.saturating_add(1);
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                self.vr_packets_scroll = self.vr_packets_scroll.saturating_sub(1);
+                self.viewer.packets_scroll = self.viewer.packets_scroll.saturating_sub(1);
             }
             KeyCode::PageDown => {
-                self.vr_packets_scroll = self.vr_packets_scroll.saturating_add(self.visible_rows as u16);
+                self.viewer.packets_scroll = self.viewer.packets_scroll.saturating_add(self.visible_rows as u16);
             }
             KeyCode::PageUp => {
-                self.vr_packets_scroll = self.vr_packets_scroll.saturating_sub(self.visible_rows as u16);
+                self.viewer.packets_scroll = self.viewer.packets_scroll.saturating_sub(self.visible_rows as u16);
             }
             KeyCode::Home | KeyCode::Left => {
-                self.vr_packets_scroll = 0;
+                self.viewer.packets_scroll = 0;
             }
             KeyCode::Right => {
-                self.vr_packets_scroll = u16::MAX;
+                self.viewer.packets_scroll = u16::MAX;
             }
             KeyCode::Char('r') => {
-                self.vr_packets_raw = !self.vr_packets_raw;
+                self.viewer.packets_raw = !self.viewer.packets_raw;
                 self.request_packets();
             }
             KeyCode::Char('l') => {
-                self.vr_packets_line = self.vr_packets_line.next();
+                self.viewer.packets_line = self.viewer.packets_line.next();
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
@@ -1056,7 +1056,7 @@ impl App {
     }
 
     pub fn request_packets(&mut self) {
-        if let Some(session) = self.vr_sessions.get(self.vr_selected_session) {
+        if let Some(session) = self.viewer.sessions.get(self.viewer.selected_session) {
             let id = session.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let node = session.get("node").and_then(|v| v.as_str()).unwrap_or("");
             if id.is_empty() || node.is_empty() {
@@ -1070,14 +1070,14 @@ impl App {
                 .or_else(|| session.get("destination.packets").and_then(|v| v.as_u64()))
                 .unwrap_or(0);
             let total = src_pkts + dst_pkts;
-            self.vr_packets_total_pending = total;
-            self.vr_packets_node_pending = node.to_string();
-            self.vr_packets_id_pending = id.to_string();
+            self.viewer.packets_total_pending = total;
+            self.viewer.packets_node_pending = node.to_string();
+            self.viewer.packets_id_pending = id.to_string();
             self.status_msg = "Fetching packets...".into();
             if total > 500 {
                 self.show_loading = true;
             }
-            self.vr_pending_packets_fetch = true;
+            self.viewer.pending_packets_fetch = true;
         }
     }
 
@@ -1085,50 +1085,50 @@ impl App {
         match key.code {
             KeyCode::Tab => {
                 self.next_tab();
-                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
                     self.vr_fetch_files().await;
                 }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
-                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
                     self.vr_fetch_files().await;
                 }
             }
             KeyCode::Char('1') => {
-                if self.vr_stats_tab != StatsTab::Capture {
-                    self.vr_stats_tab = StatsTab::Capture;
-                    self.vr_stats_sort_column = 0;
-                    self.vr_stats_sort_desc = false;
+                if self.viewer.stats_tab != StatsTab::Capture {
+                    self.viewer.stats_tab = StatsTab::Capture;
+                    self.viewer.stats_sort_column = 0;
+                    self.viewer.stats_sort_desc = false;
                     self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Char('2') => {
-                if self.vr_stats_tab != StatsTab::DBStats {
-                    self.vr_stats_tab = StatsTab::DBStats;
-                    self.vr_stats_sort_column = 0;
-                    self.vr_stats_sort_desc = false;
+                if self.viewer.stats_tab != StatsTab::DBStats {
+                    self.viewer.stats_tab = StatsTab::DBStats;
+                    self.viewer.stats_sort_column = 0;
+                    self.viewer.stats_sort_desc = false;
                     self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Char('3') => {
-                if self.vr_stats_tab != StatsTab::DBIndices {
-                    self.vr_stats_tab = StatsTab::DBIndices;
-                    self.vr_stats_sort_column = 0;
-                    self.vr_stats_sort_desc = false;
+                if self.viewer.stats_tab != StatsTab::DBIndices {
+                    self.viewer.stats_tab = StatsTab::DBIndices;
+                    self.viewer.stats_sort_column = 0;
+                    self.viewer.stats_sort_desc = false;
                     self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if !self.vr_stats_data.is_empty() {
-                    self.vr_stats_selected = (self.vr_stats_selected + 1).min(self.vr_stats_data.len() - 1);
-                    self.vr_stats_table_state.select(Some(self.vr_stats_selected));
+                if !self.viewer.stats_data.is_empty() {
+                    self.viewer.stats_selected = (self.viewer.stats_selected + 1).min(self.viewer.stats_data.len() - 1);
+                    self.viewer.stats_table_state.select(Some(self.viewer.stats_selected));
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if self.vr_stats_selected > 0 {
-                    self.vr_stats_selected -= 1;
-                    self.vr_stats_table_state.select(Some(self.vr_stats_selected));
+                if self.viewer.stats_selected > 0 {
+                    self.viewer.stats_selected -= 1;
+                    self.viewer.stats_table_state.select(Some(self.viewer.stats_selected));
                 }
             }
             KeyCode::Enter => {
@@ -1138,21 +1138,21 @@ impl App {
                 self.vr_fetch_stats().await;
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
-                self.vr_stats_filter_edit = self.vr_stats_filter.clone();
-                self.expression_cursor = self.vr_stats_filter_edit.len();
+                self.viewer.stats_filter_edit = self.viewer.stats_filter.clone();
+                self.expression_cursor = self.viewer.stats_filter_edit.len();
                 self.input_mode = InputMode::Expression;
             }
             KeyCode::Char('s') => {
                 let num_cols = self.vr_stats_active_columns().len();
-                self.vr_stats_sort_column = (self.vr_stats_sort_column + 1) % num_cols;
+                self.viewer.stats_sort_column = (self.viewer.stats_sort_column + 1) % num_cols;
                 self.vr_fetch_stats().await;
             }
             KeyCode::Char('S') => {
-                self.vr_stats_sort_desc = !self.vr_stats_sort_desc;
+                self.viewer.stats_sort_desc = !self.viewer.stats_sort_desc;
                 self.vr_fetch_stats().await;
             }
-            KeyCode::Char('d') if self.vr_stats_tab == StatsTab::DBIndices => {
-                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+            KeyCode::Char('d') if self.viewer.stats_tab == StatsTab::DBIndices => {
+                if let Some(row) = self.viewer.stats_data.get(self.viewer.stats_selected) {
                     let index = crate::api::str_val(row, "index");
                     if !index.is_empty() {
                         self.confirm_dialog = Some(ConfirmDialog {
@@ -1163,8 +1163,8 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('f') if self.vr_stats_tab == StatsTab::DBIndices => {
-                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+            KeyCode::Char('f') if self.viewer.stats_tab == StatsTab::DBIndices => {
+                if let Some(row) = self.viewer.stats_data.get(self.viewer.stats_selected) {
                     let index = crate::api::str_val(row, "index");
                     if !index.is_empty() {
                         self.confirm_dialog = Some(ConfirmDialog {
@@ -1175,8 +1175,8 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('C') if self.vr_stats_tab == StatsTab::DBIndices => {
-                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+            KeyCode::Char('C') if self.viewer.stats_tab == StatsTab::DBIndices => {
+                if let Some(row) = self.viewer.stats_data.get(self.viewer.stats_selected) {
                     let index = crate::api::str_val(row, "index");
                     let status = crate::api::str_val(row, "status");
                     if !index.is_empty() && status == "open" {
@@ -1188,8 +1188,8 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('O') if self.vr_stats_tab == StatsTab::DBIndices => {
-                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+            KeyCode::Char('O') if self.viewer.stats_tab == StatsTab::DBIndices => {
+                if let Some(row) = self.viewer.stats_data.get(self.viewer.stats_selected) {
                     let index = crate::api::str_val(row, "index");
                     let status = crate::api::str_val(row, "status");
                     if !index.is_empty() && status == "close" {
@@ -1201,8 +1201,8 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('e') if self.vr_stats_tab == StatsTab::DBStats => {
-                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+            KeyCode::Char('e') if self.viewer.stats_tab == StatsTab::DBStats => {
+                if let Some(row) = self.viewer.stats_data.get(self.viewer.stats_selected) {
                     let name = crate::api::str_val(row, "name");
                     let excluded = row.get("nodeExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
                     if !name.is_empty() {
@@ -1219,8 +1219,8 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('x') if self.vr_stats_tab == StatsTab::DBStats => {
-                if let Some(row) = self.vr_stats_data.get(self.vr_stats_selected) {
+            KeyCode::Char('x') if self.viewer.stats_tab == StatsTab::DBStats => {
+                if let Some(row) = self.viewer.stats_data.get(self.viewer.stats_selected) {
                     let ip = crate::api::str_val(row, "ip");
                     let excluded = row.get("ipExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
                     if !ip.is_empty() {
@@ -1242,10 +1242,10 @@ impl App {
             }
             KeyCode::Char('c') => {
                 self.vr_stats_fetch_shareables().await;
-                self.vr_stats_layout_popup_mode = LayoutPopupMode::List;
-                self.vr_stats_layout_popup_selected = 0;
-                self.vr_stats_layout_filter.clear();
-                self.vr_stats_show_layout_popup = true;
+                self.viewer.stats_layout_popup_mode = LayoutPopupMode::List;
+                self.viewer.stats_layout_popup_selected = 0;
+                self.viewer.stats_layout_filter.clear();
+                self.viewer.stats_show_layout_popup = true;
             }
             _ => {}
         }
@@ -1253,23 +1253,23 @@ impl App {
 
     pub(crate) async fn handle_stats_column_editor_key(&mut self, key: KeyEvent) {
         let mut state = ColumnEditorState {
-            filter: &mut self.vr_stats_column_editor_filter,
-            selected: &mut self.vr_stats_column_editor_selected,
-            mode: &mut self.vr_stats_column_editor_mode,
-            show: &mut self.vr_stats_show_column_editor,
+            filter: &mut self.viewer.stats_column_editor_filter,
+            selected: &mut self.viewer.stats_column_editor_selected,
+            mode: &mut self.viewer.stats_column_editor_mode,
+            show: &mut self.viewer.stats_show_column_editor,
         };
         let action = handle_column_editor_key_generic(
-            key, &mut state, &mut self.vr_stats_column_editor_items, &mut self.show_help,
+            key, &mut state, &mut self.viewer.stats_column_editor_items, &mut self.show_help,
         );
         match action.as_deref() {
             Some("apply") => {
                 self.vr_stats_apply_column_editor();
-                self.vr_stats_show_column_editor = false;
+                self.viewer.stats_show_column_editor = false;
                 self.vr_fetch_stats().await;
             }
             Some("default") => {
                 self.vr_stats_reset_default_columns();
-                self.vr_stats_show_column_editor = false;
+                self.viewer.stats_show_column_editor = false;
                 self.vr_fetch_stats().await;
             }
             _ => {}
@@ -1277,18 +1277,18 @@ impl App {
     }
 
     pub(crate) async fn handle_stats_layout_popup_key(&mut self, key: KeyEvent) {
-        let items: Vec<LayoutItem> = self.vr_stats_saved_shareables.iter()
+        let items: Vec<LayoutItem> = self.viewer.stats_saved_shareables.iter()
             .map(|s| LayoutItem { name: s.name.clone(), shared: s.shared })
             .collect();
         // We need to stash the delete_id separately since LayoutPopupState uses delete_name
         let mut delete_name_for_id = String::new();
         let mut state = LayoutPopupState {
-            mode: &mut self.vr_stats_layout_popup_mode,
-            selected: &mut self.vr_stats_layout_popup_selected,
-            filter: &mut self.vr_stats_layout_filter,
-            save_name: &mut self.vr_stats_layout_save_name,
-            save_cursor: &mut self.vr_stats_layout_save_cursor,
-            show: &mut self.vr_stats_show_layout_popup,
+            mode: &mut self.viewer.stats_layout_popup_mode,
+            selected: &mut self.viewer.stats_layout_popup_selected,
+            filter: &mut self.viewer.stats_layout_filter,
+            save_name: &mut self.viewer.stats_layout_save_name,
+            save_cursor: &mut self.viewer.stats_layout_save_cursor,
+            show: &mut self.viewer.stats_show_layout_popup,
             delete_name: &mut delete_name_for_id,
         };
         let action = handle_layout_popup_key_generic(key, &mut state, &items, &mut self.show_help);
@@ -1296,26 +1296,26 @@ impl App {
         if let Some(cmd) = action {
             if cmd == "edit" {
                 self.vr_stats_build_column_editor();
-                self.vr_stats_show_layout_popup = false;
-                self.vr_stats_show_column_editor = true;
+                self.viewer.stats_show_layout_popup = false;
+                self.viewer.stats_show_column_editor = true;
             } else if cmd == "default" {
                 self.vr_stats_reset_default_columns();
                 self.vr_fetch_stats().await;
             } else if cmd.starts_with("confirm_delete:") {
                 // For stats, we need the shareable ID, which we find by name
-                if let Some(s) = self.vr_stats_saved_shareables.iter().find(|s| s.name == delete_name_for_id) {
+                if let Some(s) = self.viewer.stats_saved_shareables.iter().find(|s| s.name == delete_name_for_id) {
                     let id = s.id.clone();
                     self.vr_stats_delete_shareable(&id).await;
-                    let max = self.vr_stats_saved_shareables.len() + 3;
-                    if self.vr_stats_layout_popup_selected >= max {
-                        self.vr_stats_layout_popup_selected = max.saturating_sub(1);
+                    let max = self.viewer.stats_saved_shareables.len() + 3;
+                    if self.viewer.stats_layout_popup_selected >= max {
+                        self.viewer.stats_layout_popup_selected = max.saturating_sub(1);
                     }
                 }
             } else if let Some(name) = cmd.strip_prefix("save:") {
                 self.vr_stats_save_shareable(name).await;
             } else if let Some(idx_str) = cmd.strip_prefix("select:") {
                 if let Ok(idx) = idx_str.parse::<usize>() {
-                    if let Some(shareable) = self.vr_stats_saved_shareables.get(idx).cloned() {
+                    if let Some(shareable) = self.viewer.stats_saved_shareables.get(idx).cloned() {
                         self.vr_stats_apply_shareable(&shareable);
                         self.vr_fetch_stats().await;
                     }
@@ -1323,52 +1323,52 @@ impl App {
             }
         }
         // Sync delete name back for UI display
-        self.vr_stats_layout_delete_name = delete_name_for_id;
+        self.viewer.stats_layout_delete_name = delete_name_for_id;
     }
 
     pub(crate) fn handle_stats_detail_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
-                self.vr_stats_view = StatsView::List;
-                self.vr_stats_detail = None;
+                self.viewer.stats_view = StatsView::List;
+                self.viewer.stats_detail = None;
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if let Some(ref mut detail) = self.vr_stats_detail {
+                if let Some(ref mut detail) = self.viewer.stats_detail {
                     detail.scroll = detail.scroll.saturating_add(self.visible_rows as u16);
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if let Some(ref mut detail) = self.vr_stats_detail {
+                if let Some(ref mut detail) = self.viewer.stats_detail {
                     detail.scroll = detail.scroll.saturating_sub(self.visible_rows as u16);
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if let Some(ref mut detail) = self.vr_stats_detail {
+                if let Some(ref mut detail) = self.viewer.stats_detail {
                     detail.scroll = detail.scroll.saturating_add(1);
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if let Some(ref mut detail) = self.vr_stats_detail {
+                if let Some(ref mut detail) = self.viewer.stats_detail {
                     detail.scroll = detail.scroll.saturating_sub(1);
                 }
             }
             KeyCode::PageDown => {
-                if let Some(ref mut detail) = self.vr_stats_detail {
+                if let Some(ref mut detail) = self.viewer.stats_detail {
                     detail.scroll = detail.scroll.saturating_add(self.visible_rows as u16);
                 }
             }
             KeyCode::PageUp => {
-                if let Some(ref mut detail) = self.vr_stats_detail {
+                if let Some(ref mut detail) = self.viewer.stats_detail {
                     detail.scroll = detail.scroll.saturating_sub(self.visible_rows as u16);
                 }
             }
             KeyCode::Left | KeyCode::Home => {
-                if let Some(ref mut detail) = self.vr_stats_detail {
+                if let Some(ref mut detail) = self.viewer.stats_detail {
                     detail.scroll = 0;
                 }
             }
             KeyCode::Right | KeyCode::End => {
-                if let Some(ref mut detail) = self.vr_stats_detail {
+                if let Some(ref mut detail) = self.viewer.stats_detail {
                     detail.scroll = u16::MAX;
                 }
             }
@@ -1376,12 +1376,12 @@ impl App {
                 self.input_mode = InputMode::DetailFilter;
             }
             KeyCode::Char('E') => {
-                self.vr_stats_filter_edit = self.vr_stats_filter.clone();
-                self.expression_cursor = self.vr_stats_filter_edit.len();
+                self.viewer.stats_filter_edit = self.viewer.stats_filter.clone();
+                self.expression_cursor = self.viewer.stats_filter_edit.len();
                 self.input_mode = InputMode::Expression;
             }
-            KeyCode::Char('e') if self.vr_stats_tab == StatsTab::DBStats => {
-                if let Some(ref detail) = self.vr_stats_detail {
+            KeyCode::Char('e') if self.viewer.stats_tab == StatsTab::DBStats => {
+                if let Some(ref detail) = self.viewer.stats_detail {
                     let name = crate::api::str_val(&detail.data, "name");
                     let excluded = detail.data.get("nodeExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
                     if !name.is_empty() {
@@ -1398,8 +1398,8 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('x') if self.vr_stats_tab == StatsTab::DBStats => {
-                if let Some(ref detail) = self.vr_stats_detail {
+            KeyCode::Char('x') if self.viewer.stats_tab == StatsTab::DBStats => {
+                if let Some(ref detail) = self.viewer.stats_detail {
                     let ip = crate::api::str_val(&detail.data, "ip");
                     let excluded = detail.data.get("ipExcluded").and_then(|v| v.as_bool()).unwrap_or(false);
                     if !ip.is_empty() {
@@ -1427,19 +1427,19 @@ impl App {
         match key.code {
             KeyCode::Tab => {
                 self.next_tab();
-                if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
+                if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
                     self.vr_fetch_stats().await;
                 }
-                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
                     self.vr_fetch_files().await;
                 }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
-                if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
+                if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
                     self.vr_fetch_stats().await;
                 }
-                if self.active_tab == Tab::Files && self.vr_files_data.is_empty() {
+                if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
                     self.vr_fetch_files().await;
                 }
             }
@@ -1447,72 +1447,72 @@ impl App {
                 self.enter_expression_mode();
             }
             KeyCode::Char('f') => {
-                self.vr_field_filter.clear();
-                self.vr_field_filter_selected = 0;
+                self.viewer.field_filter.clear();
+                self.viewer.field_filter_selected = 0;
                 self.input_mode = InputMode::FieldSelector;
             }
             KeyCode::Char('G') => {
-                self.vr_summary_metric = self.vr_summary_metric.next();
+                self.viewer.summary_metric = self.viewer.summary_metric.next();
             }
             KeyCode::Char('s') => {
-                self.vr_summary_sort = self.vr_summary_sort.next();
+                self.viewer.summary_sort = self.viewer.summary_sort.next();
                 self.vr_sort_summary_data();
             }
             KeyCode::Char('S') => {
-                self.vr_summary_sort_desc = !self.vr_summary_sort_desc;
+                self.viewer.summary_sort_desc = !self.viewer.summary_sort_desc;
                 self.vr_sort_summary_data();
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if !self.vr_summary_data.is_empty() {
-                    self.vr_summary_selected = (self.vr_summary_selected + self.visible_rows).min(self.vr_summary_data.len() - 1);
-                    self.vr_summary_table_state.select(Some(self.vr_summary_selected));
+                if !self.viewer.summary_data.is_empty() {
+                    self.viewer.summary_selected = (self.viewer.summary_selected + self.visible_rows).min(self.viewer.summary_data.len() - 1);
+                    self.viewer.summary_table_state.select(Some(self.viewer.summary_selected));
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.vr_summary_selected = self.vr_summary_selected.saturating_sub(self.visible_rows);
-                self.vr_summary_table_state.select(Some(self.vr_summary_selected));
+                self.viewer.summary_selected = self.viewer.summary_selected.saturating_sub(self.visible_rows);
+                self.viewer.summary_table_state.select(Some(self.viewer.summary_selected));
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if !self.vr_summary_data.is_empty() {
-                    self.vr_summary_selected = (self.vr_summary_selected + 1).min(self.vr_summary_data.len() - 1);
-                    self.vr_summary_table_state.select(Some(self.vr_summary_selected));
+                if !self.viewer.summary_data.is_empty() {
+                    self.viewer.summary_selected = (self.viewer.summary_selected + 1).min(self.viewer.summary_data.len() - 1);
+                    self.viewer.summary_table_state.select(Some(self.viewer.summary_selected));
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if self.vr_summary_selected > 0 {
-                    self.vr_summary_selected -= 1;
-                    self.vr_summary_table_state.select(Some(self.vr_summary_selected));
+                if self.viewer.summary_selected > 0 {
+                    self.viewer.summary_selected -= 1;
+                    self.viewer.summary_table_state.select(Some(self.viewer.summary_selected));
                 }
             }
             KeyCode::PageDown => {
-                if !self.vr_summary_data.is_empty() {
-                    self.vr_summary_selected = (self.vr_summary_selected + self.visible_rows).min(self.vr_summary_data.len() - 1);
-                    self.vr_summary_table_state.select(Some(self.vr_summary_selected));
+                if !self.viewer.summary_data.is_empty() {
+                    self.viewer.summary_selected = (self.viewer.summary_selected + self.visible_rows).min(self.viewer.summary_data.len() - 1);
+                    self.viewer.summary_table_state.select(Some(self.viewer.summary_selected));
                 }
             }
             KeyCode::PageUp => {
-                self.vr_summary_selected = self.vr_summary_selected.saturating_sub(self.visible_rows);
-                self.vr_summary_table_state.select(Some(self.vr_summary_selected));
+                self.viewer.summary_selected = self.viewer.summary_selected.saturating_sub(self.visible_rows);
+                self.viewer.summary_table_state.select(Some(self.viewer.summary_selected));
             }
             KeyCode::Left | KeyCode::Home => {
-                self.vr_summary_selected = 0;
-                self.vr_summary_table_state.select(Some(self.vr_summary_selected));
+                self.viewer.summary_selected = 0;
+                self.viewer.summary_table_state.select(Some(self.viewer.summary_selected));
             }
             KeyCode::Right | KeyCode::End => {
-                if !self.vr_summary_data.is_empty() {
-                    self.vr_summary_selected = self.vr_summary_data.len() - 1;
-                    self.vr_summary_table_state.select(Some(self.vr_summary_selected));
+                if !self.viewer.summary_data.is_empty() {
+                    self.viewer.summary_selected = self.viewer.summary_data.len() - 1;
+                    self.viewer.summary_table_state.select(Some(self.viewer.summary_selected));
                 }
             }
             KeyCode::Enter => {
-                if let Some(item) = self.vr_summary_data.get(self.vr_summary_selected) {
+                if let Some(item) = self.viewer.summary_data.get(self.viewer.summary_selected) {
                     let value = match &item.item {
                         serde_json::Value::String(s) => s.clone(),
                         other => other.to_string(),
                     };
-                    self.vr_detail_action_menu = Some(DetailActionMenu {
-                        field: self.vr_summary_field.clone(),
-                        display: self.vr_summary_field.clone(),
+                    self.viewer.detail_action_menu = Some(DetailActionMenu {
+                        field: self.viewer.summary_field.clone(),
+                        display: self.viewer.summary_field.clone(),
                         value,
                         selected: 0,
                         values: None,
@@ -1545,35 +1545,35 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
-                self.vr_field_filter.clear();
+                self.viewer.field_filter.clear();
             }
             KeyCode::Enter => {
                 let filtered = self.vr_filtered_fields();
-                if let Some(field) = filtered.get(self.vr_field_filter_selected) {
-                    self.vr_summary_field = field.exp.clone();
+                if let Some(field) = filtered.get(self.viewer.field_filter_selected) {
+                    self.viewer.summary_field = field.exp.clone();
                     self.input_mode = InputMode::Normal;
-                    self.vr_field_filter.clear();
+                    self.viewer.field_filter.clear();
                     self.vr_request_summary_fetch();
                 }
             }
             KeyCode::Down => {
                 let count = self.vr_filtered_fields().len();
                 if count > 0 {
-                    self.vr_field_filter_selected = (self.vr_field_filter_selected + 1).min(count - 1);
+                    self.viewer.field_filter_selected = (self.viewer.field_filter_selected + 1).min(count - 1);
                 }
             }
             KeyCode::Up => {
-                if self.vr_field_filter_selected > 0 {
-                    self.vr_field_filter_selected -= 1;
+                if self.viewer.field_filter_selected > 0 {
+                    self.viewer.field_filter_selected -= 1;
                 }
             }
             KeyCode::Char(c) => {
-                self.vr_field_filter.push(c);
-                self.vr_field_filter_selected = 0;
+                self.viewer.field_filter.push(c);
+                self.viewer.field_filter_selected = 0;
             }
             KeyCode::Backspace => {
-                self.vr_field_filter.pop();
-                self.vr_field_filter_selected = 0;
+                self.viewer.field_filter.pop();
+                self.viewer.field_filter_selected = 0;
             }
             _ => {}
         }
@@ -1585,61 +1585,61 @@ impl App {
         match key.code {
             KeyCode::Tab => {
                 self.next_tab();
-                if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
+                if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
                     self.vr_fetch_stats().await;
                 }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
-                if self.active_tab == Tab::Stats && self.vr_stats_data.is_empty() {
+                if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
                     self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if !self.vr_files_data.is_empty() {
-                    self.vr_files_selected = (self.vr_files_selected + self.visible_rows).min(self.vr_files_data.len() - 1);
-                    self.vr_files_table_state.select(Some(self.vr_files_selected));
+                if !self.viewer.files_data.is_empty() {
+                    self.viewer.files_selected = (self.viewer.files_selected + self.visible_rows).min(self.viewer.files_data.len() - 1);
+                    self.viewer.files_table_state.select(Some(self.viewer.files_selected));
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.vr_files_selected = self.vr_files_selected.saturating_sub(self.visible_rows);
-                self.vr_files_table_state.select(Some(self.vr_files_selected));
+                self.viewer.files_selected = self.viewer.files_selected.saturating_sub(self.visible_rows);
+                self.viewer.files_table_state.select(Some(self.viewer.files_selected));
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if !self.vr_files_data.is_empty() {
-                    self.vr_files_selected = (self.vr_files_selected + 1).min(self.vr_files_data.len() - 1);
-                    self.vr_files_table_state.select(Some(self.vr_files_selected));
+                if !self.viewer.files_data.is_empty() {
+                    self.viewer.files_selected = (self.viewer.files_selected + 1).min(self.viewer.files_data.len() - 1);
+                    self.viewer.files_table_state.select(Some(self.viewer.files_selected));
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if self.vr_files_selected > 0 {
-                    self.vr_files_selected -= 1;
-                    self.vr_files_table_state.select(Some(self.vr_files_selected));
+                if self.viewer.files_selected > 0 {
+                    self.viewer.files_selected -= 1;
+                    self.viewer.files_table_state.select(Some(self.viewer.files_selected));
                 }
             }
             KeyCode::Enter => {
                 self.vr_open_files_detail();
             }
             KeyCode::Right => {
-                let total = self.vr_files_filtered as usize;
-                let next = self.vr_files_page_start + self.vr_files_page_size;
+                let total = self.viewer.files_filtered as usize;
+                let next = self.viewer.files_page_start + self.viewer.files_page_size;
                 if next < total {
-                    self.vr_files_page_start = next;
-                    self.vr_files_selected = 0;
+                    self.viewer.files_page_start = next;
+                    self.viewer.files_selected = 0;
                     self.vr_fetch_files().await;
                 }
             }
             KeyCode::Left => {
-                if self.vr_files_page_start > 0 {
-                    self.vr_files_page_start = self.vr_files_page_start.saturating_sub(self.vr_files_page_size);
-                    self.vr_files_selected = 0;
+                if self.viewer.files_page_start > 0 {
+                    self.viewer.files_page_start = self.viewer.files_page_start.saturating_sub(self.viewer.files_page_size);
+                    self.viewer.files_selected = 0;
                     self.vr_fetch_files().await;
                 }
             }
             KeyCode::Home => {
-                if self.vr_files_page_start > 0 {
-                    self.vr_files_page_start = 0;
-                    self.vr_files_selected = 0;
+                if self.viewer.files_page_start > 0 {
+                    self.viewer.files_page_start = 0;
+                    self.viewer.files_selected = 0;
                     self.vr_fetch_files().await;
                 }
             }
@@ -1647,29 +1647,29 @@ impl App {
                 self.vr_fetch_files().await;
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
-                self.vr_files_filter_edit = self.vr_files_filter.clone();
-                self.expression_cursor = self.vr_files_filter_edit.len();
+                self.viewer.files_filter_edit = self.viewer.files_filter.clone();
+                self.expression_cursor = self.viewer.files_filter_edit.len();
                 self.input_mode = InputMode::Expression;
             }
             KeyCode::Char('s') => {
-                let num_cols = self.vr_files_columns.len();
-                self.vr_files_sort_column = (self.vr_files_sort_column + 1) % num_cols;
-                self.vr_files_page_start = 0;
-                self.vr_files_selected = 0;
+                let num_cols = self.viewer.files_columns.len();
+                self.viewer.files_sort_column = (self.viewer.files_sort_column + 1) % num_cols;
+                self.viewer.files_page_start = 0;
+                self.viewer.files_selected = 0;
                 self.vr_fetch_files().await;
             }
             KeyCode::Char('S') => {
-                self.vr_files_sort_desc = !self.vr_files_sort_desc;
-                self.vr_files_page_start = 0;
-                self.vr_files_selected = 0;
+                self.viewer.files_sort_desc = !self.viewer.files_sort_desc;
+                self.viewer.files_page_start = 0;
+                self.viewer.files_selected = 0;
                 self.vr_fetch_files().await;
             }
             KeyCode::Char('c') => {
                 self.vr_files_fetch_shareables().await;
-                self.vr_files_layout_popup_mode = LayoutPopupMode::List;
-                self.vr_files_layout_popup_selected = 0;
-                self.vr_files_layout_filter.clear();
-                self.vr_files_show_layout_popup = true;
+                self.viewer.files_layout_popup_mode = LayoutPopupMode::List;
+                self.viewer.files_layout_popup_selected = 0;
+                self.viewer.files_layout_filter.clear();
+                self.viewer.files_show_layout_popup = true;
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
@@ -1680,27 +1680,27 @@ impl App {
 
     pub(crate) async fn handle_files_column_editor_key(&mut self, key: KeyEvent) {
         let mut state = ColumnEditorState {
-            filter: &mut self.vr_files_column_editor_filter,
-            selected: &mut self.vr_files_column_editor_selected,
-            mode: &mut self.vr_files_column_editor_mode,
-            show: &mut self.vr_files_show_column_editor,
+            filter: &mut self.viewer.files_column_editor_filter,
+            selected: &mut self.viewer.files_column_editor_selected,
+            mode: &mut self.viewer.files_column_editor_mode,
+            show: &mut self.viewer.files_show_column_editor,
         };
         let action = handle_column_editor_key_generic(
-            key, &mut state, &mut self.vr_files_column_editor_items, &mut self.show_help,
+            key, &mut state, &mut self.viewer.files_column_editor_items, &mut self.show_help,
         );
         match action.as_deref() {
             Some("apply") => {
                 self.vr_files_apply_column_editor();
-                self.vr_files_show_column_editor = false;
-                self.vr_files_page_start = 0;
-                self.vr_files_selected = 0;
+                self.viewer.files_show_column_editor = false;
+                self.viewer.files_page_start = 0;
+                self.viewer.files_selected = 0;
                 self.vr_fetch_files().await;
             }
             Some("default") => {
                 self.vr_files_reset_default_columns();
-                self.vr_files_show_column_editor = false;
-                self.vr_files_page_start = 0;
-                self.vr_files_selected = 0;
+                self.viewer.files_show_column_editor = false;
+                self.viewer.files_page_start = 0;
+                self.viewer.files_selected = 0;
                 self.vr_fetch_files().await;
             }
             _ => {}
@@ -1708,17 +1708,17 @@ impl App {
     }
 
     pub(crate) async fn handle_files_layout_popup_key(&mut self, key: KeyEvent) {
-        let items: Vec<LayoutItem> = self.vr_files_saved_shareables.iter()
+        let items: Vec<LayoutItem> = self.viewer.files_saved_shareables.iter()
             .map(|s| LayoutItem { name: s.name.clone(), shared: s.shared })
             .collect();
         let mut delete_name_for_id = String::new();
         let mut state = LayoutPopupState {
-            mode: &mut self.vr_files_layout_popup_mode,
-            selected: &mut self.vr_files_layout_popup_selected,
-            filter: &mut self.vr_files_layout_filter,
-            save_name: &mut self.vr_files_layout_save_name,
-            save_cursor: &mut self.vr_files_layout_save_cursor,
-            show: &mut self.vr_files_show_layout_popup,
+            mode: &mut self.viewer.files_layout_popup_mode,
+            selected: &mut self.viewer.files_layout_popup_selected,
+            filter: &mut self.viewer.files_layout_filter,
+            save_name: &mut self.viewer.files_layout_save_name,
+            save_cursor: &mut self.viewer.files_layout_save_cursor,
+            show: &mut self.viewer.files_show_layout_popup,
             delete_name: &mut delete_name_for_id,
         };
         let action = handle_layout_popup_key_generic(key, &mut state, &items, &mut self.show_help);
@@ -1726,81 +1726,81 @@ impl App {
         if let Some(cmd) = action {
             if cmd == "edit" {
                 self.vr_files_build_column_editor();
-                self.vr_files_show_layout_popup = false;
-                self.vr_files_show_column_editor = true;
+                self.viewer.files_show_layout_popup = false;
+                self.viewer.files_show_column_editor = true;
             } else if cmd == "default" {
                 self.vr_files_reset_default_columns();
-                self.vr_files_page_start = 0;
-                self.vr_files_selected = 0;
+                self.viewer.files_page_start = 0;
+                self.viewer.files_selected = 0;
                 self.vr_fetch_files().await;
             } else if cmd.starts_with("confirm_delete:") {
-                if let Some(s) = self.vr_files_saved_shareables.iter().find(|s| s.name == delete_name_for_id) {
+                if let Some(s) = self.viewer.files_saved_shareables.iter().find(|s| s.name == delete_name_for_id) {
                     let id = s.id.clone();
                     self.vr_files_delete_shareable(&id).await;
-                    let max = self.vr_files_saved_shareables.len() + 3;
-                    if self.vr_files_layout_popup_selected >= max {
-                        self.vr_files_layout_popup_selected = max.saturating_sub(1);
+                    let max = self.viewer.files_saved_shareables.len() + 3;
+                    if self.viewer.files_layout_popup_selected >= max {
+                        self.viewer.files_layout_popup_selected = max.saturating_sub(1);
                     }
                 }
             } else if let Some(name) = cmd.strip_prefix("save:") {
                 self.vr_files_save_shareable(name).await;
             } else if let Some(idx_str) = cmd.strip_prefix("select:") {
                 if let Ok(idx) = idx_str.parse::<usize>() {
-                    if let Some(shareable) = self.vr_files_saved_shareables.get(idx).cloned() {
+                    if let Some(shareable) = self.viewer.files_saved_shareables.get(idx).cloned() {
                         self.vr_files_apply_shareable(&shareable);
-                        self.vr_files_page_start = 0;
-                        self.vr_files_selected = 0;
+                        self.viewer.files_page_start = 0;
+                        self.viewer.files_selected = 0;
                         self.vr_fetch_files().await;
                     }
                 }
             }
         }
-        self.vr_files_layout_delete_name = delete_name_for_id;
+        self.viewer.files_layout_delete_name = delete_name_for_id;
     }
 
     pub(crate) fn handle_files_detail_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
-                self.vr_files_view = StatsView::List;
-                self.vr_files_detail = None;
+                self.viewer.files_view = StatsView::List;
+                self.viewer.files_detail = None;
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if let Some(ref mut detail) = self.vr_files_detail {
+                if let Some(ref mut detail) = self.viewer.files_detail {
                     detail.scroll = detail.scroll.saturating_add(self.visible_rows as u16);
                 }
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                if let Some(ref mut detail) = self.vr_files_detail {
+                if let Some(ref mut detail) = self.viewer.files_detail {
                     detail.scroll = detail.scroll.saturating_sub(self.visible_rows as u16);
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if let Some(ref mut detail) = self.vr_files_detail {
+                if let Some(ref mut detail) = self.viewer.files_detail {
                     detail.scroll = detail.scroll.saturating_add(1);
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if let Some(ref mut detail) = self.vr_files_detail {
+                if let Some(ref mut detail) = self.viewer.files_detail {
                     detail.scroll = detail.scroll.saturating_sub(1);
                 }
             }
             KeyCode::PageDown => {
-                if let Some(ref mut detail) = self.vr_files_detail {
+                if let Some(ref mut detail) = self.viewer.files_detail {
                     detail.scroll = detail.scroll.saturating_add(self.visible_rows as u16);
                 }
             }
             KeyCode::PageUp => {
-                if let Some(ref mut detail) = self.vr_files_detail {
+                if let Some(ref mut detail) = self.viewer.files_detail {
                     detail.scroll = detail.scroll.saturating_sub(self.visible_rows as u16);
                 }
             }
             KeyCode::Left | KeyCode::Home => {
-                if let Some(ref mut detail) = self.vr_files_detail {
+                if let Some(ref mut detail) = self.viewer.files_detail {
                     detail.scroll = 0;
                 }
             }
             KeyCode::Right | KeyCode::End => {
-                if let Some(ref mut detail) = self.vr_files_detail {
+                if let Some(ref mut detail) = self.viewer.files_detail {
                     detail.scroll = u16::MAX;
                 }
             }
