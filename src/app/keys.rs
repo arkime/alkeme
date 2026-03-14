@@ -148,7 +148,7 @@ impl App {
         // Ctrl+P: return to Parliament from Viewer, Cont3xt, or WISE mode
         if key.code == KeyCode::Char('p') && key.modifiers.contains(KeyModifiers::CONTROL)
             && (self.app_mode == crate::app::AppMode::Viewer || self.app_mode == crate::app::AppMode::Cont3xt || self.app_mode == crate::app::AppMode::Wise)
-            && self.pl_saved_client.is_some()
+            && self.parliament.saved_client.is_some()
         {
             self.pl_return_to_parliament().await;
             return;
@@ -196,7 +196,7 @@ impl App {
         let is_ws_stats = self.app_mode == crate::app::AppMode::Wise && self.active_tab == Tab::WsStats;
         let is_ws_query = self.app_mode == crate::app::AppMode::Wise && self.active_tab == Tab::WsQuery;
         let edit = if is_pl_issues {
-            &mut self.pl_issues_filter_edit
+            &mut self.parliament.issues_filter_edit
         } else if is_ws_stats {
             &mut self.wise.stats_filter_edit
         } else if is_ws_query {
@@ -211,9 +211,9 @@ impl App {
         match key.code {
             KeyCode::Enter => {
                 if is_pl_issues {
-                    self.pl_issues_filter = self.pl_issues_filter_edit.clone();
+                    self.parliament.issues_filter = self.parliament.issues_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
-                    self.pl_issues_selected = 0;
+                    self.parliament.issues_selected = 0;
                 } else if is_ws_stats {
                     self.wise.stats_filter = self.wise.stats_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
@@ -253,7 +253,7 @@ impl App {
             }
             KeyCode::Esc => {
                 if is_pl_issues {
-                    self.pl_issues_filter_edit = self.pl_issues_filter.clone();
+                    self.parliament.issues_filter_edit = self.parliament.issues_filter.clone();
                 } else if is_ws_stats {
                     self.wise.stats_filter_edit = self.wise.stats_filter.clone();
                 } else if is_ws_query {

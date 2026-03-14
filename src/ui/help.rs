@@ -199,7 +199,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
             Line::from(vec![key("1 / 2"), Span::raw("Switch sub-tab (Integrations / iTypes)")]),
         ].into_iter().chain(
-            if app.pl_saved_client.is_some() {
+            if app.parliament.saved_client.is_some() {
                 vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
             } else { vec![] }
         ).chain(vec![
@@ -223,7 +223,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
             Line::from(vec![key("← / →"), Span::raw("Previous / next page")]),
         ].into_iter().chain(
-            if app.pl_saved_client.is_some() {
+            if app.parliament.saved_client.is_some() {
                 vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
             } else { vec![] }
         ).chain(vec![
@@ -249,7 +249,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate items")]),
             Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
         ];
-        if app.pl_saved_client.is_some() {
+        if app.parliament.saved_client.is_some() {
             lines.push(Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")]));
         }
         lines.extend_from_slice(&[
@@ -419,7 +419,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Home"), Span::raw("Jump to top, reset scroll")]),
             Line::from(vec![key("End"), Span::raw("Jump to bottom")]),
         ].into_iter().chain(
-            if app.pl_saved_client.is_some() {
+            if app.parliament.saved_client.is_some() {
                 vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
             } else { vec![] }
         ).chain(vec![
@@ -451,7 +451,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Ctrl+j / Ctrl+k"), Span::raw("Next / prev same integration")]),
             Line::from(vec![key("← / →"), Span::raw("Jump to top / bottom")]),
         ].into_iter().chain(
-            if app.pl_saved_client.is_some() {
+            if app.parliament.saved_client.is_some() {
                 vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
             } else { vec![] }
         ).chain(vec![
@@ -515,7 +515,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
             Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
         ].into_iter().chain(
-            if app.pl_saved_client.is_some() {
+            if app.parliament.saved_client.is_some() {
                 vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
             } else { vec![] }
         ).chain(vec![
@@ -536,7 +536,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate results")]),
             Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
         ].into_iter().chain(
-            if app.pl_saved_client.is_some() {
+            if app.parliament.saved_client.is_some() {
                 vec![Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")])]
             } else { vec![] }
         ).chain(vec![
@@ -560,7 +560,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Shift+← / Shift+→"), Span::raw("First / last page")]),
             Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
         ];
-        if app.pl_saved_client.is_some() {
+        if app.parliament.saved_client.is_some() {
             ht.push(Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")]));
         }
         ht.push(Line::from(vec![key("q"), Span::raw("Quit")]));

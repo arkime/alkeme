@@ -28,13 +28,13 @@ pub fn draw_parliament(f: &mut Frame, app: &mut App) {
     draw_status_bar(f, app, chunks[2]);
 
     // Detail overlay
-    if app.pl_show_detail && app.active_tab == Tab::Dashboard {
+    if app.parliament.show_detail && app.active_tab == Tab::Dashboard {
         draw_cluster_detail(f, app, f.area());
     }
 }
 
 fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
-    if app.pl_groups.is_empty() {
+    if app.parliament.groups.is_empty() {
         let msg = Paragraph::new("No parliament data. Press 'r' to refresh.")
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL).title(" Dashboard "));
@@ -46,7 +46,7 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     let nav_idx = app.pl_dashboard_nav_index();
 
-    for (gi, group) in app.pl_groups.iter().enumerate() {
+    for (gi, group) in app.parliament.groups.iter().enumerate() {
         // Group header
         lines.push(Line::from(vec![
             Span::styled(
@@ -63,13 +63,13 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
         }
 
         for (ci, cluster) in group.clusters.iter().enumerate() {
-            let is_selected = app.pl_cluster_list.iter().position(|&(g, c)| g == gi && c == ci)
+            let is_selected = app.parliament.cluster_list.iter().position(|&(g, c)| g == gi && c == ci)
                 .map(|idx| idx == nav_idx)
                 .unwrap_or(false);
 
             let cluster_id = cluster.id.as_deref().unwrap_or("");
-            let stats = app.pl_stats.get(cluster_id);
-            let issues = app.pl_issues_map.get(cluster_id);
+            let stats = app.parliament.stats.get(cluster_id);
+            let issues = app.parliament.issues_map.get(cluster_id);
 
             let line = build_cluster_line(cluster, stats, is_selected);
             lines.push(line);
@@ -117,13 +117,13 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
     let mut selected_line: u16 = 0;
     let mut found = false;
     let mut line_count: u16 = 0;
-    for (gi, group) in app.pl_groups.iter().enumerate() {
+    for (gi, group) in app.parliament.groups.iter().enumerate() {
         line_count += 1; // group header
         if !group.description.is_empty() {
             line_count += 1;
         }
         for (ci, _cluster) in group.clusters.iter().enumerate() {
-            if app.pl_cluster_list.iter().position(|&(g, c)| g == gi && c == ci)
+            if app.parliament.cluster_list.iter().position(|&(g, c)| g == gi && c == ci)
                 .map(|idx| idx == nav_idx)
                 .unwrap_or(false) && !found
             {
@@ -132,7 +132,7 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
             }
             line_count += 1; // cluster line
             let cluster_id = _cluster.id.as_deref().unwrap_or("");
-            if let Some(issues) = app.pl_issues_map.get(cluster_id) {
+            if let Some(issues) = app.parliament.issues_map.get(cluster_id) {
                 if !issues.is_empty() {
                     line_count += 1; // single grouped-counts line
                 }
@@ -141,16 +141,16 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
         line_count += 1; // spacer
     }
     if found && content_height > 0 {
-        if selected_line < app.pl_dashboard_scroll {
-            app.pl_dashboard_scroll = selected_line;
-        } else if selected_line >= app.pl_dashboard_scroll + content_height {
-            app.pl_dashboard_scroll = selected_line - content_height + 1;
+        if selected_line < app.parliament.dashboard_scroll {
+            app.parliament.dashboard_scroll = selected_line;
+        } else if selected_line >= app.parliament.dashboard_scroll + content_height {
+            app.parliament.dashboard_scroll = selected_line - content_height + 1;
         }
     }
 
     let paragraph = Paragraph::new(lines)
         .block(block)
-        .scroll((app.pl_dashboard_scroll, 0));
+        .scroll((app.parliament.dashboard_scroll, 0));
 
     f.render_widget(paragraph, area);
 }
@@ -276,13 +276,13 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Filter bar
     let filter_display = if app.input_mode == InputMode::Expression {
-        &app.pl_issues_filter_edit
+        &app.parliament.issues_filter_edit
     } else {
-        &app.pl_issues_filter
+        &app.parliament.issues_filter
     };
 
-    let sort_indicator = format!("{} {}", app.pl_issues_sort.label(),
-        if app.pl_issues_sort_desc { "▼" } else { "▲" });
+    let sort_indicator = format!("{} {}", app.parliament.issues_sort.label(),
+        if app.parliament.issues_sort_desc { "▼" } else { "▲" });
 
     let filter_chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -305,11 +305,11 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Issues table
     let filtered = app.pl_filtered_issues();
-    let total = app.pl_issues.len();
+    let total = app.parliament.issues.len();
 
     let pl_sort_hdr = |sort: PlIssueSort, label: &str| -> Cell {
-        let is_sorted = app.pl_issues_sort == sort;
-        Cell::from(sort_header_label(label, is_sorted, app.pl_issues_sort_desc))
+        let is_sorted = app.parliament.issues_sort == sort;
+        Cell::from(sort_header_label(label, is_sorted, app.parliament.issues_sort_desc))
             .style(sort_header_style(is_sorted))
     };
     let header = Row::new(vec![
@@ -362,28 +362,28 @@ fn draw_issues(f: &mut Frame, app: &mut App, area: Rect) {
             .borders(Borders::ALL)
             .title(format!(" Issues [{}/{}] ", filtered.len(), total)));
 
-    f.render_stateful_widget(table, chunks[1], &mut app.pl_issues_table_state);
+    f.render_stateful_widget(table, chunks[1], &mut app.parliament.issues_table_state);
 }
 
 fn draw_cluster_detail(f: &mut Frame, app: &App, area: Rect) {
     let popup_area = centered_rect(70, 80, area);
 
     let nav_idx = app.pl_dashboard_nav_index();
-    let (gi, ci) = if nav_idx < app.pl_cluster_list.len() {
-        app.pl_cluster_list[nav_idx]
+    let (gi, ci) = if nav_idx < app.parliament.cluster_list.len() {
+        app.parliament.cluster_list[nav_idx]
     } else {
         return;
     };
 
-    let cluster = match app.pl_groups.get(gi).and_then(|g| g.clusters.get(ci)) {
+    let cluster = match app.parliament.groups.get(gi).and_then(|g| g.clusters.get(ci)) {
         Some(c) => c,
         None => return,
     };
 
-    let group = &app.pl_groups[gi];
+    let group = &app.parliament.groups[gi];
     let cluster_id = cluster.id.as_deref().unwrap_or("");
-    let stats = app.pl_stats.get(cluster_id);
-    let issues = app.pl_issues_map.get(cluster_id);
+    let stats = app.parliament.stats.get(cluster_id);
+    let issues = app.parliament.issues_map.get(cluster_id);
 
     let mut lines: Vec<Line> = Vec::new();
 
@@ -521,7 +521,7 @@ fn draw_cluster_detail(f: &mut Frame, app: &App, area: Rect) {
 
     let paragraph = Paragraph::new(lines)
         .block(block)
-        .scroll((app.pl_detail_scroll, 0));
+        .scroll((app.parliament.detail_scroll, 0));
 
     f.render_widget(Clear, popup_area);
     f.render_widget(paragraph, popup_area);

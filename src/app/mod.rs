@@ -14,7 +14,7 @@ mod wise;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLink, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, IntegrationSettings, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLink, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, IntegrationSettings, SummaryItem};
 use chrono::{Datelike, Duration, Timelike, Utc};
 use crossterm::event::KeyCode;
 use ratatui::widgets::TableState;
@@ -416,30 +416,7 @@ pub struct App {
     pub c3_ov_fe_popup_filter: String,
     pub c3_ov_fe_popup_filtering: bool,
     // Parliament state
-    pub pl_groups: Vec<PlGroup>,
-    pub pl_stats: HashMap<String, PlClusterStats>,
-    pub pl_issues_map: HashMap<String, Vec<PlIssue>>,
-    pub pl_issues: Vec<PlIssue>,
-    pub pl_issues_filter: String,
-    pub pl_issues_filter_edit: String,
-    pub pl_issues_sort: PlIssueSort,
-    pub pl_issues_sort_desc: bool,
-    pub pl_issues_selected: usize,
-    pub pl_issues_table_state: TableState,
-    pub pl_selected_group: usize,
-    pub pl_selected_cluster: usize,
-    pub pl_dashboard_scroll: u16,
-    pub pl_last_refresh: std::time::Instant,
-    pub pl_show_detail: bool,
-    pub pl_detail_scroll: u16,
-    // Flat list of (group_idx, cluster_idx) for dashboard navigation
-    pub pl_cluster_list: Vec<(usize, usize)>,
-    // Saved parliament client for returning from viewer/cont3xt mode (Ctrl+P)
-    pub pl_saved_client: Option<ArkimeClient>,
-    pub pl_cont3xt_url: String,
-    pub pl_wise_url: String,
-    pub pl_saved_viewer_expression: String,
-    pub pl_saved_c3_expression: String,
+    pub parliament: ParliamentState,
     pub force_clear: bool, // force terminal clear after okta redirect
 
     // WISE mode state
@@ -822,28 +799,7 @@ impl App {
             c3_ov_fe_popup_filter: String::new(),
             c3_ov_fe_popup_filtering: false,
             // Parliament state
-            pl_groups: Vec::new(),
-            pl_stats: HashMap::new(),
-            pl_issues_map: HashMap::new(),
-            pl_issues: Vec::new(),
-            pl_issues_filter: String::new(),
-            pl_issues_filter_edit: String::new(),
-            pl_issues_sort: PlIssueSort::LastNoticed,
-            pl_issues_sort_desc: true,
-            pl_issues_selected: 0,
-            pl_issues_table_state: TableState::default().with_selected(0),
-            pl_selected_group: 0,
-            pl_selected_cluster: 0,
-            pl_dashboard_scroll: 0,
-            pl_last_refresh: std::time::Instant::now(),
-            pl_show_detail: false,
-            pl_detail_scroll: 0,
-            pl_cluster_list: Vec::new(),
-            pl_saved_client: None,
-            pl_cont3xt_url: String::new(),
-            pl_wise_url: String::new(),
-            pl_saved_viewer_expression: String::new(),
-            pl_saved_c3_expression: String::new(),
+            parliament: ParliamentState::default(),
             force_clear: false,
 
             // WISE state
@@ -888,7 +844,7 @@ impl App {
     /// Returns true if q should close a popup instead of quitting the app
     pub fn q_closes_popup(&self) -> bool {
         self.confirm_dialog.is_some()
-            || self.show_help || self.show_debug || self.pl_show_detail
+            || self.show_help || self.show_debug || self.parliament.show_detail
             || self.vr_show_column_editor || self.vr_show_layout_popup || self.vr_show_view_popup
             || self.vr_stats_show_column_editor || self.vr_stats_show_layout_popup
             || self.c3_show_integration_popup || self.c3_show_overview_popup

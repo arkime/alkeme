@@ -311,10 +311,10 @@ async fn main() -> Result<()> {
         app::AppMode::Parliament => {
             // Seed saved expressions so they're used when switching to Viewer/Cont3xt
             if let Some(search) = &viewer_search {
-                app.pl_saved_viewer_expression = search.clone();
+                app.parliament.saved_viewer_expression = search.clone();
             }
             if let Some(search) = &cont3xt_search {
-                app.pl_saved_c3_expression = search.clone();
+                app.parliament.saved_c3_expression = search.clone();
             }
         }
         _ => {}
@@ -685,7 +685,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
         // Parliament auto-refresh every 30 seconds
         if app.app_mode == app::AppMode::Parliament
             && app.input_mode == app::InputMode::Normal
-            && app.pl_last_refresh.elapsed() >= Duration::from_secs(30)
+            && app.parliament.last_refresh.elapsed() >= Duration::from_secs(30)
         {
             app.pl_fetch_data().await;
             if app.active_tab == app::Tab::Issues {
@@ -717,7 +717,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 }
                 if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
                     && !app.q_closes_popup() {
-                    if app.pl_saved_client.is_some() {
+                    if app.parliament.saved_client.is_some() {
                         app.pl_return_to_parliament().await;
                         needs_redraw = true;
                         break;
@@ -735,7 +735,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                         }
                         if key.code == KeyCode::Char('q') && !app.is_detail_view() && app.input_mode == app::InputMode::Normal
                             && !app.q_closes_popup() {
-                            if app.pl_saved_client.is_some() {
+                            if app.parliament.saved_client.is_some() {
                                 app.pl_return_to_parliament().await;
                                 needs_redraw = true;
                                 break;

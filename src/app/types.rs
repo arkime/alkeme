@@ -1,4 +1,6 @@
+use ratatui::widgets::TableState;
 use serde_json::Value;
+use std::collections::HashMap;
 
 pub fn is_hidden_detail_field(key: &str) -> bool {
     key == "packetPos" || key == "packetRange" || key == "packetLen" || key.ends_with("Cnt")
@@ -1165,6 +1167,62 @@ impl Default for WiseState {
             query_value_edit: String::new(),
             query_results: Vec::new(),
             query_selected: 0,
+        }
+    }
+}
+
+pub struct ParliamentState {
+    pub groups: Vec<crate::api::PlGroup>,
+    pub stats: HashMap<String, crate::api::PlClusterStats>,
+    pub issues_map: HashMap<String, Vec<crate::api::PlIssue>>,
+    pub issues: Vec<crate::api::PlIssue>,
+    pub issues_filter: String,
+    pub issues_filter_edit: String,
+    pub issues_sort: PlIssueSort,
+    pub issues_sort_desc: bool,
+    pub issues_selected: usize,
+    pub issues_table_state: TableState,
+    pub selected_group: usize,
+    pub selected_cluster: usize,
+    pub dashboard_scroll: u16,
+    pub last_refresh: std::time::Instant,
+    pub show_detail: bool,
+    pub detail_scroll: u16,
+    /// Flat list of (group_idx, cluster_idx) for dashboard navigation
+    pub cluster_list: Vec<(usize, usize)>,
+    /// Saved parliament client for returning from viewer/cont3xt mode (Ctrl+P)
+    pub saved_client: Option<crate::api::ArkimeClient>,
+    pub cont3xt_url: String,
+    pub wise_url: String,
+    pub saved_viewer_expression: String,
+    pub saved_c3_expression: String,
+}
+
+impl Default for ParliamentState {
+    fn default() -> Self {
+        Self {
+            groups: Vec::new(),
+            stats: HashMap::new(),
+            issues_map: HashMap::new(),
+            issues: Vec::new(),
+            issues_filter: String::new(),
+            issues_filter_edit: String::new(),
+            issues_sort: PlIssueSort::LastNoticed,
+            issues_sort_desc: true,
+            issues_selected: 0,
+            issues_table_state: TableState::default().with_selected(0),
+            selected_group: 0,
+            selected_cluster: 0,
+            dashboard_scroll: 0,
+            last_refresh: std::time::Instant::now(),
+            show_detail: false,
+            detail_scroll: 0,
+            cluster_list: Vec::new(),
+            saved_client: None,
+            cont3xt_url: String::new(),
+            wise_url: String::new(),
+            saved_viewer_expression: String::new(),
+            saved_c3_expression: String::new(),
         }
     }
 }

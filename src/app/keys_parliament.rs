@@ -45,24 +45,24 @@ impl App {
     }
 
     async fn handle_dashboard_key(&mut self, key: KeyEvent) {
-        if self.pl_show_detail {
+        if self.parliament.show_detail {
             match key.code {
                 KeyCode::Esc | KeyCode::Char('q') => {
-                    self.pl_show_detail = false;
+                    self.parliament.show_detail = false;
                 }
                 KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                    self.pl_detail_scroll = self.pl_detail_scroll.saturating_sub(10);
+                    self.parliament.detail_scroll = self.parliament.detail_scroll.saturating_sub(10);
                 }
                 KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                    self.pl_detail_scroll += 10;
+                    self.parliament.detail_scroll += 10;
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
-                    self.pl_detail_scroll = self.pl_detail_scroll.saturating_sub(1);
+                    self.parliament.detail_scroll = self.parliament.detail_scroll.saturating_sub(1);
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    self.pl_detail_scroll += 1;
+                    self.parliament.detail_scroll += 1;
                 }
-                KeyCode::Home | KeyCode::Left => self.pl_detail_scroll = 0,
+                KeyCode::Home | KeyCode::Left => self.parliament.detail_scroll = 0,
                 _ => {}
             }
             return;
@@ -89,27 +89,27 @@ impl App {
                         self.pl_switch_to_viewer(&url).await;
                     } else {
                         // Show detail overlay for this cluster
-                        self.pl_show_detail = true;
-                        self.pl_detail_scroll = 0;
+                        self.parliament.show_detail = true;
+                        self.parliament.detail_scroll = 0;
                     }
                 }
             }
             KeyCode::Char('i') => {
                 // Show detail overlay
-                self.pl_show_detail = true;
-                self.pl_detail_scroll = 0;
+                self.parliament.show_detail = true;
+                self.parliament.detail_scroll = 0;
             }
             KeyCode::Char('c') => {
-                if !self.pl_cont3xt_url.is_empty() {
-                    let url = self.pl_cont3xt_url.clone();
+                if !self.parliament.cont3xt_url.is_empty() {
+                    let url = self.parliament.cont3xt_url.clone();
                     self.pl_switch_to_cont3xt(&url).await;
                 } else {
                     self.status_msg = "No Cont3xt URL configured in Parliament settings".into();
                 }
             }
             KeyCode::Char('w') => {
-                if !self.pl_wise_url.is_empty() {
-                    let url = self.pl_wise_url.clone();
+                if !self.parliament.wise_url.is_empty() {
+                    let url = self.parliament.wise_url.clone();
                     self.pl_switch_to_wise(&url).await;
                 } else {
                     self.status_msg = "No WISE URL configured in Parliament settings".into();
@@ -132,79 +132,79 @@ impl App {
                 self.pl_fetch_issues().await;
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
-                self.pl_issues_filter_edit = self.pl_issues_filter.clone();
+                self.parliament.issues_filter_edit = self.parliament.issues_filter.clone();
                 self.input_mode = InputMode::Expression;
-                self.expression_cursor = self.pl_issues_filter_edit.len();
+                self.expression_cursor = self.parliament.issues_filter_edit.len();
             }
             KeyCode::Char('s') => {
-                self.pl_issues_sort = self.pl_issues_sort.next();
+                self.parliament.issues_sort = self.parliament.issues_sort.next();
                 self.pl_sort_issues();
             }
             KeyCode::Char('S') => {
-                self.pl_issues_sort_desc = !self.pl_issues_sort_desc;
+                self.parliament.issues_sort_desc = !self.parliament.issues_sort_desc;
                 self.pl_sort_issues();
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 let filtered = self.pl_filtered_issues();
                 if !filtered.is_empty() {
-                    self.pl_issues_selected = self.pl_issues_selected.saturating_sub(self.visible_rows);
-                    self.pl_issues_table_state.select(Some(self.pl_issues_selected));
+                    self.parliament.issues_selected = self.parliament.issues_selected.saturating_sub(self.visible_rows);
+                    self.parliament.issues_table_state.select(Some(self.parliament.issues_selected));
                 }
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 let filtered = self.pl_filtered_issues();
                 let max = filtered.len().saturating_sub(1);
-                self.pl_issues_selected = (self.pl_issues_selected + self.visible_rows).min(max);
-                self.pl_issues_table_state.select(Some(self.pl_issues_selected));
+                self.parliament.issues_selected = (self.parliament.issues_selected + self.visible_rows).min(max);
+                self.parliament.issues_table_state.select(Some(self.parliament.issues_selected));
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 let filtered = self.pl_filtered_issues();
-                if !filtered.is_empty() && self.pl_issues_selected > 0 {
-                    self.pl_issues_selected -= 1;
-                    self.pl_issues_table_state.select(Some(self.pl_issues_selected));
+                if !filtered.is_empty() && self.parliament.issues_selected > 0 {
+                    self.parliament.issues_selected -= 1;
+                    self.parliament.issues_table_state.select(Some(self.parliament.issues_selected));
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 let filtered = self.pl_filtered_issues();
-                if !filtered.is_empty() && self.pl_issues_selected < filtered.len() - 1 {
-                    self.pl_issues_selected += 1;
-                    self.pl_issues_table_state.select(Some(self.pl_issues_selected));
+                if !filtered.is_empty() && self.parliament.issues_selected < filtered.len() - 1 {
+                    self.parliament.issues_selected += 1;
+                    self.parliament.issues_table_state.select(Some(self.parliament.issues_selected));
                 }
             }
             KeyCode::Home => {
-                self.pl_issues_selected = 0;
-                self.pl_issues_table_state.select(Some(0));
+                self.parliament.issues_selected = 0;
+                self.parliament.issues_table_state.select(Some(0));
             }
             KeyCode::End => {
                 let filtered = self.pl_filtered_issues();
-                self.pl_issues_selected = filtered.len().saturating_sub(1);
-                self.pl_issues_table_state.select(Some(self.pl_issues_selected));
+                self.parliament.issues_selected = filtered.len().saturating_sub(1);
+                self.parliament.issues_table_state.select(Some(self.parliament.issues_selected));
             }
             _ => {}
         }
     }
 
     fn pl_nav_next(&mut self) {
-        if self.pl_cluster_list.is_empty() {
+        if self.parliament.cluster_list.is_empty() {
             return;
         }
         let cur = self.pl_dashboard_nav_index();
-        if cur + 1 < self.pl_cluster_list.len() {
-            let (gi, ci) = self.pl_cluster_list[cur + 1];
-            self.pl_selected_group = gi;
-            self.pl_selected_cluster = ci;
+        if cur + 1 < self.parliament.cluster_list.len() {
+            let (gi, ci) = self.parliament.cluster_list[cur + 1];
+            self.parliament.selected_group = gi;
+            self.parliament.selected_cluster = ci;
         }
     }
 
     fn pl_nav_prev(&mut self) {
-        if self.pl_cluster_list.is_empty() {
+        if self.parliament.cluster_list.is_empty() {
             return;
         }
         let cur = self.pl_dashboard_nav_index();
         if cur > 0 {
-            let (gi, ci) = self.pl_cluster_list[cur - 1];
-            self.pl_selected_group = gi;
-            self.pl_selected_cluster = ci;
+            let (gi, ci) = self.parliament.cluster_list[cur - 1];
+            self.parliament.selected_group = gi;
+            self.parliament.selected_cluster = ci;
         }
     }
 
@@ -226,14 +226,14 @@ impl App {
     /// Saves current client, connects to the new URL, handles auth.
     /// Returns false if connection failed (caller should abort).
     async fn pl_connect_to(&mut self, url: &str, label: &str) -> bool {
-        self.pl_saved_client = Some(self.client.clone());
+        self.parliament.saved_client = Some(self.client.clone());
 
         let mut new_client = self.client.clone_with_url(url);
         if new_client.ensure_session().await.is_err() {
             self.force_clear = true;
             if let Err(e) = prompt_credentials_and_login(&mut new_client, url).await {
                 self.status_msg = format!("Failed to connect to {} at {}: {}", label, url, e);
-                self.pl_saved_client = None;
+                self.parliament.saved_client = None;
                 return false;
             }
         }
@@ -263,7 +263,7 @@ impl App {
         self.active_tab = Tab::Sessions;
 
         // Restore saved viewer expression
-        self.expression = self.pl_saved_viewer_expression.clone();
+        self.expression = self.parliament.saved_viewer_expression.clone();
         self.expression_edit = self.expression.clone();
 
         self.vr_fetch_fields().await;
@@ -271,11 +271,11 @@ impl App {
     }
 
     pub(crate) async fn pl_return_to_parliament(&mut self) {
-        if let Some(saved) = self.pl_saved_client.take() {
+        if let Some(saved) = self.parliament.saved_client.take() {
             // Save current expression for this mode
             match self.app_mode {
-                AppMode::Viewer => self.pl_saved_viewer_expression = self.expression.clone(),
-                AppMode::Cont3xt => self.pl_saved_c3_expression = self.expression.clone(),
+                AppMode::Viewer => self.parliament.saved_viewer_expression = self.expression.clone(),
+                AppMode::Cont3xt => self.parliament.saved_c3_expression = self.expression.clone(),
                 _ => {}
             }
             self.expression.clear();
@@ -301,7 +301,7 @@ impl App {
         self.active_tab = Tab::Search;
 
         // Restore saved cont3xt expression
-        self.expression = self.pl_saved_c3_expression.clone();
+        self.expression = self.parliament.saved_c3_expression.clone();
         self.expression_edit = self.expression.clone();
 
         self.c3_fetch_integrations().await;
