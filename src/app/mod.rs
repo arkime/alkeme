@@ -14,7 +14,7 @@ mod wise;
 
 pub use types::*;
 
-use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLink, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, IntegrationSettings, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem, WsQueryResult, WsSourceStats, WsStats, WsTypeStats};
+use crate::api::{ArkimeClient, ArkimeField, ArkimeView, Cont3xtIntegration, Cont3xtLink, Cont3xtLinkGroup, Cont3xtOverview, Cont3xtResult, Cont3xtView, GraphData, HttpLog, IntegrationSettings, PlCluster, PlClusterStats, PlGroup, PlIssue, SummaryItem};
 use chrono::{Datelike, Duration, Timelike, Utc};
 use crossterm::event::KeyCode;
 use ratatui::widgets::TableState;
@@ -442,21 +442,8 @@ pub struct App {
     pub pl_saved_c3_expression: String,
     pub force_clear: bool, // force terminal clear after okta redirect
 
-    // WISE mode fields (ws_ prefix)
-    pub ws_stats: Option<WsStats>,
-    pub ws_stats_tab: WsStatsTab,
-    pub ws_stats_filter: String,
-    pub ws_stats_filter_edit: String,
-    pub ws_stats_selected: usize,
-    pub ws_last_refresh: std::time::Instant,
-    pub ws_sources: Vec<String>,
-    pub ws_types: Vec<String>,
-    pub ws_query_source: String,  // selected source for query ("any" = all)
-    pub ws_query_type: String,    // selected type for query (default "ip")
-    pub ws_query_value: String,
-    pub ws_query_value_edit: String,
-    pub ws_query_results: Vec<WsQueryResult>,
-    pub ws_query_selected: usize,
+    // WISE mode state
+    pub wise: WiseState,
 
     // Cached background buffer for popup double-buffering
     pub popup_bg_cache: Option<ratatui::buffer::Buffer>,
@@ -860,20 +847,7 @@ impl App {
             force_clear: false,
 
             // WISE state
-            ws_stats: None,
-            ws_stats_tab: WsStatsTab::Sources,
-            ws_stats_filter: String::new(),
-            ws_stats_filter_edit: String::new(),
-            ws_stats_selected: 0,
-            ws_last_refresh: std::time::Instant::now(),
-            ws_sources: Vec::new(),
-            ws_types: Vec::new(),
-            ws_query_source: "any".into(),
-            ws_query_type: "ip".into(),
-            ws_query_value: String::new(),
-            ws_query_value_edit: String::new(),
-            ws_query_results: Vec::new(),
-            ws_query_selected: 0,
+            wise: WiseState::default(),
 
             popup_bg_cache: None,
         }

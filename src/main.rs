@@ -698,7 +698,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
         if app.app_mode == app::AppMode::Wise
             && app.active_tab == app::Tab::WsStats
             && app.input_mode == app::InputMode::Normal
-            && app.ws_last_refresh.elapsed() >= Duration::from_secs(30)
+            && app.wise.last_refresh.elapsed() >= Duration::from_secs(30)
         {
             app.ws_fetch_stats().await;
             needs_redraw = true;

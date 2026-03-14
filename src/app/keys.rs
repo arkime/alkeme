@@ -198,9 +198,9 @@ impl App {
         let edit = if is_pl_issues {
             &mut self.pl_issues_filter_edit
         } else if is_ws_stats {
-            &mut self.ws_stats_filter_edit
+            &mut self.wise.stats_filter_edit
         } else if is_ws_query {
-            &mut self.ws_query_value_edit
+            &mut self.wise.query_value_edit
         } else if is_stats {
             &mut self.vr_stats_filter_edit
         } else if is_files {
@@ -215,12 +215,12 @@ impl App {
                     self.input_mode = InputMode::Normal;
                     self.pl_issues_selected = 0;
                 } else if is_ws_stats {
-                    self.ws_stats_filter = self.ws_stats_filter_edit.clone();
+                    self.wise.stats_filter = self.wise.stats_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
-                    self.ws_stats_selected = 0;
+                    self.wise.stats_selected = 0;
                     self.ws_fetch_stats().await;
                 } else if is_ws_query {
-                    self.ws_query_value = self.ws_query_value_edit.clone();
+                    self.wise.query_value = self.wise.query_value_edit.clone();
                     self.input_mode = InputMode::Normal;
                     self.ws_run_query().await;
                 } else if is_stats {
@@ -255,9 +255,9 @@ impl App {
                 if is_pl_issues {
                     self.pl_issues_filter_edit = self.pl_issues_filter.clone();
                 } else if is_ws_stats {
-                    self.ws_stats_filter_edit = self.ws_stats_filter.clone();
+                    self.wise.stats_filter_edit = self.wise.stats_filter.clone();
                 } else if is_ws_query {
-                    self.ws_query_value_edit = self.ws_query_value.clone();
+                    self.wise.query_value_edit = self.wise.query_value.clone();
                 } else if is_stats {
                     self.vr_stats_filter_edit = self.vr_stats_filter.clone();
                 } else if is_files {

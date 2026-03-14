@@ -31,50 +31,50 @@ impl App {
                 self.ws_fetch_stats().await;
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
-                self.ws_stats_filter_edit = self.ws_stats_filter.clone();
+                self.wise.stats_filter_edit = self.wise.stats_filter.clone();
                 self.input_mode = InputMode::Expression;
             }
             KeyCode::Char('1') => {
-                self.ws_stats_tab = WsStatsTab::Sources;
-                self.ws_stats_selected = 0;
+                self.wise.stats_tab = WsStatsTab::Sources;
+                self.wise.stats_selected = 0;
             }
             KeyCode::Char('2') => {
-                self.ws_stats_tab = WsStatsTab::Types;
-                self.ws_stats_selected = 0;
+                self.wise.stats_tab = WsStatsTab::Types;
+                self.wise.stats_selected = 0;
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.ws_stats_selected = self.ws_stats_selected.saturating_sub(20);
+                self.wise.stats_selected = self.wise.stats_selected.saturating_sub(20);
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                let max = match self.ws_stats_tab {
+                let max = match self.wise.stats_tab {
                     WsStatsTab::Sources => self.ws_filtered_sources().len(),
                     WsStatsTab::Types => self.ws_filtered_types().len(),
                 };
-                self.ws_stats_selected = (self.ws_stats_selected + 20).min(max.saturating_sub(1));
+                self.wise.stats_selected = (self.wise.stats_selected + 20).min(max.saturating_sub(1));
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if self.ws_stats_selected > 0 {
-                    self.ws_stats_selected -= 1;
+                if self.wise.stats_selected > 0 {
+                    self.wise.stats_selected -= 1;
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                let max = match self.ws_stats_tab {
+                let max = match self.wise.stats_tab {
                     WsStatsTab::Sources => self.ws_filtered_sources().len(),
                     WsStatsTab::Types => self.ws_filtered_types().len(),
                 };
-                if self.ws_stats_selected + 1 < max {
-                    self.ws_stats_selected += 1;
+                if self.wise.stats_selected + 1 < max {
+                    self.wise.stats_selected += 1;
                 }
             }
             KeyCode::Home | KeyCode::Left => {
-                self.ws_stats_selected = 0;
+                self.wise.stats_selected = 0;
             }
             KeyCode::End | KeyCode::Right => {
-                let max = match self.ws_stats_tab {
+                let max = match self.wise.stats_tab {
                     WsStatsTab::Sources => self.ws_filtered_sources().len(),
                     WsStatsTab::Types => self.ws_filtered_types().len(),
                 };
-                self.ws_stats_selected = max.saturating_sub(1);
+                self.wise.stats_selected = max.saturating_sub(1);
             }
             _ => {}
         }
@@ -90,41 +90,41 @@ impl App {
             KeyCode::BackTab => self.prev_tab(),
             KeyCode::Char('h') | KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('/') | KeyCode::Char('E') => {
-                self.ws_query_value_edit = self.ws_query_value.clone();
+                self.wise.query_value_edit = self.wise.query_value.clone();
                 self.input_mode = InputMode::Expression;
             }
             KeyCode::Char('s') => {
                 // Cycle source
-                if self.ws_sources.is_empty() { return; }
+                if self.wise.sources.is_empty() { return; }
                 let mut all = vec!["any".to_string()];
-                all.extend(self.ws_sources.iter().cloned());
-                let idx = all.iter().position(|s| s == &self.ws_query_source).unwrap_or(0);
-                self.ws_query_source = all[(idx + 1) % all.len()].clone();
+                all.extend(self.wise.sources.iter().cloned());
+                let idx = all.iter().position(|s| s == &self.wise.query_source).unwrap_or(0);
+                self.wise.query_source = all[(idx + 1) % all.len()].clone();
             }
             KeyCode::Char('t') => {
                 // Cycle type
-                if self.ws_types.is_empty() { return; }
-                let idx = self.ws_types.iter().position(|t| t == &self.ws_query_type).unwrap_or(0);
-                self.ws_query_type = self.ws_types[(idx + 1) % self.ws_types.len()].clone();
+                if self.wise.types.is_empty() { return; }
+                let idx = self.wise.types.iter().position(|t| t == &self.wise.query_type).unwrap_or(0);
+                self.wise.query_type = self.wise.types[(idx + 1) % self.wise.types.len()].clone();
             }
             KeyCode::Enter => {
                 self.ws_run_query().await;
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if self.ws_query_selected > 0 {
-                    self.ws_query_selected -= 1;
+                if self.wise.query_selected > 0 {
+                    self.wise.query_selected -= 1;
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if self.ws_query_selected + 1 < self.ws_query_results.len() {
-                    self.ws_query_selected += 1;
+                if self.wise.query_selected + 1 < self.wise.query_results.len() {
+                    self.wise.query_selected += 1;
                 }
             }
             KeyCode::Home | KeyCode::Left => {
-                self.ws_query_selected = 0;
+                self.wise.query_selected = 0;
             }
             KeyCode::End | KeyCode::Right => {
-                self.ws_query_selected = self.ws_query_results.len().saturating_sub(1);
+                self.wise.query_selected = self.wise.query_results.len().saturating_sub(1);
             }
             _ => {}
         }

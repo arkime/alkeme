@@ -58,12 +58,12 @@ fn draw_ws_stats(f: &mut Frame, app: &mut App, area: Rect) {
     // Sub-tab bar: [1] Sources  [2] Types
     let sub_tabs = Line::from(vec![
         Span::styled("[1] ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Sources", if app.ws_stats_tab == WsStatsTab::Sources {
+        Span::styled("Sources", if app.wise.stats_tab == WsStatsTab::Sources {
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
         } else { Style::default().fg(Color::White) }),
         Span::raw("  "),
         Span::styled("[2] ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Types", if app.ws_stats_tab == WsStatsTab::Types {
+        Span::styled("Types", if app.wise.stats_tab == WsStatsTab::Types {
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
         } else { Style::default().fg(Color::White) }),
     ]);
@@ -71,9 +71,9 @@ fn draw_ws_stats(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Filter bar
     let filter_text = if app.input_mode == InputMode::Expression {
-        &app.ws_stats_filter_edit
+        &app.wise.stats_filter_edit
     } else {
-        &app.ws_stats_filter
+        &app.wise.stats_filter
     };
     let filter_style = if app.input_mode == InputMode::Expression {
         Style::default().fg(Color::Yellow)
@@ -86,7 +86,7 @@ fn draw_ws_stats(f: &mut Frame, app: &mut App, area: Rect) {
     ]));
     f.render_widget(filter, chunks[1]);
 
-    match app.ws_stats_tab {
+    match app.wise.stats_tab {
         WsStatsTab::Sources => draw_sources_table(f, app, chunks[2]),
         WsStatsTab::Types => draw_types_table(f, app, chunks[2]),
     }
@@ -115,7 +115,7 @@ fn draw_sources_table(f: &mut Frame, app: &mut App, area: Rect) {
     ]).style(Style::default().add_modifier(Modifier::BOLD));
 
     let rows: Vec<Row> = sources.iter().enumerate().map(|(i, s)| {
-        let style = if i == app.ws_stats_selected {
+        let style = if i == app.wise.stats_selected {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
             Style::default()
@@ -172,7 +172,7 @@ fn draw_types_table(f: &mut Frame, app: &mut App, area: Rect) {
     ]).style(Style::default().add_modifier(Modifier::BOLD));
 
     let rows: Vec<Row> = types.iter().enumerate().map(|(i, t)| {
-        let style = if i == app.ws_stats_selected {
+        let style = if i == app.wise.stats_selected {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
             Style::default()
@@ -217,10 +217,10 @@ fn draw_ws_query(f: &mut Frame, app: &mut App, area: Rect) {
     // Query inputs bar: Source: [any]  Type: [ip]
     let query_bar = Line::from(vec![
         Span::styled("Source: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("[{}]", app.ws_query_source), Style::default().fg(Color::Cyan)),
+        Span::styled(format!("[{}]", app.wise.query_source), Style::default().fg(Color::Cyan)),
         Span::raw("  "),
         Span::styled("Type: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("[{}]", app.ws_query_type), Style::default().fg(Color::Cyan)),
+        Span::styled(format!("[{}]", app.wise.query_type), Style::default().fg(Color::Cyan)),
         Span::raw("  "),
         Span::styled("(s: cycle source, t: cycle type, /: edit value, Enter: query)", Style::default().fg(Color::DarkGray)),
     ]);
@@ -228,9 +228,9 @@ fn draw_ws_query(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Value input
     let value_text = if app.input_mode == InputMode::Expression {
-        &app.ws_query_value_edit
+        &app.wise.query_value_edit
     } else {
-        &app.ws_query_value
+        &app.wise.query_value
     };
     let value_style = if app.input_mode == InputMode::Expression {
         Style::default().fg(Color::Yellow)
@@ -244,8 +244,8 @@ fn draw_ws_query(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(Paragraph::new(value_line), chunks[1]);
 
     // Results table
-    if app.ws_query_results.is_empty() {
-        let msg = if app.ws_query_value.is_empty() {
+    if app.wise.query_results.is_empty() {
+        let msg = if app.wise.query_value.is_empty() {
             "Enter a value and press Enter to query"
         } else {
             "No results"
@@ -262,8 +262,8 @@ fn draw_ws_query(f: &mut Frame, app: &mut App, area: Rect) {
         Cell::from("Value"),
     ]).style(Style::default().add_modifier(Modifier::BOLD));
 
-    let rows: Vec<Row> = app.ws_query_results.iter().enumerate().map(|(i, r)| {
-        let style = if i == app.ws_query_selected {
+    let rows: Vec<Row> = app.wise.query_results.iter().enumerate().map(|(i, r)| {
+        let style = if i == app.wise.query_selected {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
             Style::default()
@@ -283,7 +283,7 @@ fn draw_ws_query(f: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Min(20),
     ];
 
-    let title = format!(" Results ({}) ", app.ws_query_results.len());
+    let title = format!(" Results ({}) ", app.wise.query_results.len());
     let table = Table::new(rows, widths)
         .header(header)
         .block(Block::default().borders(Borders::TOP).title(title));
