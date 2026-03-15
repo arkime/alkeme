@@ -264,10 +264,11 @@ impl App {
                                 .map(|d| crate::api::str_val(&d.data, "name"));
                             let detail_scroll = self.viewer.stats_detail.as_ref().map(|d| d.scroll).unwrap_or(0);
                             let detail_filter = self.viewer.stats_detail.as_ref().map(|d| d.filter.clone()).unwrap_or_default();
+                            let detail_filter_cursor = self.viewer.stats_detail.as_ref().map(|d| d.filter_cursor).unwrap_or(0);
                             self.vr_fetch_stats().await;
                             if let Some(name) = detail_name {
                                 if let Some(row) = self.viewer.stats_data.iter().find(|r| crate::api::str_val(r, "name") == name) {
-                                    self.viewer.stats_detail = Some(StatsDetail { data: row.clone(), scroll: detail_scroll, filter: detail_filter });
+                                    self.viewer.stats_detail = Some(StatsDetail { data: row.clone(), scroll: detail_scroll, filter: detail_filter, filter_cursor: detail_filter_cursor });
                                 }
                             }
                         }

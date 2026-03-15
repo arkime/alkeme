@@ -53,20 +53,17 @@ impl App {
                     KeyCode::Esc => {
                         self.cont3xt.overview_popup_filtering = false;
                         self.cont3xt.overview_popup_filter.clear();
+                        self.cont3xt.overview_popup_filter_cursor = 0;
                         self.cont3xt.overview_popup_selected = 0;
                     }
                     KeyCode::Enter => {
                         self.cont3xt.overview_popup_filtering = false;
                     }
-                    KeyCode::Backspace => {
-                        self.cont3xt.overview_popup_filter.pop();
-                        self.cont3xt.overview_popup_selected = 0;
+                    _ => {
+                        if handle_text_input_key(key.code, &mut self.cont3xt.overview_popup_filter, &mut self.cont3xt.overview_popup_filter_cursor) {
+                            self.cont3xt.overview_popup_selected = 0;
+                        }
                     }
-                    KeyCode::Char(c) => {
-                        self.cont3xt.overview_popup_filter.push(c);
-                        self.cont3xt.overview_popup_selected = 0;
-                    }
-                    _ => {}
                 }
                 return;
             }
@@ -137,20 +134,17 @@ impl App {
                     KeyCode::Esc => {
                         self.cont3xt.link_popup_filtering = false;
                         self.cont3xt.link_popup_filter.clear();
+                        self.cont3xt.link_popup_filter_cursor = 0;
                         self.c3_build_link_flat();
                     }
                     KeyCode::Enter => {
                         self.cont3xt.link_popup_filtering = false;
                     }
-                    KeyCode::Backspace => {
-                        self.cont3xt.link_popup_filter.pop();
-                        self.c3_build_link_flat();
+                    _ => {
+                        if handle_text_input_key(key.code, &mut self.cont3xt.link_popup_filter, &mut self.cont3xt.link_popup_filter_cursor) {
+                            self.c3_build_link_flat();
+                        }
                     }
-                    KeyCode::Char(c) => {
-                        self.cont3xt.link_popup_filter.push(c);
-                        self.c3_build_link_flat();
-                    }
-                    _ => {}
                 }
                 return;
             }
@@ -396,15 +390,11 @@ impl App {
                             KeyCode::Enter => {
                                 self.cont3xt.integration_popup_filtering = false;
                             }
-                            KeyCode::Backspace => {
-                                self.cont3xt.integration_popup_filter.pop();
-                                self.cont3xt.integration_popup_selected = 0;
+                            _ => {
+                                if handle_text_input_key(key.code, &mut self.cont3xt.integration_popup_filter, &mut self.cont3xt.integration_popup_filter_cursor) {
+                                    self.cont3xt.integration_popup_selected = 0;
+                                }
                             }
-                            KeyCode::Char(c) => {
-                                self.cont3xt.integration_popup_filter.push(c);
-                                self.cont3xt.integration_popup_selected = 0;
-                            }
-                            _ => {}
                         }
                         return;
                     }
@@ -413,6 +403,7 @@ impl App {
                         KeyCode::Esc => {
                             if !self.cont3xt.integration_popup_filter.is_empty() {
                                 self.cont3xt.integration_popup_filter.clear();
+                                self.cont3xt.integration_popup_filter_cursor = 0;
                                 self.cont3xt.integration_popup_selected = 0;
                             } else {
                                 self.cont3xt.show_integration_popup = false;
@@ -493,15 +484,12 @@ impl App {
                 KeyCode::Enter => {
                     self.cont3xt.stats_filtering = false;
                 }
-                KeyCode::Backspace => {
-                    self.cont3xt.stats_filter.pop();
+                _ => {
+                    if handle_text_input_key(key.code, &mut self.cont3xt.stats_filter, &mut self.cont3xt.stats_filter_cursor) {
+                        self.cont3xt.stats_selected = 0;
+                        self.cont3xt.stats_table_state.select(Some(0));
+                    }
                 }
-                KeyCode::Char(c) => {
-                    self.cont3xt.stats_filter.push(c);
-                    self.cont3xt.stats_selected = 0;
-                    self.cont3xt.stats_table_state.select(Some(self.cont3xt.stats_selected));
-                }
-                _ => {}
             }
             return;
         }
@@ -515,17 +503,12 @@ impl App {
                 KeyCode::Enter => {
                     self.cont3xt.history_filtering = false;
                 }
-                KeyCode::Backspace => {
-                    self.cont3xt.history_filter.pop();
-                    self.cont3xt.history_selected = 0;
-                    self.cont3xt.history_table_state.select(Some(0));
+                _ => {
+                    if handle_text_input_key(key.code, &mut self.cont3xt.history_filter, &mut self.cont3xt.history_filter_cursor) {
+                        self.cont3xt.history_selected = 0;
+                        self.cont3xt.history_table_state.select(Some(0));
+                    }
                 }
-                KeyCode::Char(c) => {
-                    self.cont3xt.history_filter.push(c);
-                    self.cont3xt.history_selected = 0;
-                    self.cont3xt.history_table_state.select(Some(0));
-                }
-                _ => {}
             }
             return;
         }
@@ -549,13 +532,9 @@ impl App {
                         self.status_msg = format!("Tags set: {}", self.cont3xt.tags.join(", "));
                     }
                 }
-                KeyCode::Backspace => {
-                    self.cont3xt.tags_edit.pop();
+                _ => {
+                    handle_text_input_key(key.code, &mut self.cont3xt.tags_edit, &mut self.cont3xt.tags_edit_cursor);
                 }
-                KeyCode::Char(c) => {
-                    self.cont3xt.tags_edit.push(c);
-                }
-                _ => {}
             }
             return;
         }
@@ -582,21 +561,13 @@ impl App {
                         self.status_msg = "Invalid date format. Use: now, -5h, -7d, -1w, -3M, or YYYY-MM-DD".to_string();
                     }
                 }
-                KeyCode::Backspace => {
+                _ => {
                     if self.cont3xt.date_field == 0 {
-                        self.cont3xt.date_start_edit.pop();
+                        handle_text_input_key(key.code, &mut self.cont3xt.date_start_edit, &mut self.cont3xt.date_start_edit_cursor);
                     } else {
-                        self.cont3xt.date_stop_edit.pop();
+                        handle_text_input_key(key.code, &mut self.cont3xt.date_stop_edit, &mut self.cont3xt.date_stop_edit_cursor);
                     }
                 }
-                KeyCode::Char(c) => {
-                    if self.cont3xt.date_field == 0 {
-                        self.cont3xt.date_start_edit.push(c);
-                    } else {
-                        self.cont3xt.date_stop_edit.push(c);
-                    }
-                }
-                _ => {}
             }
             return;
         }
@@ -606,9 +577,11 @@ impl App {
             match key.code {
                 KeyCode::Esc => {
                     self.cont3xt.save_json_prompt = None;
+                    self.cont3xt.save_json_cursor = 0;
                 }
                 KeyCode::Enter => {
                     if let Some(filename) = self.cont3xt.save_json_prompt.take() {
+                        self.cont3xt.save_json_cursor = 0;
                         if filename.is_empty() {
                             self.status_msg = "No filename provided".to_string();
                         } else {
@@ -616,17 +589,11 @@ impl App {
                         }
                     }
                 }
-                KeyCode::Backspace => {
+                _ => {
                     if let Some(ref mut f) = self.cont3xt.save_json_prompt {
-                        f.pop();
+                        handle_text_input_key(key.code, f, &mut self.cont3xt.save_json_cursor);
                     }
                 }
-                KeyCode::Char(c) => {
-                    if let Some(ref mut f) = self.cont3xt.save_json_prompt {
-                        f.push(c);
-                    }
-                }
-                _ => {}
             }
             return;
         }
@@ -696,15 +663,11 @@ impl App {
                     KeyCode::Enter | KeyCode::Down => {
                         self.cont3xt.role_popup_filtering = false;
                     }
-                    KeyCode::Backspace => {
-                        self.cont3xt.role_popup_filter.pop();
-                        self.cont3xt.role_popup_selected = 0;
+                    _ => {
+                        if handle_text_input_key(key.code, &mut self.cont3xt.role_popup_filter, &mut self.cont3xt.role_popup_cursor) {
+                            self.cont3xt.role_popup_selected = 0;
+                        }
                     }
-                    KeyCode::Char(c) => {
-                        self.cont3xt.role_popup_filter.push(c);
-                        self.cont3xt.role_popup_selected = 0;
-                    }
-                    _ => {}
                 }
                 return;
             }
@@ -713,6 +676,7 @@ impl App {
                 KeyCode::Esc => {
                     self.cont3xt.role_popup_open = false;
                     self.cont3xt.role_popup_filter.clear();
+                    self.cont3xt.role_popup_cursor = 0;
                 }
                 KeyCode::Char('/') => {
                     self.cont3xt.role_popup_filtering = true;
@@ -770,15 +734,11 @@ impl App {
                     KeyCode::Enter => {
                         self.cont3xt.view_editor_integration_filtering = false;
                     }
-                    KeyCode::Backspace => {
-                        self.cont3xt.view_editor_integration_filter.pop();
-                        self.cont3xt.view_editor_integration_selected = 0;
+                    _ => {
+                        if handle_text_input_key(key.code, &mut self.cont3xt.view_editor_integration_filter, &mut self.cont3xt.view_editor_integration_filter_cursor) {
+                            self.cont3xt.view_editor_integration_selected = 0;
+                        }
                     }
-                    KeyCode::Char(c) => {
-                        self.cont3xt.view_editor_integration_filter.push(c);
-                        self.cont3xt.view_editor_integration_selected = 0;
-                    }
-                    _ => {}
                 }
                 return;
             }
@@ -893,6 +853,7 @@ impl App {
                             self.cont3xt.role_popup_for_edit = false;
                             self.cont3xt.role_popup_selected = 0;
                             self.cont3xt.role_popup_filter.clear();
+                            self.cont3xt.role_popup_cursor = 0;
                         }
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             self.c3_save_view_editor();
@@ -924,6 +885,7 @@ impl App {
                             self.cont3xt.role_popup_for_edit = true;
                             self.cont3xt.role_popup_selected = 0;
                             self.cont3xt.role_popup_filter.clear();
+                            self.cont3xt.role_popup_cursor = 0;
                         }
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             self.c3_save_view_editor();
@@ -1116,17 +1078,12 @@ impl App {
                 KeyCode::Esc | KeyCode::Enter => {
                     self.cont3xt.int_settings_filtering = false;
                 }
-                KeyCode::Backspace => {
-                    self.cont3xt.int_settings_filter.pop();
-                    self.cont3xt.int_settings_selected = 0;
-                    self.cont3xt.int_settings_table_state.select(Some(0));
+                _ => {
+                    if handle_text_input_key(key.code, &mut self.cont3xt.int_settings_filter, &mut self.cont3xt.int_settings_filter_cursor) {
+                        self.cont3xt.int_settings_selected = 0;
+                        self.cont3xt.int_settings_table_state.select(Some(0));
+                    }
                 }
-                KeyCode::Char(c) => {
-                    self.cont3xt.int_settings_filter.push(c);
-                    self.cont3xt.int_settings_selected = 0;
-                    self.cont3xt.int_settings_table_state.select(Some(0));
-                }
-                _ => {}
             }
             return;
         }
@@ -1140,17 +1097,12 @@ impl App {
                 KeyCode::Enter => {
                     self.cont3xt.settings_views_filtering = false;
                 }
-                KeyCode::Backspace => {
-                    self.cont3xt.settings_views_filter.pop();
-                    self.cont3xt.settings_views_selected = 0;
-                    self.cont3xt.settings_views_table_state.select(Some(0));
+                _ => {
+                    if handle_text_input_key(key.code, &mut self.cont3xt.settings_views_filter, &mut self.cont3xt.settings_views_filter_cursor) {
+                        self.cont3xt.settings_views_selected = 0;
+                        self.cont3xt.settings_views_table_state.select(Some(0));
+                    }
                 }
-                KeyCode::Char(c) => {
-                    self.cont3xt.settings_views_filter.push(c);
-                    self.cont3xt.settings_views_selected = 0;
-                    self.cont3xt.settings_views_table_state.select(Some(0));
-                }
-                _ => {}
             }
             return;
         }
@@ -1258,6 +1210,7 @@ impl App {
                         }).or_else(|| matching.iter().position(|o| o.is_default))
                             .unwrap_or(0);
                         self.cont3xt.overview_popup_filter.clear();
+                        self.cont3xt.overview_popup_filter_cursor = 0;
                         self.cont3xt.overview_popup_filtering = false;
                         self.cont3xt.show_overview_popup = true;
                     } else {
@@ -1297,6 +1250,7 @@ impl App {
                 self.cont3xt.show_integration_popup = true;
                 self.cont3xt.integration_popup_selected = 0;
                 self.cont3xt.integration_popup_filter.clear();
+                self.cont3xt.integration_popup_filter_cursor = 0;
                 self.cont3xt.integration_popup_mode = IntegrationPopupMode::Integrations;
             }
             KeyCode::Char('I') | KeyCode::Char('v') if self.active_tab == Tab::Search => {
@@ -1313,6 +1267,7 @@ impl App {
                 } else {
                     self.cont3xt.link_popup_selected = 0;
                     self.cont3xt.link_popup_filter.clear();
+                    self.cont3xt.link_popup_filter_cursor = 0;
                     self.cont3xt.link_popup_filtering = false;
                     self.c3_build_link_flat();
                     self.cont3xt.show_link_popup = true;
@@ -1939,6 +1894,7 @@ impl App {
                     self.cont3xt.lg_links_selected = 0;
                     self.cont3xt.lg_links_table_state.select(Some(0));
                     self.cont3xt.lg_links_filter.clear();
+                    self.cont3xt.lg_links_filter_cursor = 0;
                     self.cont3xt.lg_links_filtering = false;
                     self.cont3xt.lg_level = C3LinkGroupLevel::LinkList;
                 }
@@ -2024,6 +1980,7 @@ impl App {
                     self.cont3xt.ov_fields_selected = 0;
                     self.cont3xt.ov_fields_table_state.select(Some(0));
                     self.cont3xt.ov_fields_filter.clear();
+                    self.cont3xt.ov_fields_filter_cursor = 0;
                     self.cont3xt.ov_fields_filtering = false;
                     self.cont3xt.ov_level = C3OverviewLevel::FieldList;
                 }

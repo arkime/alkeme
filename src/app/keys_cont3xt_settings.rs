@@ -232,17 +232,12 @@ impl App {
                             KeyCode::Esc | KeyCode::Enter => {
                                 self.cont3xt.lg_links_filtering = false;
                             }
-                            KeyCode::Backspace => {
-                                self.cont3xt.lg_links_filter.pop();
-                                self.cont3xt.lg_links_selected = 0;
-                                self.cont3xt.lg_links_table_state.select(Some(0));
+                            _ => {
+                                if handle_text_input_key(key.code, &mut self.cont3xt.lg_links_filter, &mut self.cont3xt.lg_links_filter_cursor) {
+                                    self.cont3xt.lg_links_selected = 0;
+                                    self.cont3xt.lg_links_table_state.select(Some(0));
+                                }
                             }
-                            KeyCode::Char(c) => {
-                                self.cont3xt.lg_links_filter.push(c);
-                                self.cont3xt.lg_links_selected = 0;
-                                self.cont3xt.lg_links_table_state.select(Some(0));
-                            }
-                            _ => {}
                         }
                         return true;
                     }
@@ -256,6 +251,7 @@ impl App {
                         KeyCode::Esc => {
                             if has_filter {
                                 self.cont3xt.lg_links_filter.clear();
+                                self.cont3xt.lg_links_filter_cursor = 0;
                                 self.cont3xt.lg_links_selected = 0;
                                 self.cont3xt.lg_links_table_state.select(Some(0));
                             } else {
@@ -437,17 +433,12 @@ impl App {
                             KeyCode::Esc | KeyCode::Enter => {
                                 self.cont3xt.lg_filtering = false;
                             }
-                            KeyCode::Backspace => {
-                                self.cont3xt.lg_filter.pop();
-                                self.cont3xt.lg_selected = 0;
-                                self.cont3xt.lg_table_state.select(Some(0));
+                            _ => {
+                                if handle_text_input_key(key.code, &mut self.cont3xt.lg_filter, &mut self.cont3xt.lg_filter_cursor) {
+                                    self.cont3xt.lg_selected = 0;
+                                    self.cont3xt.lg_table_state.select(Some(0));
+                                }
                             }
-                            KeyCode::Char(c) => {
-                                self.cont3xt.lg_filter.push(c);
-                                self.cont3xt.lg_selected = 0;
-                                self.cont3xt.lg_table_state.select(Some(0));
-                            }
-                            _ => {}
                         }
                         return true;
                     }
@@ -814,6 +805,7 @@ impl App {
                             self.cont3xt.ov_fields_selected = 0;
                             self.cont3xt.ov_fields_table_state.select(Some(0));
                             self.cont3xt.ov_fields_filter.clear();
+                            self.cont3xt.ov_fields_filter_cursor = 0;
                             self.cont3xt.ov_fields_filtering = false;
                             self.cont3xt.ov_level = C3OverviewLevel::FieldList;
                         }
@@ -840,17 +832,12 @@ impl App {
                             KeyCode::Esc | KeyCode::Enter => {
                                 self.cont3xt.ov_fields_filtering = false;
                             }
-                            KeyCode::Backspace => {
-                                self.cont3xt.ov_fields_filter.pop();
-                                self.cont3xt.ov_fields_selected = 0;
-                                self.cont3xt.ov_fields_table_state.select(Some(0));
+                            _ => {
+                                if handle_text_input_key(key.code, &mut self.cont3xt.ov_fields_filter, &mut self.cont3xt.ov_fields_filter_cursor) {
+                                    self.cont3xt.ov_fields_selected = 0;
+                                    self.cont3xt.ov_fields_table_state.select(Some(0));
+                                }
                             }
-                            KeyCode::Char(c) => {
-                                self.cont3xt.ov_fields_filter.push(c);
-                                self.cont3xt.ov_fields_selected = 0;
-                                self.cont3xt.ov_fields_table_state.select(Some(0));
-                            }
-                            _ => {}
                         }
                         return true;
                     }
@@ -863,6 +850,7 @@ impl App {
                         KeyCode::Esc => {
                             if has_filter {
                                 self.cont3xt.ov_fields_filter.clear();
+                                self.cont3xt.ov_fields_filter_cursor = 0;
                                 self.cont3xt.ov_fields_selected = 0;
                                 self.cont3xt.ov_fields_table_state.select(Some(0));
                             } else {
@@ -1017,17 +1005,12 @@ impl App {
                             KeyCode::Esc | KeyCode::Enter => {
                                 self.cont3xt.ov_filtering = false;
                             }
-                            KeyCode::Backspace => {
-                                self.cont3xt.ov_filter.pop();
-                                self.cont3xt.ov_selected = 0;
-                                self.cont3xt.ov_table_state.select(Some(0));
+                            _ => {
+                                if handle_text_input_key(key.code, &mut self.cont3xt.ov_filter, &mut self.cont3xt.ov_filter_cursor) {
+                                    self.cont3xt.ov_selected = 0;
+                                    self.cont3xt.ov_table_state.select(Some(0));
+                                }
                             }
-                            KeyCode::Char(c) => {
-                                self.cont3xt.ov_filter.push(c);
-                                self.cont3xt.ov_selected = 0;
-                                self.cont3xt.ov_table_state.select(Some(0));
-                            }
-                            _ => {}
                         }
                         return true;
                     }

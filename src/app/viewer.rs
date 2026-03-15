@@ -87,6 +87,7 @@ impl App {
         self.viewer.column_editor_selected = 0;
         self.viewer.column_editor_mode = ColumnEditorMode::Browse;
         self.viewer.column_editor_filter.clear();
+        self.viewer.column_editor_filter_cursor = 0;
     }
 
     /// Apply column editor selections back to columns
@@ -202,6 +203,7 @@ impl App {
         self.viewer.stats_column_editor_selected = 0;
         self.viewer.stats_column_editor_mode = ColumnEditorMode::Browse;
         self.viewer.stats_column_editor_filter.clear();
+        self.viewer.stats_column_editor_filter_cursor = 0;
     }
 
     /// Apply stats column editor selections back to the current tab's columns
@@ -325,6 +327,7 @@ impl App {
         self.viewer.files_column_editor_selected = 0;
         self.viewer.files_column_editor_mode = ColumnEditorMode::Browse;
         self.viewer.files_column_editor_filter.clear();
+        self.viewer.files_column_editor_filter_cursor = 0;
     }
 
     pub fn vr_files_apply_column_editor(&mut self) {
@@ -431,7 +434,7 @@ impl App {
 
     pub fn vr_open_files_detail(&mut self) {
         if let Some(item) = self.viewer.files_data.get(self.viewer.files_selected) {
-            self.viewer.files_detail = Some(StatsDetail { data: item.clone(), scroll: 0, filter: String::new() });
+            self.viewer.files_detail = Some(StatsDetail { data: item.clone(), scroll: 0, filter: String::new(), filter_cursor: 0 });
             self.viewer.files_view = StatsView::Detail;
         }
     }
@@ -500,7 +503,7 @@ impl App {
                     let total_rows = data.as_object()
                         .map(|o| o.keys().filter(|k| !is_hidden_detail_field(k)).count())
                         .unwrap_or(0);
-                    self.viewer.session_detail = Some(SessionDetail { data, scroll: 0, selected: 0, total_rows, filter: String::new() });
+                    self.viewer.session_detail = Some(SessionDetail { data, scroll: 0, selected: 0, total_rows, filter: String::new(), filter_cursor: 0 });
                     self.viewer.session_view = SessionView::Detail;
                     self.status_msg = "Session detail loaded".into();
                 }
@@ -549,7 +552,7 @@ impl App {
 
     pub fn vr_open_stats_detail(&mut self) {
         if let Some(item) = self.viewer.stats_data.get(self.viewer.stats_selected) {
-            self.viewer.stats_detail = Some(StatsDetail { data: item.clone(), scroll: 0, filter: String::new() });
+            self.viewer.stats_detail = Some(StatsDetail { data: item.clone(), scroll: 0, filter: String::new(), filter_cursor: 0 });
             self.viewer.stats_view = StatsView::Detail;
         }
     }

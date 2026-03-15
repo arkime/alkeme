@@ -972,6 +972,7 @@ pub struct StatsDetail {
     pub data: Value,
     pub scroll: u16,
     pub filter: String,
+    pub filter_cursor: usize,
 }
 
 #[derive(PartialEq)]
@@ -1052,6 +1053,7 @@ pub struct ActionPrompt {
     pub session_id: Option<String>,
     pub session_node: Option<String>,
     pub input: String,
+    pub input_cursor: usize,
 }
 
 pub struct DetailActionMenu {
@@ -1078,6 +1080,7 @@ pub struct SessionDetail {
     pub selected: usize,
     pub total_rows: usize,
     pub filter: String,
+    pub filter_cursor: usize,
 }
 
 pub struct ConfirmDialog {
@@ -1484,6 +1487,7 @@ pub struct Cont3xtState {
     pub detail_hscroll: u16,
     /// filter string for detail pane
     pub detail_filter: String,
+    pub detail_filter_cursor: usize,
     pub search_total: u64,
     pub search_sent: u64,
     pub search_itype: String,
@@ -1503,6 +1507,7 @@ pub struct Cont3xtState {
     pub show_overview_popup: bool,
     pub overview_popup_selected: usize,
     pub overview_popup_filter: String,
+    pub overview_popup_filter_cursor: usize,
     pub overview_popup_filtering: bool,
     /// itype -> overview id
     pub selected_overviews: HashMap<String, String>,
@@ -1511,6 +1516,7 @@ pub struct Cont3xtState {
     pub show_integration_popup: bool,
     pub integration_popup_selected: usize,
     pub integration_popup_filter: String,
+    pub integration_popup_filter_cursor: usize,
     pub integration_popup_filtering: bool,
     /// which sub-view of integration popup
     pub integration_popup_mode: IntegrationPopupMode,
@@ -1528,10 +1534,12 @@ pub struct Cont3xtState {
     pub tags: Vec<String>,
     /// edit buffer for tags popup
     pub tags_edit: String,
+    pub tags_edit_cursor: usize,
     /// tag editor popup visible
     pub show_tags_popup: bool,
     /// filename prompt for JSON export
     pub save_json_prompt: Option<String>,
+    pub save_json_cursor: usize,
     /// headless: save JSON to file and quit when search completes
     pub save_json_path: Option<String>,
     /// file path when results loaded from --cont3xt-read-json or similar
@@ -1542,8 +1550,10 @@ pub struct Cont3xtState {
     pub show_date_popup: bool,
     /// edit buffer for start date
     pub date_start_edit: String,
+    pub date_start_edit_cursor: usize,
     /// edit buffer for stop date
     pub date_stop_edit: String,
+    pub date_stop_edit_cursor: usize,
     /// 0 = start, 1 = stop
     pub date_field: u8,
     /// Cont3xt link groups
@@ -1551,6 +1561,7 @@ pub struct Cont3xtState {
     pub show_link_popup: bool,
     pub link_popup_selected: usize,
     pub link_popup_filter: String,
+    pub link_popup_filter_cursor: usize,
     pub link_popup_filtering: bool,
     /// (group_name, link_name, url, info, color) filtered by itype
     pub link_flat: Vec<(String, String, String, String, String)>,
@@ -1563,6 +1574,7 @@ pub struct Cont3xtState {
     pub stats_selected: usize,
     pub stats_table_state: ratatui::widgets::TableState,
     pub stats_filter: String,
+    pub stats_filter_cursor: usize,
     pub stats_filtering: bool,
     pub stats_sort_col: usize,
     pub stats_sort_desc: bool,
@@ -1574,6 +1586,7 @@ pub struct Cont3xtState {
     pub history_selected: usize,
     pub history_table_state: ratatui::widgets::TableState,
     pub history_filter: String,
+    pub history_filter_cursor: usize,
     pub history_filtering: bool,
     pub history_sort_col: usize,
     pub history_sort_desc: bool,
@@ -1584,6 +1597,7 @@ pub struct Cont3xtState {
     pub settings_views_selected: usize,
     pub settings_views_table_state: ratatui::widgets::TableState,
     pub settings_views_filter: String,
+    pub settings_views_filter_cursor: usize,
     pub settings_views_filtering: bool,
     pub settings_views_loaded: bool,
     pub settings_views_sort: u8,
@@ -1599,6 +1613,7 @@ pub struct Cont3xtState {
     pub view_editor_integrations: Vec<(String, bool)>,
     pub view_editor_integration_selected: usize,
     pub view_editor_integration_filter: String,
+    pub view_editor_integration_filter_cursor: usize,
     pub view_editor_integration_filtering: bool,
     /// (role, selected)
     pub view_editor_view_roles: Vec<(String, bool)>,
@@ -1620,6 +1635,7 @@ pub struct Cont3xtState {
     pub int_settings_selected: usize,
     pub int_settings_table_state: ratatui::widgets::TableState,
     pub int_settings_filter: String,
+    pub int_settings_filter_cursor: usize,
     pub int_settings_filtering: bool,
     pub int_settings_loaded: bool,
     /// 0=Name, 1=Status
@@ -1639,6 +1655,7 @@ pub struct Cont3xtState {
     pub lg_groups: Vec<crate::api::Cont3xtLinkGroup>,
     pub lg_selected: usize,
     pub lg_filter: String,
+    pub lg_filter_cursor: usize,
     pub lg_filtering: bool,
     pub lg_sort_col: usize,
     pub lg_sort_desc: bool,
@@ -1649,6 +1666,7 @@ pub struct Cont3xtState {
     pub lg_links_table_state: ratatui::widgets::TableState,
     pub lg_editing_group_idx: usize,
     pub lg_links_filter: String,
+    pub lg_links_filter_cursor: usize,
     pub lg_links_filtering: bool,
     /// Link editor
     pub lg_editor_field: C3LinkEditorField,
@@ -1672,6 +1690,7 @@ pub struct Cont3xtState {
     pub ov_list: Vec<crate::api::Cont3xtOverview>,
     pub ov_selected: usize,
     pub ov_filter: String,
+    pub ov_filter_cursor: usize,
     pub ov_filtering: bool,
     pub ov_sort_col: usize,
     pub ov_sort_desc: bool,
@@ -1690,6 +1709,7 @@ pub struct Cont3xtState {
     pub ov_fields_selected: usize,
     pub ov_fields_table_state: ratatui::widgets::TableState,
     pub ov_fields_filter: String,
+    pub ov_fields_filter_cursor: usize,
     pub ov_fields_filtering: bool,
     /// Overview field editor
     pub ov_field_editor_field: C3OvFieldEditorField,
@@ -1725,6 +1745,7 @@ impl Default for Cont3xtState {
             detail_scroll: 0,
             detail_hscroll: 0,
             detail_filter: String::new(),
+            detail_filter_cursor: 0,
             search_total: 0,
             search_sent: 0,
             search_itype: String::new(),
@@ -1737,12 +1758,14 @@ impl Default for Cont3xtState {
             show_overview_popup: false,
             overview_popup_selected: 0,
             overview_popup_filter: String::new(),
+            overview_popup_filter_cursor: 0,
             overview_popup_filtering: false,
             selected_overviews: HashMap::new(),
             disabled_integrations: HashSet::new(),
             show_integration_popup: false,
             integration_popup_selected: 0,
             integration_popup_filter: String::new(),
+            integration_popup_filter_cursor: 0,
             integration_popup_filtering: false,
             integration_popup_mode: IntegrationPopupMode::Integrations,
             views: Vec::new(),
@@ -1756,20 +1779,25 @@ impl Default for Cont3xtState {
             no_cache: false,
             tags: Vec::new(),
             tags_edit: String::new(),
+            tags_edit_cursor: 0,
             show_tags_popup: false,
             save_json_prompt: None,
+            save_json_cursor: 0,
             save_json_path: None,
             loaded_file: None,
             start_date: Utc::now() - Duration::days(7),
             stop_date: Utc::now(),
             show_date_popup: false,
             date_start_edit: String::from("-7d"),
+            date_start_edit_cursor: 3,
             date_stop_edit: String::from("now"),
+            date_stop_edit_cursor: 3,
             date_field: 0,
             link_groups: Vec::new(),
             show_link_popup: false,
             link_popup_selected: 0,
             link_popup_filter: String::new(),
+            link_popup_filter_cursor: 0,
             link_popup_filtering: false,
             link_flat: Vec::new(),
             stats_tab: C3StatsTab::Integrations,
@@ -1778,6 +1806,7 @@ impl Default for Cont3xtState {
             stats_selected: 0,
             stats_table_state: ratatui::widgets::TableState::default(),
             stats_filter: String::new(),
+            stats_filter_cursor: 0,
             stats_filtering: false,
             stats_sort_col: 0,
             stats_sort_desc: false,
@@ -1787,6 +1816,7 @@ impl Default for Cont3xtState {
             history_selected: 0,
             history_table_state: ratatui::widgets::TableState::default(),
             history_filter: String::new(),
+            history_filter_cursor: 0,
             history_filtering: false,
             history_sort_col: 0,
             history_sort_desc: true,
@@ -1797,6 +1827,7 @@ impl Default for Cont3xtState {
             settings_views_selected: 0,
             settings_views_table_state: ratatui::widgets::TableState::default(),
             settings_views_filter: String::new(),
+            settings_views_filter_cursor: 0,
             settings_views_filtering: false,
             settings_views_loaded: false,
             settings_views_sort: 0,
@@ -1809,6 +1840,7 @@ impl Default for Cont3xtState {
             view_editor_integrations: Vec::new(),
             view_editor_integration_selected: 0,
             view_editor_integration_filter: String::new(),
+            view_editor_integration_filter_cursor: 0,
             view_editor_integration_filtering: false,
             view_editor_view_roles: Vec::new(),
             view_editor_edit_roles: Vec::new(),
@@ -1825,6 +1857,7 @@ impl Default for Cont3xtState {
             int_settings_selected: 0,
             int_settings_table_state: ratatui::widgets::TableState::default(),
             int_settings_filter: String::new(),
+            int_settings_filter_cursor: 0,
             int_settings_filtering: false,
             int_settings_loaded: false,
             int_settings_sort: 0,
@@ -1841,6 +1874,7 @@ impl Default for Cont3xtState {
             lg_groups: Vec::new(),
             lg_selected: 0,
             lg_filter: String::new(),
+            lg_filter_cursor: 0,
             lg_filtering: false,
             lg_sort_col: 0,
             lg_sort_desc: false,
@@ -1850,6 +1884,7 @@ impl Default for Cont3xtState {
             lg_links_table_state: ratatui::widgets::TableState::default(),
             lg_editing_group_idx: 0,
             lg_links_filter: String::new(),
+            lg_links_filter_cursor: 0,
             lg_links_filtering: false,
             lg_editor_field: C3LinkEditorField::Name,
             lg_editor_link: crate::api::Cont3xtLink {
@@ -1877,6 +1912,7 @@ impl Default for Cont3xtState {
             ov_list: Vec::new(),
             ov_selected: 0,
             ov_filter: String::new(),
+            ov_filter_cursor: 0,
             ov_filtering: false,
             ov_sort_col: 0,
             ov_sort_desc: false,
@@ -1893,6 +1929,7 @@ impl Default for Cont3xtState {
             ov_fields_selected: 0,
             ov_fields_table_state: ratatui::widgets::TableState::default(),
             ov_fields_filter: String::new(),
+            ov_fields_filter_cursor: 0,
             ov_fields_filtering: false,
             ov_field_editor_field: C3OvFieldEditorField::From,
             ov_field_editor_cursor: 0,
@@ -1933,6 +1970,7 @@ pub struct ViewerState {
     pub column_editor_mode: ColumnEditorMode,
     pub column_editor_available: Vec<ColumnEditorItem>,
     pub column_editor_filter: String,
+    pub column_editor_filter_cursor: usize,
     pub show_layout_popup: bool,
     pub layout_popup_mode: LayoutPopupMode,
     pub layout_popup_selected: usize,
@@ -1940,7 +1978,7 @@ pub struct ViewerState {
     pub layout_save_cursor: usize,
     pub layout_delete_name: String,
     pub layout_filter: String,
-    /// view id for API calls
+    pub layout_filter_cursor: usize,
     pub active_view: Option<String>,
     /// view name for display
     pub active_view_name: Option<String>,
@@ -1954,6 +1992,7 @@ pub struct ViewerState {
     pub view_delete_id: String,
     pub view_delete_name: String,
     pub view_filter: String,
+    pub view_filter_cursor: usize,
     pub view_filter_active: bool,
     pub page_start: u64,
     pub page_size: u64,
@@ -1998,6 +2037,7 @@ pub struct ViewerState {
     pub stats_column_editor_mode: ColumnEditorMode,
     pub stats_column_editor_items: Vec<StatsColumnEditorItem>,
     pub stats_column_editor_filter: String,
+    pub stats_column_editor_filter_cursor: usize,
     /// Stats layout popup (shareables)
     pub stats_show_layout_popup: bool,
     pub stats_layout_popup_mode: LayoutPopupMode,
@@ -2007,6 +2047,7 @@ pub struct ViewerState {
     pub stats_layout_save_cursor: usize,
     pub stats_layout_delete_name: String,
     pub stats_layout_filter: String,
+    pub stats_layout_filter_cursor: usize,
     /// Files tab state
     pub files_data: Vec<Value>,
     pub files_total: u64,
@@ -2026,6 +2067,7 @@ pub struct ViewerState {
     pub files_column_editor_mode: ColumnEditorMode,
     pub files_column_editor_items: Vec<StatsColumnEditorItem>,
     pub files_column_editor_filter: String,
+    pub files_column_editor_filter_cursor: usize,
     /// Files layout popup (shareables)
     pub files_show_layout_popup: bool,
     pub files_layout_popup_mode: LayoutPopupMode,
@@ -2035,6 +2077,7 @@ pub struct ViewerState {
     pub files_layout_save_cursor: usize,
     pub files_layout_delete_name: String,
     pub files_layout_filter: String,
+    pub files_layout_filter_cursor: usize,
     pub files_view: StatsView,
     pub files_detail: Option<StatsDetail>,
     /// Arkime (Summary) tab state
@@ -2047,6 +2090,7 @@ pub struct ViewerState {
     pub summary_sort: SummarySort,
     pub summary_sort_desc: bool,
     pub field_filter: String,
+    pub field_filter_cursor: usize,
     pub field_filter_selected: usize,
 }
 
@@ -2080,6 +2124,7 @@ impl Default for ViewerState {
             column_editor_mode: ColumnEditorMode::Browse,
             column_editor_available: Vec::new(),
             column_editor_filter: String::new(),
+            column_editor_filter_cursor: 0,
             show_layout_popup: false,
             layout_popup_mode: LayoutPopupMode::List,
             layout_popup_selected: 0,
@@ -2087,6 +2132,7 @@ impl Default for ViewerState {
             layout_save_cursor: 0,
             layout_delete_name: String::new(),
             layout_filter: String::new(),
+            layout_filter_cursor: 0,
             active_view: None,
             active_view_name: None,
             saved_views: Vec::new(),
@@ -2099,6 +2145,7 @@ impl Default for ViewerState {
             view_delete_id: String::new(),
             view_delete_name: String::new(),
             view_filter: String::new(),
+            view_filter_cursor: 0,
             view_filter_active: false,
             page_start: 0,
             page_size: 100,
@@ -2145,6 +2192,7 @@ impl Default for ViewerState {
             stats_column_editor_mode: ColumnEditorMode::Browse,
             stats_column_editor_items: Vec::new(),
             stats_column_editor_filter: String::new(),
+            stats_column_editor_filter_cursor: 0,
             stats_show_layout_popup: false,
             stats_layout_popup_mode: LayoutPopupMode::List,
             stats_layout_popup_selected: 0,
@@ -2153,6 +2201,7 @@ impl Default for ViewerState {
             stats_layout_save_cursor: 0,
             stats_layout_delete_name: String::new(),
             stats_layout_filter: String::new(),
+            stats_layout_filter_cursor: 0,
             // Files tab
             files_data: Vec::new(),
             files_total: 0,
@@ -2171,6 +2220,7 @@ impl Default for ViewerState {
             files_column_editor_mode: ColumnEditorMode::Browse,
             files_column_editor_items: Vec::new(),
             files_column_editor_filter: String::new(),
+            files_column_editor_filter_cursor: 0,
             files_show_layout_popup: false,
             files_layout_popup_mode: LayoutPopupMode::List,
             files_layout_popup_selected: 0,
@@ -2179,6 +2229,7 @@ impl Default for ViewerState {
             files_layout_save_cursor: 0,
             files_layout_delete_name: String::new(),
             files_layout_filter: String::new(),
+            files_layout_filter_cursor: 0,
             files_view: StatsView::List,
             files_detail: None,
             // Arkime (Summary) tab state
@@ -2191,6 +2242,7 @@ impl Default for ViewerState {
             summary_sort: SummarySort::Sessions,
             summary_sort_desc: true,
             field_filter: String::new(),
+            field_filter_cursor: 0,
             field_filter_selected: 0,
         }
     }

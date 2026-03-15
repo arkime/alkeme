@@ -171,6 +171,7 @@ impl App {
                 self.viewer.layout_popup_mode = LayoutPopupMode::List;
                 self.viewer.layout_popup_selected = 0;
                 self.viewer.layout_filter.clear();
+                self.viewer.layout_filter_cursor = 0;
                 self.viewer.show_layout_popup = true;
             }
             KeyCode::Char('v') => {
@@ -183,6 +184,7 @@ impl App {
     pub(crate) async fn handle_column_editor_key(&mut self, key: KeyEvent) {
         let mut state = ColumnEditorState {
             filter: &mut self.viewer.column_editor_filter,
+            filter_cursor: &mut self.viewer.column_editor_filter_cursor,
             selected: &mut self.viewer.column_editor_selected,
             mode: &mut self.viewer.column_editor_mode,
             show: &mut self.viewer.show_column_editor,
@@ -216,6 +218,7 @@ impl App {
             mode: &mut self.viewer.layout_popup_mode,
             selected: &mut self.viewer.layout_popup_selected,
             filter: &mut self.viewer.layout_filter,
+            filter_cursor: &mut self.viewer.layout_filter_cursor,
             save_name: &mut self.viewer.layout_save_name,
             save_cursor: &mut self.viewer.layout_save_cursor,
             show: &mut self.viewer.show_layout_popup,
@@ -294,6 +297,7 @@ impl App {
         self.viewer.view_popup_mode = ViewPopupMode::List;
         self.viewer.view_popup_selected = 0;
         self.viewer.view_filter.clear();
+        self.viewer.view_filter_cursor = 0;
         self.viewer.view_filter_active = false;
         self.viewer.show_view_popup = true;
     }
@@ -449,6 +453,7 @@ impl App {
                     KeyCode::Esc | KeyCode::Char('q') => {
                         if self.viewer.view_filter_active {
                             self.viewer.view_filter.clear();
+                            self.viewer.view_filter_cursor = 0;
                             self.viewer.view_filter_active = false;
                         } else {
                             self.viewer.show_view_popup = false;
@@ -458,23 +463,20 @@ impl App {
                         if !self.viewer.view_filter_active {
                             self.viewer.view_filter_active = true;
                             self.viewer.view_filter.clear();
+                            self.viewer.view_filter_cursor = 0;
                         }
                     }
-                    KeyCode::Char(c) => {
+                    _ => {
                         if self.viewer.view_filter_active {
-                            self.viewer.view_filter.push(c);
-                            self.viewer.view_popup_selected = 2; // reset to first view
-                        }
-                    }
-                    KeyCode::Backspace => {
-                        if self.viewer.view_filter_active {
-                            self.viewer.view_filter.pop();
-                            if self.viewer.view_filter.is_empty() {
-                                self.viewer.view_filter_active = false;
+                            if handle_text_input_key(key.code, &mut self.viewer.view_filter, &mut self.viewer.view_filter_cursor) {
+                                if self.viewer.view_filter.is_empty() {
+                                    self.viewer.view_filter_active = false;
+                                } else {
+                                    self.viewer.view_popup_selected = 2;
+                                }
                             }
                         }
                     }
-                    _ => {}
                 }
             }
         }
@@ -616,19 +618,23 @@ impl App {
             KeyCode::Esc => {
                 if is_c3_detail {
                     self.cont3xt.detail_filter.clear();
+                    self.cont3xt.detail_filter_cursor = 0;
                     self.cont3xt.detail_scroll = 0;
                 } else if is_stats {
                     if let Some(ref mut detail) = self.viewer.stats_detail {
                         detail.filter.clear();
+                        detail.filter_cursor = 0;
                         detail.scroll = 0;
                     }
                 } else if is_files {
                     if let Some(ref mut detail) = self.viewer.files_detail {
                         detail.filter.clear();
+                        detail.filter_cursor = 0;
                         detail.scroll = 0;
                     }
                 } else if let Some(ref mut detail) = self.viewer.session_detail {
                     detail.filter.clear();
+                    detail.filter_cursor = 0;
                     detail.selected = 0;
                     detail.scroll = 0;
                     self.recalc_detail_rows();
@@ -638,49 +644,31 @@ impl App {
             KeyCode::Enter => {
                 self.input_mode = InputMode::Normal;
             }
-            KeyCode::Char(c) => {
+            _ => {
                 if is_c3_detail {
-                    self.cont3xt.detail_filter.push(c);
-                    self.cont3xt.detail_scroll = 0;
+                    if handle_text_input_key(key.code, &mut self.cont3xt.detail_filter, &mut self.cont3xt.detail_filter_cursor) {
+                        self.cont3xt.detail_scroll = 0;
+                    }
                 } else if is_stats {
                     if let Some(ref mut detail) = self.viewer.stats_detail {
-                        detail.filter.push(c);
-                        detail.scroll = 0;
+                        if handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
+                            detail.scroll = 0;
+                        }
                     }
                 } else if is_files {
                     if let Some(ref mut detail) = self.viewer.files_detail {
-                        detail.filter.push(c);
-                        detail.scroll = 0;
+                        if handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
+                            detail.scroll = 0;
+                        }
                     }
                 } else if let Some(ref mut detail) = self.viewer.session_detail {
-                    detail.filter.push(c);
-                    detail.selected = 0;
-                    detail.scroll = 0;
-                    self.recalc_detail_rows();
+                    if handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
+                        detail.selected = 0;
+                        detail.scroll = 0;
+                        self.recalc_detail_rows();
+                    }
                 }
             }
-            KeyCode::Backspace => {
-                if is_c3_detail {
-                    self.cont3xt.detail_filter.pop();
-                    self.cont3xt.detail_scroll = 0;
-                } else if is_stats {
-                    if let Some(ref mut detail) = self.viewer.stats_detail {
-                        detail.filter.pop();
-                        detail.scroll = 0;
-                    }
-                } else if is_files {
-                    if let Some(ref mut detail) = self.viewer.files_detail {
-                        detail.filter.pop();
-                        detail.scroll = 0;
-                    }
-                } else if let Some(ref mut detail) = self.viewer.session_detail {
-                    detail.filter.pop();
-                    detail.selected = 0;
-                    detail.scroll = 0;
-                    self.recalc_detail_rows();
-                }
-            }
-            _ => {}
         }
     }
 
@@ -753,6 +741,7 @@ impl App {
                         scope,
                         session_id,
                         session_node,
+                        input_cursor: default_input.len(),
                         input: default_input,
                     });
                     self.input_mode = InputMode::ActionPrompt;
@@ -795,6 +784,7 @@ impl App {
                     scope: ActionScope::Matching,
                     session_id,
                     session_node,
+                    input_cursor: default_input.len(),
                     input: default_input,
                 });
                 self.input_mode = InputMode::ActionPrompt;
@@ -821,17 +811,11 @@ impl App {
                 }
                 self.execute_action(prompt).await;
             }
-            KeyCode::Char(c) => {
+            _ => {
                 if let Some(ref mut prompt) = self.action_prompt {
-                    prompt.input.push(c);
+                    handle_text_input_key(key.code, &mut prompt.input, &mut prompt.input_cursor);
                 }
             }
-            KeyCode::Backspace => {
-                if let Some(ref mut prompt) = self.action_prompt {
-                    prompt.input.pop();
-                }
-            }
-            _ => {}
         }
     }
 
@@ -1245,6 +1229,7 @@ impl App {
                 self.viewer.stats_layout_popup_mode = LayoutPopupMode::List;
                 self.viewer.stats_layout_popup_selected = 0;
                 self.viewer.stats_layout_filter.clear();
+                self.viewer.stats_layout_filter_cursor = 0;
                 self.viewer.stats_show_layout_popup = true;
             }
             _ => {}
@@ -1254,6 +1239,7 @@ impl App {
     pub(crate) async fn handle_stats_column_editor_key(&mut self, key: KeyEvent) {
         let mut state = ColumnEditorState {
             filter: &mut self.viewer.stats_column_editor_filter,
+            filter_cursor: &mut self.viewer.stats_column_editor_filter_cursor,
             selected: &mut self.viewer.stats_column_editor_selected,
             mode: &mut self.viewer.stats_column_editor_mode,
             show: &mut self.viewer.stats_show_column_editor,
@@ -1286,6 +1272,7 @@ impl App {
             mode: &mut self.viewer.stats_layout_popup_mode,
             selected: &mut self.viewer.stats_layout_popup_selected,
             filter: &mut self.viewer.stats_layout_filter,
+            filter_cursor: &mut self.viewer.stats_layout_filter_cursor,
             save_name: &mut self.viewer.stats_layout_save_name,
             save_cursor: &mut self.viewer.stats_layout_save_cursor,
             show: &mut self.viewer.stats_show_layout_popup,
@@ -1448,6 +1435,7 @@ impl App {
             }
             KeyCode::Char('f') => {
                 self.viewer.field_filter.clear();
+                self.viewer.field_filter_cursor = 0;
                 self.viewer.field_filter_selected = 0;
                 self.input_mode = InputMode::FieldSelector;
             }
@@ -1546,6 +1534,7 @@ impl App {
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
                 self.viewer.field_filter.clear();
+                self.viewer.field_filter_cursor = 0;
             }
             KeyCode::Enter => {
                 let filtered = self.vr_filtered_fields();
@@ -1553,6 +1542,7 @@ impl App {
                     self.viewer.summary_field = field.exp.clone();
                     self.input_mode = InputMode::Normal;
                     self.viewer.field_filter.clear();
+                    self.viewer.field_filter_cursor = 0;
                     self.vr_request_summary_fetch();
                 }
             }
@@ -1567,15 +1557,11 @@ impl App {
                     self.viewer.field_filter_selected -= 1;
                 }
             }
-            KeyCode::Char(c) => {
-                self.viewer.field_filter.push(c);
-                self.viewer.field_filter_selected = 0;
+            _ => {
+                if handle_text_input_key(key.code, &mut self.viewer.field_filter, &mut self.viewer.field_filter_cursor) {
+                    self.viewer.field_filter_selected = 0;
+                }
             }
-            KeyCode::Backspace => {
-                self.viewer.field_filter.pop();
-                self.viewer.field_filter_selected = 0;
-            }
-            _ => {}
         }
     }
 
@@ -1669,6 +1655,7 @@ impl App {
                 self.viewer.files_layout_popup_mode = LayoutPopupMode::List;
                 self.viewer.files_layout_popup_selected = 0;
                 self.viewer.files_layout_filter.clear();
+                self.viewer.files_layout_filter_cursor = 0;
                 self.viewer.files_show_layout_popup = true;
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
@@ -1681,6 +1668,7 @@ impl App {
     pub(crate) async fn handle_files_column_editor_key(&mut self, key: KeyEvent) {
         let mut state = ColumnEditorState {
             filter: &mut self.viewer.files_column_editor_filter,
+            filter_cursor: &mut self.viewer.files_column_editor_filter_cursor,
             selected: &mut self.viewer.files_column_editor_selected,
             mode: &mut self.viewer.files_column_editor_mode,
             show: &mut self.viewer.files_show_column_editor,
@@ -1716,6 +1704,7 @@ impl App {
             mode: &mut self.viewer.files_layout_popup_mode,
             selected: &mut self.viewer.files_layout_popup_selected,
             filter: &mut self.viewer.files_layout_filter,
+            filter_cursor: &mut self.viewer.files_layout_filter_cursor,
             save_name: &mut self.viewer.files_layout_save_name,
             save_cursor: &mut self.viewer.files_layout_save_cursor,
             show: &mut self.viewer.files_show_layout_popup,

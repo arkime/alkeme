@@ -7,6 +7,7 @@ use super::*;
 /// Abstracts the difference between session and stats column editors.
 pub(super) struct ColumnEditorState<'a> {
     pub filter: &'a mut String,
+    pub filter_cursor: &'a mut usize,
     pub selected: &'a mut usize,
     pub mode: &'a mut ColumnEditorMode,
     pub show: &'a mut bool,
@@ -65,14 +66,8 @@ pub(super) fn handle_column_editor_key_generic<T: EditorItemTrait>(
         match key.code {
             KeyCode::Esc => {
                 state.filter.clear();
+                *state.filter_cursor = 0;
                 *state.selected = 0;
-            }
-            KeyCode::Backspace => {
-                state.filter.pop();
-                let filtered = filtered_indices(state.filter, items);
-                if !filtered.is_empty() {
-                    *state.selected = filtered[0];
-                }
             }
             KeyCode::Enter | KeyCode::Char(' ') => {
                 if let Some(item) = items.get_mut(*state.selected) {
@@ -98,14 +93,14 @@ pub(super) fn handle_column_editor_key_generic<T: EditorItemTrait>(
                     *state.selected = filtered[0];
                 }
             }
-            KeyCode::Char(c) => {
-                state.filter.push(c);
-                let filtered = filtered_indices(state.filter, items);
-                if !filtered.is_empty() {
-                    *state.selected = filtered[0];
+            _ => {
+                if handle_text_input_key(key.code, state.filter, state.filter_cursor) {
+                    let filtered = filtered_indices(state.filter, items);
+                    if !filtered.is_empty() {
+                        *state.selected = filtered[0];
+                    }
                 }
             }
-            _ => {}
         }
         return None;
     }
@@ -120,6 +115,7 @@ pub(super) fn handle_column_editor_key_generic<T: EditorItemTrait>(
         }
         KeyCode::Char('/') => {
             *state.filter = "\0".to_string();
+            *state.filter_cursor = 0;
         }
         KeyCode::Enter => {
             if *state.mode == ColumnEditorMode::Reorder {
@@ -192,6 +188,7 @@ pub(super) struct LayoutPopupState<'a> {
     pub mode: &'a mut LayoutPopupMode,
     pub selected: &'a mut usize,
     pub filter: &'a mut String,
+    pub filter_cursor: &'a mut usize,
     pub save_name: &'a mut String,
     pub save_cursor: &'a mut usize,
     pub show: &'a mut bool,
@@ -245,24 +242,14 @@ pub(super) fn handle_layout_popup_key_generic(
                 match key.code {
                     KeyCode::Esc => {
                         state.filter.clear();
+                        *state.filter_cursor = 0;
                         *state.selected = 0;
-                    }
-                    KeyCode::Backspace => {
-                        state.filter.pop();
-                        if state.filter.is_empty() || *state.filter == "\0" {
-                            state.filter.clear();
-                            *state.selected = 0;
-                        } else {
-                            let filtered = layout_filtered_indices(state.filter, items);
-                            if let Some(&first) = filtered.first() {
-                                *state.selected = first + 3;
-                            }
-                        }
                     }
                     KeyCode::Enter => {
                         if let Some(&idx) = filtered.iter().find(|&&i| i + 3 == *state.selected) {
                             *state.show = false;
                             state.filter.clear();
+                            *state.filter_cursor = 0;
                             return Some(format!("select:{idx}"));
                         }
                     }
@@ -282,14 +269,20 @@ pub(super) fn handle_layout_popup_key_generic(
                             }
                         }
                     }
-                    KeyCode::Char(c) => {
-                        state.filter.push(c);
-                        let filtered = layout_filtered_indices(state.filter, items);
-                        if let Some(&first) = filtered.first() {
-                            *state.selected = first + 3;
+                    _ => {
+                        if handle_text_input_key(key.code, state.filter, state.filter_cursor) {
+                            if state.filter.is_empty() || *state.filter == "\0" {
+                                state.filter.clear();
+                                *state.filter_cursor = 0;
+                                *state.selected = 0;
+                            } else {
+                                let filtered = layout_filtered_indices(state.filter, items);
+                                if let Some(&first) = filtered.first() {
+                                    *state.selected = first + 3;
+                                }
+                            }
                         }
                     }
-                    _ => {}
                 }
                 return None;
             }
@@ -304,6 +297,7 @@ pub(super) fn handle_layout_popup_key_generic(
                 }
                 KeyCode::Char('/') => {
                     *state.filter = "\0".to_string();
+                    *state.filter_cursor = 0;
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     let max = items.len() + 3;
