@@ -33,6 +33,7 @@ impl App {
         match self.active_tab {
             Tab::Dashboard => self.handle_dashboard_key(key).await,
             Tab::Issues => self.handle_issues_key(key).await,
+            Tab::Settings => self.handle_parliament_settings_key(key).await,
             _ => {
                 match key.code {
                     KeyCode::Tab => self.next_tab(),
@@ -325,5 +326,229 @@ impl App {
 
         self.ws_fetch_stats().await;
         self.ws_fetch_sources_types().await;
+    }
+
+    async fn handle_parliament_settings_key(&mut self, key: KeyEvent) {
+        use crate::app::types::*;
+
+        match self.parliament.settings_level {
+            PlSettingsLevel::GroupEditor => {
+                self.handle_pl_group_editor_key(key).await;
+                return;
+            }
+            PlSettingsLevel::ClusterEditor => {
+                self.handle_pl_cluster_editor_key(key).await;
+                return;
+            }
+            _ => {}
+        }
+
+        match self.parliament.settings_tab {
+            PlSettingsTab::Groups => self.handle_pl_groups_key(key).await,
+            PlSettingsTab::General => self.handle_pl_general_key(key).await,
+        }
+    }
+
+    async fn handle_pl_groups_key(&mut self, key: KeyEvent) {
+        use crate::app::types::*;
+        let items_len = self.parliament.settings_items.len();
+
+        match key.code {
+            KeyCode::Tab => self.next_tab(),
+            KeyCode::BackTab => self.prev_tab(),
+            KeyCode::Char('1') => self.parliament.settings_tab = PlSettingsTab::Groups,
+            KeyCode::Char('2') => self.parliament.settings_tab = PlSettingsTab::General,
+            KeyCode::Char('h') | KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('D') => self.show_debug = !self.show_debug,
+            KeyCode::Char('r') => self.pl_fetch_data().await,
+            KeyCode::Down | KeyCode::Char('j') => {
+                if items_len > 0 && self.parliament.settings_selected + 1 < items_len {
+                    self.parliament.settings_selected += 1;
+                    self.parliament.settings_table_state.select(Some(self.parliament.settings_selected));
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.parliament.settings_selected > 0 {
+                    self.parliament.settings_selected -= 1;
+                    self.parliament.settings_table_state.select(Some(self.parliament.settings_selected));
+                }
+            }
+            KeyCode::Home => {
+                self.parliament.settings_selected = 0;
+                self.parliament.settings_table_state.select(Some(0));
+            }
+            KeyCode::End => {
+                if items_len > 0 {
+                    self.parliament.settings_selected = items_len - 1;
+                    self.parliament.settings_table_state.select(Some(items_len - 1));
+                }
+            }
+            KeyCode::Enter | KeyCode::Char('e') => {
+                if let Some(&(gi, ci_opt)) = self.parliament.settings_items.get(self.parliament.settings_selected) {
+                    match ci_opt {
+                        None => self.pl_open_group_editor(gi),
+                        Some(ci) => self.pl_open_cluster_editor(gi, ci),
+                    }
+                }
+            }
+            KeyCode::Char('n') => {
+                // New group
+                self.pl_open_new_group_editor();
+            }
+            KeyCode::Char('a') => {
+                // Add cluster to selected group
+                if let Some(&(gi, _)) = self.parliament.settings_items.get(self.parliament.settings_selected) {
+                    self.pl_open_new_cluster_editor(gi);
+                }
+            }
+            KeyCode::Char('d') | KeyCode::Char('x') => {
+                self.pl_delete_selected().await;
+            }
+            _ => {}
+        }
+    }
+
+    async fn handle_pl_group_editor_key(&mut self, key: KeyEvent) {
+        use crate::app::types::*;
+        let p = &mut self.parliament;
+
+        match key.code {
+            KeyCode::Esc => {
+                p.settings_level = PlSettingsLevel::GroupList;
+            }
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.pl_save_group().await;
+            }
+            KeyCode::Tab | KeyCode::Down | KeyCode::Up => {
+                p.group_editor_field = match p.group_editor_field {
+                    PlGroupEditorField::Title => PlGroupEditorField::Description,
+                    PlGroupEditorField::Description => PlGroupEditorField::Title,
+                };
+            }
+            _ => {
+                let (text, cursor) = match p.group_editor_field {
+                    PlGroupEditorField::Title => (&mut p.group_editor_title, &mut p.group_editor_title_cursor),
+                    PlGroupEditorField::Description => (&mut p.group_editor_desc, &mut p.group_editor_desc_cursor),
+                };
+                handle_text_input_key(key.code, text, cursor);
+            }
+        }
+    }
+
+    async fn handle_pl_cluster_editor_key(&mut self, key: KeyEvent) {
+        use crate::app::types::*;
+        let p = &mut self.parliament;
+
+        match key.code {
+            KeyCode::Esc => {
+                p.settings_level = PlSettingsLevel::GroupList;
+            }
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.pl_save_cluster().await;
+            }
+            KeyCode::Tab | KeyCode::Down if p.cluster_editor_field.is_bool() || key.code == KeyCode::Tab => {
+                let idx = PlClusterEditorField::ALL.iter()
+                    .position(|&f| f == p.cluster_editor_field).unwrap_or(0);
+                let next = (idx + 1) % PlClusterEditorField::ALL.len();
+                p.cluster_editor_field = PlClusterEditorField::ALL[next];
+            }
+            KeyCode::BackTab | KeyCode::Up if p.cluster_editor_field.is_bool() || key.code == KeyCode::BackTab => {
+                let idx = PlClusterEditorField::ALL.iter()
+                    .position(|&f| f == p.cluster_editor_field).unwrap_or(0);
+                let prev = if idx == 0 { PlClusterEditorField::ALL.len() - 1 } else { idx - 1 };
+                p.cluster_editor_field = PlClusterEditorField::ALL[prev];
+            }
+            KeyCode::Char(' ') if p.cluster_editor_field.is_bool() => {
+                match p.cluster_editor_field {
+                    PlClusterEditorField::HideDeltaBPS => p.cluster_editor_hide_delta_bps = !p.cluster_editor_hide_delta_bps,
+                    PlClusterEditorField::HideDeltaTDPS => p.cluster_editor_hide_delta_tdps = !p.cluster_editor_hide_delta_tdps,
+                    PlClusterEditorField::HideMonitoring => p.cluster_editor_hide_monitoring = !p.cluster_editor_hide_monitoring,
+                    PlClusterEditorField::HideArkimeNodes => p.cluster_editor_hide_arkime_nodes = !p.cluster_editor_hide_arkime_nodes,
+                    PlClusterEditorField::HideDataNodes => p.cluster_editor_hide_data_nodes = !p.cluster_editor_hide_data_nodes,
+                    PlClusterEditorField::HideTotalNodes => p.cluster_editor_hide_total_nodes = !p.cluster_editor_hide_total_nodes,
+                    _ => {}
+                }
+            }
+            KeyCode::Enter if p.cluster_editor_field == PlClusterEditorField::Type => {
+                // Cycle type: "" -> "multiviewer" -> "disabled" -> "noAlerts" -> ""
+                p.cluster_editor_type = match p.cluster_editor_type.as_str() {
+                    "" => "multiviewer".to_string(),
+                    "multiviewer" => "disabled".to_string(),
+                    "disabled" => "noAlerts".to_string(),
+                    _ => String::new(),
+                };
+            }
+            _ if !p.cluster_editor_field.is_bool() && p.cluster_editor_field != PlClusterEditorField::Type => {
+                let (text, cursor) = match p.cluster_editor_field {
+                    PlClusterEditorField::Title => (&mut p.cluster_editor_title, &mut p.cluster_editor_title_cursor),
+                    PlClusterEditorField::Url => (&mut p.cluster_editor_url, &mut p.cluster_editor_url_cursor),
+                    PlClusterEditorField::LocalUrl => (&mut p.cluster_editor_local_url, &mut p.cluster_editor_local_url_cursor),
+                    PlClusterEditorField::Description => (&mut p.cluster_editor_desc, &mut p.cluster_editor_desc_cursor),
+                    _ => return,
+                };
+                handle_text_input_key(key.code, text, cursor);
+            }
+            _ => {}
+        }
+    }
+
+    async fn handle_pl_general_key(&mut self, key: KeyEvent) {
+        use crate::app::types::*;
+        let field_count = PlGeneralField::ALL.len();
+
+        if self.parliament.general_editing {
+            match key.code {
+                KeyCode::Esc => {
+                    self.parliament.general_editing = false;
+                }
+                KeyCode::Enter => {
+                    let field = PlGeneralField::ALL[self.parliament.general_selected];
+                    let value = self.parliament.general_edit_value.clone();
+                    self.pl_set_general_field(&field, &value);
+                    self.parliament.general_editing = false;
+                }
+                _ => {
+                    handle_text_input_key(key.code, &mut self.parliament.general_edit_value, &mut self.parliament.general_edit_cursor);
+                }
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Tab => self.next_tab(),
+            KeyCode::BackTab => self.prev_tab(),
+            KeyCode::Char('1') => self.parliament.settings_tab = PlSettingsTab::Groups,
+            KeyCode::Char('2') => self.parliament.settings_tab = PlSettingsTab::General,
+            KeyCode::Char('h') | KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('D') => self.show_debug = !self.show_debug,
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.parliament.general_selected + 1 < field_count {
+                    self.parliament.general_selected += 1;
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.parliament.general_selected > 0 {
+                    self.parliament.general_selected -= 1;
+                }
+            }
+            KeyCode::Enter => {
+                let field = PlGeneralField::ALL[self.parliament.general_selected];
+                if field.is_select() {
+                    // Toggle between "percentage" and "gb"
+                    let current = self.pl_general_field_value(&field);
+                    let new_val = if current == "percentage" { "gb" } else { "percentage" };
+                    self.pl_set_general_field(&field, new_val);
+                } else {
+                    self.parliament.general_editing = true;
+                    self.parliament.general_edit_value = self.pl_general_field_value(&field);
+                    self.parliament.general_edit_cursor = self.parliament.general_edit_value.len();
+                }
+            }
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.pl_save_general_settings().await;
+            }
+            KeyCode::Char('r') => self.pl_fetch_data().await,
+            _ => {}
+        }
     }
 }

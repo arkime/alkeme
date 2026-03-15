@@ -17,6 +17,7 @@ pub fn draw_parliament(f: &mut Frame, app: &mut App) {
     match app.active_tab {
         Tab::Dashboard => draw_dashboard(f, app, chunks[1]),
         Tab::Issues => draw_issues(f, app, chunks[1]),
+        Tab::Settings => draw_pl_settings(f, app, chunks[1]),
         _ => {
             let block = Block::default().borders(Borders::ALL).title(app.active_tab.name());
             f.render_widget(block, chunks[1]);
@@ -570,4 +571,277 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+// ── Parliament Settings ──────────────────────────────────────────────────────
+
+fn draw_pl_settings(f: &mut Frame, app: &mut App, area: Rect) {
+    use crate::app::{PlSettingsTab, PlSettingsLevel};
+
+    let sub_tabs: Vec<Span> = PlSettingsTab::ALL.iter().enumerate().map(|(i, tab)| {
+        let label = format!(" {}:{} ", i + 1, tab.label());
+        if *tab == app.parliament.settings_tab {
+            Span::styled(label, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        } else {
+            Span::styled(label, Style::default().fg(Color::DarkGray))
+        }
+    }).collect();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(area);
+
+    f.render_widget(Paragraph::new(Line::from(sub_tabs)), chunks[0]);
+
+    match app.parliament.settings_tab {
+        PlSettingsTab::Groups => draw_pl_groups(f, app, chunks[1]),
+        PlSettingsTab::General => draw_pl_general(f, app, chunks[1]),
+    }
+
+    // Draw group/cluster editor popup on top if active
+    match app.parliament.settings_level {
+        PlSettingsLevel::GroupEditor => draw_pl_group_editor(f, app, area),
+        PlSettingsLevel::ClusterEditor => draw_pl_cluster_editor(f, app, area),
+        _ => {}
+    }
+}
+
+fn draw_pl_groups(f: &mut Frame, app: &mut App, area: Rect) {
+    let items = &app.parliament.settings_items;
+
+    let rows: Vec<Row> = items.iter().map(|&(gi, ci_opt)| {
+        match ci_opt {
+            None => {
+                let group = &app.parliament.groups[gi];
+                let cluster_count = group.clusters.len();
+                Row::new(vec![
+                    Cell::from(format!("▸ {}", group.title))
+                        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Cell::from(group.description.clone()),
+                    Cell::from(format!("{} clusters", cluster_count)),
+                    Cell::from(group.id.chars().take(8).collect::<String>())
+                        .style(Style::default().fg(Color::DarkGray)),
+                ])
+            }
+            Some(ci) => {
+                let cluster = &app.parliament.groups[gi].clusters[ci];
+                let type_str = if cluster.cluster_type.is_empty() {
+                    "".to_string()
+                } else {
+                    format!("[{}]", cluster.cluster_type)
+                };
+                Row::new(vec![
+                    Cell::from(format!("  └ {}", cluster.title)),
+                    Cell::from(cluster.url.clone())
+                        .style(Style::default().fg(Color::Blue)),
+                    Cell::from(type_str)
+                        .style(Style::default().fg(Color::DarkGray)),
+                    Cell::from(cluster.id.as_deref().unwrap_or("").chars().take(8).collect::<String>())
+                        .style(Style::default().fg(Color::DarkGray)),
+                ])
+            }
+        }
+    }).collect();
+
+    let header = Row::new(vec![
+        Cell::from("Name").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Cell::from("URL / Description").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Cell::from("Info").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Cell::from("ID").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+    ]).bottom_margin(0);
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(25),
+            Constraint::Percentage(40),
+            Constraint::Length(15),
+            Constraint::Length(10),
+        ],
+    )
+    .header(header)
+    .block(Block::default().borders(Borders::ALL).title(
+        " Groups  n:new group  a:add cluster  e/Enter:edit  d:delete  Ctrl+S:save "
+    ))
+    .row_highlight_style(Style::default().bg(Color::DarkGray));
+
+    f.render_stateful_widget(table, area, &mut app.parliament.settings_table_state);
+}
+
+fn draw_pl_group_editor(f: &mut Frame, app: &mut App, area: Rect) {
+    let popup_area = center_popup(60, 8, area);
+    f.render_widget(Clear, popup_area);
+
+    let title = if app.parliament.group_editor_is_new {
+        " New Group "
+    } else {
+        " Edit Group "
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(title);
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2), // Title
+            Constraint::Length(2), // Description
+            Constraint::Length(1), // Footer
+        ])
+        .split(inner);
+
+    let is_title = app.parliament.group_editor_field == crate::app::PlGroupEditorField::Title;
+    render_text_input(f, &app.parliament.group_editor_title, app.parliament.group_editor_title_cursor, is_title, "Title", chunks[0]);
+    render_text_input(f, &app.parliament.group_editor_desc, app.parliament.group_editor_desc_cursor, !is_title, "Description", chunks[1]);
+
+    f.render_widget(
+        Paragraph::new(" Tab:switch field  Ctrl+S:save  Esc:cancel")
+            .style(Style::default().fg(Color::DarkGray)),
+        chunks[2],
+    );
+}
+
+fn draw_pl_cluster_editor(f: &mut Frame, app: &mut App, area: Rect) {
+    use crate::app::PlClusterEditorField;
+
+    let popup_area = center_popup(70, 18, area);
+    f.render_widget(Clear, popup_area);
+
+    let title = if app.parliament.cluster_editor_is_new {
+        " New Cluster "
+    } else {
+        " Edit Cluster "
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(title);
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let p = &app.parliament;
+    let field = p.cluster_editor_field;
+
+    let constraints: Vec<Constraint> = PlClusterEditorField::ALL.iter()
+        .map(|_| Constraint::Length(1))
+        .chain(std::iter::once(Constraint::Length(1))) // footer
+        .collect();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(inner);
+
+    for (i, f_def) in PlClusterEditorField::ALL.iter().enumerate() {
+        let is_active = *f_def == field;
+        let label = f_def.label();
+
+        if f_def.is_bool() {
+            let val = match f_def {
+                PlClusterEditorField::HideDeltaBPS => p.cluster_editor_hide_delta_bps,
+                PlClusterEditorField::HideDeltaTDPS => p.cluster_editor_hide_delta_tdps,
+                PlClusterEditorField::HideMonitoring => p.cluster_editor_hide_monitoring,
+                PlClusterEditorField::HideArkimeNodes => p.cluster_editor_hide_arkime_nodes,
+                PlClusterEditorField::HideDataNodes => p.cluster_editor_hide_data_nodes,
+                PlClusterEditorField::HideTotalNodes => p.cluster_editor_hide_total_nodes,
+                _ => false,
+            };
+            let checkbox = if val { "☑" } else { "☐" };
+            let style = if is_active {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            let indicator = if is_active { "▸ " } else { "  " };
+            f.render_widget(
+                Paragraph::new(format!("{}{}: {} {}", indicator, label, checkbox, if val { "Yes" } else { "No" })).style(style),
+                chunks[i],
+            );
+        } else if *f_def == PlClusterEditorField::Type {
+            let val = if p.cluster_editor_type.is_empty() { "normal" } else { &p.cluster_editor_type };
+            let style = if is_active {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            let indicator = if is_active { "▸ " } else { "  " };
+            f.render_widget(
+                Paragraph::new(format!("{}{}: {} (Enter to cycle)", indicator, label, val)).style(style),
+                chunks[i],
+            );
+        } else {
+            let (text, cursor) = match f_def {
+                PlClusterEditorField::Title => (&p.cluster_editor_title, p.cluster_editor_title_cursor),
+                PlClusterEditorField::Url => (&p.cluster_editor_url, p.cluster_editor_url_cursor),
+                PlClusterEditorField::LocalUrl => (&p.cluster_editor_local_url, p.cluster_editor_local_url_cursor),
+                PlClusterEditorField::Description => (&p.cluster_editor_desc, p.cluster_editor_desc_cursor),
+                _ => continue,
+            };
+            render_text_input(f, text, cursor, is_active, label, chunks[i]);
+        }
+    }
+
+    let footer_idx = PlClusterEditorField::ALL.len();
+    if footer_idx < chunks.len() {
+        f.render_widget(
+            Paragraph::new(" Tab:next  Space:toggle  Ctrl+S:save  Esc:cancel")
+                .style(Style::default().fg(Color::DarkGray)),
+            chunks[footer_idx],
+        );
+    }
+}
+
+fn draw_pl_general(f: &mut Frame, app: &mut App, area: Rect) {
+    use crate::app::PlGeneralField;
+
+    let rows: Vec<Row> = PlGeneralField::ALL.iter().enumerate().map(|(i, field)| {
+        let is_selected = i == app.parliament.general_selected;
+        let label = field.label();
+
+        let value = if app.parliament.general_editing && is_selected {
+            format!("{}█", app.parliament.general_edit_value)
+        } else if field.is_select() {
+            let val = app.pl_general_field_value(field);
+            format!("{} (Enter to toggle)", val)
+        } else {
+            app.pl_general_field_value(field)
+        };
+
+        let style = if is_selected && app.parliament.general_editing {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+
+        Row::new(vec![
+            Cell::from(label.to_string()),
+            Cell::from(value).style(style),
+        ])
+    }).collect();
+
+    let header = Row::new(vec![
+        Cell::from("Setting").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Cell::from("Value").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+    ]);
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(30),
+            Constraint::Min(20),
+        ],
+    )
+    .header(header)
+    .block(Block::default().borders(Borders::ALL).title(
+        " General Settings  Enter:edit  Ctrl+S:save "
+    ))
+    .row_highlight_style(Style::default().bg(Color::DarkGray))
+    .highlight_symbol("▸ ");
+
+    let mut table_state = TableState::default().with_selected(app.parliament.general_selected);
+    f.render_stateful_widget(table, area, &mut table_state);
 }

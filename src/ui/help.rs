@@ -506,6 +506,42 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("r"), Span::raw("Refresh issues")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
         ])
+    } else if app.app_mode == AppMode::Parliament && app.active_tab == Tab::Settings {
+        use crate::app::PlSettingsTab;
+        let mut lines = vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("1 / 2"), Span::raw("Switch sub-tab (Groups / General)")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate items")]),
+            Line::from(vec![key("q"), Span::raw("Quit")]),
+            blank(),
+        ];
+        match app.parliament.settings_tab {
+            PlSettingsTab::Groups => {
+                lines.extend(vec![
+                    hdr!("Groups"),
+                    blank(),
+                    Line::from(vec![key("e / Enter"), Span::raw("Edit selected group/cluster")]),
+                    Line::from(vec![key("n"), Span::raw("New group")]),
+                    Line::from(vec![key("a"), Span::raw("Add cluster to group")]),
+                    Line::from(vec![key("d / x"), Span::raw("Delete selected")]),
+                    Line::from(vec![key("r"), Span::raw("Refresh")]),
+                    Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+                ]);
+            }
+            PlSettingsTab::General => {
+                lines.extend(vec![
+                    hdr!("General Settings"),
+                    blank(),
+                    Line::from(vec![key("Enter"), Span::raw("Edit selected field")]),
+                    Line::from(vec![key("Ctrl+S"), Span::raw("Save all settings")]),
+                    Line::from(vec![key("r"), Span::raw("Refresh")]),
+                    Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+                ]);
+            }
+        }
+        ("Parliament Settings", lines)
     } else if app.app_mode == AppMode::Wise && app.active_tab == Tab::WsStats {
         ("WISE Stats", vec![
             hdr!("Navigation"),

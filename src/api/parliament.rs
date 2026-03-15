@@ -11,12 +11,28 @@ pub struct PlCluster {
     pub description: String,
     #[serde(default)]
     pub url: String,
+    #[serde(rename = "localUrl", default)]
+    pub local_url: String,
     #[serde(rename = "type", default)]
     pub cluster_type: String,
+    #[serde(rename = "hideDeltaBPS", default)]
+    pub hide_delta_bps: bool,
+    #[serde(rename = "hideDeltaTDPS", default)]
+    pub hide_delta_tdps: bool,
+    #[serde(rename = "hideMonitoring", default)]
+    pub hide_monitoring: bool,
+    #[serde(rename = "hideArkimeNodes", default)]
+    pub hide_arkime_nodes: bool,
+    #[serde(rename = "hideDataNodes", default)]
+    pub hide_data_nodes: bool,
+    #[serde(rename = "hideTotalNodes", default)]
+    pub hide_total_nodes: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PlGroup {
+    #[serde(default)]
+    pub id: String,
     pub title: String,
     #[serde(default)]
     pub description: String,
@@ -40,6 +56,26 @@ pub struct PlSettings {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct PlGeneralSettings {
+    #[serde(rename = "outOfDate", default)]
+    pub out_of_date: Option<u32>,
+    #[serde(rename = "esQueryTimeout", default)]
+    pub es_query_timeout: Option<u32>,
+    #[serde(rename = "noPackets", default)]
+    pub no_packets: Option<i32>,
+    #[serde(rename = "noPacketsLength", default)]
+    pub no_packets_length: Option<u32>,
+    #[serde(rename = "lowDiskSpace", default)]
+    pub low_disk_space: Option<f64>,
+    #[serde(rename = "lowDiskSpaceType", default)]
+    pub low_disk_space_type: Option<String>,
+    #[serde(rename = "lowDiskSpaceES", default)]
+    pub low_disk_space_es: Option<f64>,
+    #[serde(rename = "lowDiskSpaceESType", default)]
+    pub low_disk_space_es_type: Option<String>,
+    #[serde(rename = "removeIssuesAfter", default)]
+    pub remove_issues_after: Option<u32>,
+    #[serde(rename = "removeAcknowledgedAfter", default)]
+    pub remove_acknowledged_after: Option<u32>,
     #[serde(rename = "cont3xtUrl", default)]
     pub cont3xt_url: String,
     #[serde(rename = "wiseUrl", default)]
@@ -166,5 +202,84 @@ impl super::ArkimeClient {
             }
         }
         Ok(map)
+    }
+
+    // --- Group CRUD ---
+
+    pub async fn pl_create_group(&self, title: &str, description: &str) -> Result<()> {
+        let url = format!("{}/parliament/api/groups", self.pl_base());
+        let body = serde_json::json!({ "title": title, "description": description });
+        let result = self.authenticated_post_json(&url, &body).await?;
+        if result.get("success").and_then(|v| v.as_bool()) != Some(true) {
+            let text = result.get("text").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            anyhow::bail!("{}", text);
+        }
+        Ok(())
+    }
+
+    pub async fn pl_update_group(&self, group_id: &str, title: &str, description: &str) -> Result<()> {
+        let url = format!("{}/parliament/api/groups/{}", self.pl_base(), group_id);
+        let body = serde_json::json!({ "title": title, "description": description });
+        let result = self.authenticated_put_json(&url, &body).await?;
+        if result.get("success").and_then(|v| v.as_bool()) != Some(true) {
+            let text = result.get("text").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            anyhow::bail!("{}", text);
+        }
+        Ok(())
+    }
+
+    pub async fn pl_delete_group(&self, group_id: &str) -> Result<()> {
+        let url = format!("{}/parliament/api/groups/{}", self.pl_base(), group_id);
+        let result = self.authenticated_delete(&url).await?;
+        if result.get("success").and_then(|v| v.as_bool()) != Some(true) {
+            let text = result.get("text").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            anyhow::bail!("{}", text);
+        }
+        Ok(())
+    }
+
+    // --- Cluster CRUD ---
+
+    pub async fn pl_create_cluster(&self, group_id: &str, cluster: &Value) -> Result<()> {
+        let url = format!("{}/parliament/api/groups/{}/clusters", self.pl_base(), group_id);
+        let result = self.authenticated_post_json(&url, cluster).await?;
+        if result.get("success").and_then(|v| v.as_bool()) != Some(true) {
+            let text = result.get("text").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            anyhow::bail!("{}", text);
+        }
+        Ok(())
+    }
+
+    pub async fn pl_update_cluster(&self, group_id: &str, cluster_id: &str, cluster: &Value) -> Result<()> {
+        let url = format!("{}/parliament/api/groups/{}/clusters/{}", self.pl_base(), group_id, cluster_id);
+        let result = self.authenticated_put_json(&url, cluster).await?;
+        if result.get("success").and_then(|v| v.as_bool()) != Some(true) {
+            let text = result.get("text").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            anyhow::bail!("{}", text);
+        }
+        Ok(())
+    }
+
+    pub async fn pl_delete_cluster(&self, group_id: &str, cluster_id: &str) -> Result<()> {
+        let url = format!("{}/parliament/api/groups/{}/clusters/{}", self.pl_base(), group_id, cluster_id);
+        let result = self.authenticated_delete(&url).await?;
+        if result.get("success").and_then(|v| v.as_bool()) != Some(true) {
+            let text = result.get("text").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            anyhow::bail!("{}", text);
+        }
+        Ok(())
+    }
+
+    // --- Settings ---
+
+    pub async fn pl_update_settings(&self, settings: &Value) -> Result<()> {
+        let url = format!("{}/parliament/api/settings", self.pl_base());
+        let body = serde_json::json!({ "settings": { "general": settings } });
+        let result = self.authenticated_put_json(&url, &body).await?;
+        if result.get("success").and_then(|v| v.as_bool()) != Some(true) {
+            let text = result.get("text").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            anyhow::bail!("{}", text);
+        }
+        Ok(())
     }
 }
