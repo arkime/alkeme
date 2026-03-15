@@ -828,25 +828,24 @@ fn draw_pl_general(f: &mut Frame, app: &mut App, area: Rect) {
         let is_selected = i == app.parliament.general_selected;
         let label = field.label();
 
-        let value = if app.parliament.general_editing && is_selected {
-            format!("{}█", app.parliament.general_edit_value)
-        } else if field.is_select() {
-            let val = app.pl_general_field_value(field);
-            format!("{} (Enter to toggle)", val)
+        if app.parliament.general_editing && is_selected {
+            let text = &app.parliament.general_edit_value;
+            Row::new(vec![
+                Cell::from(label.to_string()),
+                Cell::from(Span::styled(text.clone(), Style::default().fg(Color::Yellow))),
+            ])
         } else {
-            app.pl_general_field_value(field)
-        };
-
-        let style = if is_selected && app.parliament.general_editing {
-            Style::default().fg(Color::Cyan)
-        } else {
-            Style::default()
-        };
-
-        Row::new(vec![
-            Cell::from(label.to_string()),
-            Cell::from(value).style(style),
-        ])
+            let value = if field.is_select() {
+                let val = app.pl_general_field_value(field);
+                format!("{} (Enter to toggle)", val)
+            } else {
+                app.pl_general_field_value(field)
+            };
+            Row::new(vec![
+                Cell::from(label.to_string()),
+                Cell::from(value),
+            ])
+        }
     }).collect();
 
     let header = Row::new(vec![
@@ -870,4 +869,16 @@ fn draw_pl_general(f: &mut Frame, app: &mut App, area: Rect) {
 
     let mut table_state = TableState::default().with_selected(app.parliament.general_selected);
     f.render_stateful_widget(table, area, &mut table_state);
+
+    // Show real blinking cursor when editing a field
+    if app.parliament.general_editing {
+        let cursor = app.parliament.general_edit_cursor.min(app.parliament.general_edit_value.len());
+        let offset = table_state.offset();
+        let row_in_view = app.parliament.general_selected.saturating_sub(offset);
+        // x: border(1) + highlight_symbol(2) + first_col(30) + col_gap(1) + cursor_pos
+        let cursor_x = area.x + 1 + 2 + 30 + 1 + cursor as u16;
+        // y: border(1) + header(1) + row_index
+        let cursor_y = area.y + 1 + 1 + row_in_view as u16;
+        f.set_cursor_position((cursor_x, cursor_y));
+    }
 }
