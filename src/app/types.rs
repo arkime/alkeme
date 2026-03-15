@@ -1393,6 +1393,7 @@ pub struct ParliamentState {
 
     // Backup
     pub backup_prompt: Option<String>,
+    pub backup_cursor: usize,
 }
 
 impl Default for ParliamentState {
@@ -1462,6 +1463,7 @@ impl Default for ParliamentState {
             general_edit_cursor: 0,
 
             backup_prompt: None,
+            backup_cursor: 0,
         }
     }
 }
@@ -1515,6 +1517,7 @@ pub struct Cont3xtState {
     pub views: Vec<crate::api::Cont3xtView>,
     pub view_selected: usize,
     pub view_save_name: String,
+    pub view_save_cursor: usize,
     pub active_view_id: Option<String>,
     pub active_view_name: Option<String>,
     /// streaming search in progress
@@ -1608,6 +1611,7 @@ pub struct Cont3xtState {
     pub role_popup_for_edit: bool,
     pub role_popup_selected: usize,
     pub role_popup_filter: String,
+    pub role_popup_cursor: usize,
     pub role_popup_filtering: bool,
     /// (action, message)
     pub settings_confirm: Option<(String, String)>,
@@ -1654,6 +1658,7 @@ pub struct Cont3xtState {
     pub lg_editor_itype_selected: usize,
     /// Link group backup prompt
     pub backup_prompt: Option<String>,
+    pub backup_cursor: usize,
     pub backup_kind: C3BackupKind,
     /// Group editor (name, viewRoles, editRoles)
     pub lg_group_editor_field: C3GroupEditorField,
@@ -1704,6 +1709,7 @@ pub struct Cont3xtState {
     pub ov_fe_popup_items: Vec<String>,
     pub ov_fe_popup_selected: usize,
     pub ov_fe_popup_filter: String,
+    pub ov_fe_popup_cursor: usize,
     pub ov_fe_popup_filtering: bool,
 }
 
@@ -1742,6 +1748,7 @@ impl Default for Cont3xtState {
             views: Vec::new(),
             view_selected: 0,
             view_save_name: String::new(),
+            view_save_cursor: 0,
             active_view_id: None,
             active_view_name: None,
             searching: false,
@@ -1810,6 +1817,7 @@ impl Default for Cont3xtState {
             role_popup_for_edit: false,
             role_popup_selected: 0,
             role_popup_filter: String::new(),
+            role_popup_cursor: 0,
             role_popup_filtering: false,
             settings_confirm: None,
             // Integration settings
@@ -1857,6 +1865,7 @@ impl Default for Cont3xtState {
             lg_editor_cursor: 0,
             lg_editor_itype_selected: 0,
             backup_prompt: None,
+            backup_cursor: 0,
             backup_kind: C3BackupKind::LinkGroupsAll,
             lg_group_editor_field: C3GroupEditorField::Name,
             lg_group_editor_name: String::new(),
@@ -1901,6 +1910,7 @@ impl Default for Cont3xtState {
             ov_fe_popup_items: Vec::new(),
             ov_fe_popup_selected: 0,
             ov_fe_popup_filter: String::new(),
+            ov_fe_popup_cursor: 0,
             ov_fe_popup_filtering: false,
         }
     }

@@ -285,12 +285,13 @@ impl App {
                                     Err(e) => self.status_msg = format!("Error saving view: {e}"),
                                 }
                                 self.cont3xt.view_save_name.clear();
+                                self.cont3xt.view_save_cursor = 0;
                                 self.cont3xt.integration_popup_mode = IntegrationPopupMode::Views;
                             }
                         }
-                        KeyCode::Backspace => { self.cont3xt.view_save_name.pop(); }
-                        KeyCode::Char(c) => { self.cont3xt.view_save_name.push(c); }
-                        _ => {}
+                        _ => {
+                            handle_text_input_key(key.code, &mut self.cont3xt.view_save_name, &mut self.cont3xt.view_save_cursor);
+                        }
                     }
                 }
                 IntegrationPopupMode::ConfirmDelete => {
@@ -344,6 +345,7 @@ impl App {
                             if self.cont3xt.view_selected == 0 {
                                 // "Save Current" option
                                 self.cont3xt.view_save_name.clear();
+                                self.cont3xt.view_save_cursor = 0;
                                 self.cont3xt.integration_popup_mode = IntegrationPopupMode::SaveInput;
                             } else {
                                 // Load a view
@@ -1083,17 +1085,11 @@ impl App {
                         }
                     }
                 }
-                KeyCode::Backspace => {
+                _ => {
                     if let Some(ref mut f) = self.cont3xt.backup_prompt {
-                        f.pop();
+                        handle_text_input_key(key.code, f, &mut self.cont3xt.backup_cursor);
                     }
                 }
-                KeyCode::Char(c) => {
-                    if let Some(ref mut f) = self.cont3xt.backup_prompt {
-                        f.push(c);
-                    }
-                }
-                _ => {}
             }
             return;
         }
@@ -1967,6 +1963,7 @@ impl App {
                 } else {
                     self.cont3xt.backup_kind = C3BackupKind::LinkGroupsAll;
                     self.cont3xt.backup_prompt = Some("linkgroups-backup.json".to_string());
+                    self.cont3xt.backup_cursor = "linkgroups-backup.json".len();
                 }
             }
             // Overview settings keys (List level)
@@ -2050,6 +2047,7 @@ impl App {
                 } else {
                     self.cont3xt.backup_kind = C3BackupKind::OverviewsAll;
                     self.cont3xt.backup_prompt = Some("overviews-backup.json".to_string());
+                    self.cont3xt.backup_cursor = "overviews-backup.json".len();
                 }
             }
             KeyCode::Char('B') if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Integrations => {
@@ -2058,6 +2056,7 @@ impl App {
                 } else {
                     self.cont3xt.backup_kind = C3BackupKind::Integrations;
                     self.cont3xt.backup_prompt = Some("integrations-backup.json".to_string());
+                    self.cont3xt.backup_cursor = "integrations-backup.json".len();
                 }
             }
             KeyCode::Char('B') if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Views => {
@@ -2066,6 +2065,7 @@ impl App {
                 } else {
                     self.cont3xt.backup_kind = C3BackupKind::Views;
                     self.cont3xt.backup_prompt = Some("views-backup.json".to_string());
+                    self.cont3xt.backup_cursor = "views-backup.json".len();
                 }
             }
             _ => {}

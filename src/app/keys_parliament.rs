@@ -346,17 +346,11 @@ impl App {
                         }
                     }
                 }
-                KeyCode::Backspace => {
+                _ => {
                     if let Some(ref mut f) = self.parliament.backup_prompt {
-                        f.pop();
+                        handle_text_input_key(key.code, f, &mut self.parliament.backup_cursor);
                     }
                 }
-                KeyCode::Char(c) => {
-                    if let Some(ref mut f) = self.parliament.backup_prompt {
-                        f.push(c);
-                    }
-                }
-                _ => {}
             }
             return;
         }
@@ -398,6 +392,7 @@ impl App {
                     self.status_msg = "No groups to backup".to_string();
                 } else {
                     self.parliament.backup_prompt = Some("parliament-backup.json".to_string());
+                    self.parliament.backup_cursor = "parliament-backup.json".len();
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {

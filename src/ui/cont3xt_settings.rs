@@ -33,10 +33,13 @@ pub(super) fn c3_draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
         f.render_widget(Clear, popup_area);
 
         let title = app.cont3xt.backup_kind.title();
+        let cursor = app.cont3xt.backup_cursor;
+        let (before, after) = filename.split_at(cursor.min(filename.len()));
         let line = Line::from(vec![
             Span::styled("Filename: ", Style::default().fg(Color::Yellow)),
-            Span::styled(filename, Style::default().fg(Color::White)),
-            Span::styled("█", Style::default().fg(Color::Gray)),
+            Span::styled(before, Style::default().fg(Color::White)),
+            Span::styled(if after.is_empty() { " ".to_string() } else { after[..1].to_string() }, Style::default().fg(Color::Black).bg(Color::White)),
+            Span::styled(if after.len() > 1 { &after[1..] } else { "" }, Style::default().fg(Color::White)),
         ]);
         let paragraph = Paragraph::new(line)
             .block(

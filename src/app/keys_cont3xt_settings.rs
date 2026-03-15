@@ -145,10 +145,8 @@ impl App {
                                 else { self.cont3xt.role_popup_selected = 0; }
                             }
                             _ if self.cont3xt.role_popup_filtering => {
-                                match key.code {
-                                    KeyCode::Backspace => { self.cont3xt.role_popup_filter.pop(); self.cont3xt.role_popup_selected = 0; }
-                                    KeyCode::Char(c) => { self.cont3xt.role_popup_filter.push(c); self.cont3xt.role_popup_selected = 0; }
-                                    _ => {}
+                                if handle_text_input_key(key.code, &mut self.cont3xt.role_popup_filter, &mut self.cont3xt.role_popup_cursor) {
+                                    self.cont3xt.role_popup_selected = 0;
                                 }
                             }
                             _ => {}
@@ -214,7 +212,7 @@ impl App {
                             }
                             self.cont3xt.role_popup_open = true;
                             self.cont3xt.role_popup_selected = 0;
-                            self.cont3xt.role_popup_filter.clear();
+                            self.cont3xt.role_popup_filter.clear(); self.cont3xt.role_popup_cursor = 0;
                             self.cont3xt.role_popup_filtering = false;
                         }
                         _ if self.cont3xt.lg_group_editor_field == C3GroupEditorField::Name => {
@@ -420,7 +418,9 @@ impl App {
                             if let Some(group) = self.cont3xt.lg_groups.get(gi) {
                                 let safe_name = group.name.replace(['/', '\\', ' '], "_");
                                 self.cont3xt.backup_kind = C3BackupKind::LinkGroupSingle;
-                                self.cont3xt.backup_prompt = Some(format!("{}.json", safe_name));
+                                let fname = format!("{}.json", safe_name);
+                                self.cont3xt.backup_cursor = fname.len();
+                                self.cont3xt.backup_prompt = Some(fname);
                             }
                         }
                         KeyCode::Char('h') | KeyCode::Char('?') => {
@@ -467,9 +467,11 @@ impl App {
                             match key.code {
                                 KeyCode::Esc => { self.cont3xt.ov_fe_popup_filtering = false; }
                                 KeyCode::Enter | KeyCode::Down => { self.cont3xt.ov_fe_popup_filtering = false; }
-                                KeyCode::Backspace => { self.cont3xt.ov_fe_popup_filter.pop(); self.cont3xt.ov_fe_popup_selected = 0; }
-                                KeyCode::Char(c) => { self.cont3xt.ov_fe_popup_filter.push(c); self.cont3xt.ov_fe_popup_selected = 0; }
-                                _ => {}
+                                _ => {
+                                    if handle_text_input_key(key.code, &mut self.cont3xt.ov_fe_popup_filter, &mut self.cont3xt.ov_fe_popup_cursor) {
+                                        self.cont3xt.ov_fe_popup_selected = 0;
+                                    }
+                                }
                             }
                             return true;
                         }
@@ -651,7 +653,7 @@ impl App {
                                     self.cont3xt.ov_fe_popup_for_field = false;
                                     self.cont3xt.ov_fe_popup_selected = self.cont3xt.ov_fe_popup_items.iter()
                                         .position(|n| n == &self.cont3xt.ov_field_editor_from).unwrap_or(0);
-                                    self.cont3xt.ov_fe_popup_filter.clear();
+                                    self.cont3xt.ov_fe_popup_filter.clear(); self.cont3xt.ov_fe_popup_cursor = 0;
                                     self.cont3xt.ov_fe_popup_filtering = false;
                                     self.cont3xt.ov_fe_popup_open = true;
                                 }
@@ -660,7 +662,7 @@ impl App {
                                     self.cont3xt.ov_fe_popup_for_field = true;
                                     self.cont3xt.ov_fe_popup_selected = self.cont3xt.ov_fe_popup_items.iter()
                                         .position(|n| n == &self.cont3xt.ov_field_editor_field_name).unwrap_or(0);
-                                    self.cont3xt.ov_fe_popup_filter.clear();
+                                    self.cont3xt.ov_fe_popup_filter.clear(); self.cont3xt.ov_fe_popup_cursor = 0;
                                     self.cont3xt.ov_fe_popup_filtering = false;
                                     self.cont3xt.ov_fe_popup_open = true;
                                 }
@@ -741,10 +743,8 @@ impl App {
                                 else { self.cont3xt.role_popup_selected = 0; }
                             }
                             _ if self.cont3xt.role_popup_filtering => {
-                                match key.code {
-                                    KeyCode::Backspace => { self.cont3xt.role_popup_filter.pop(); self.cont3xt.role_popup_selected = 0; }
-                                    KeyCode::Char(c) => { self.cont3xt.role_popup_filter.push(c); self.cont3xt.role_popup_selected = 0; }
-                                    _ => {}
+                                if handle_text_input_key(key.code, &mut self.cont3xt.role_popup_filter, &mut self.cont3xt.role_popup_cursor) {
+                                    self.cont3xt.role_popup_selected = 0;
                                 }
                             }
                             _ => {}
@@ -806,7 +806,7 @@ impl App {
                             self.cont3xt.role_popup_open = true;
                             self.cont3xt.role_popup_for_edit = self.cont3xt.ov_editor_field == C3OverviewEditorField::EditRoles;
                             self.cont3xt.role_popup_selected = 0;
-                            self.cont3xt.role_popup_filter.clear();
+                            self.cont3xt.role_popup_filter.clear(); self.cont3xt.role_popup_cursor = 0;
                             self.cont3xt.role_popup_filtering = false;
                         }
                         KeyCode::Enter => {
@@ -998,7 +998,9 @@ impl App {
                             if let Some(ov) = self.cont3xt.ov_list.get(ov_idx) {
                                 let safe_name = ov.name.replace(['/', '\\', ' '], "_");
                                 self.cont3xt.backup_kind = C3BackupKind::OverviewSingle;
-                                self.cont3xt.backup_prompt = Some(format!("{}.json", safe_name));
+                                let fname = format!("{}.json", safe_name);
+                                self.cont3xt.backup_cursor = fname.len();
+                                self.cont3xt.backup_prompt = Some(fname);
                             }
                         }
                         KeyCode::Char('h') | KeyCode::Char('?') => {
