@@ -459,6 +459,13 @@ impl App {
                     PlGroupEditorField::Description => PlGroupEditorField::Title,
                 };
             }
+            KeyCode::Enter => {
+                if p.group_editor_field == PlGroupEditorField::Description {
+                    let cursor = &mut p.group_editor_desc_cursor;
+                    p.group_editor_desc.insert(*cursor, '\n');
+                    *cursor += 1;
+                }
+            }
             _ => {
                 let (text, cursor) = match p.group_editor_field {
                     PlGroupEditorField::Title => (&mut p.group_editor_title, &mut p.group_editor_title_cursor),
@@ -511,6 +518,11 @@ impl App {
                     "disabled" => "noAlerts".to_string(),
                     _ => String::new(),
                 };
+            }
+            KeyCode::Enter if p.cluster_editor_field == PlClusterEditorField::Description => {
+                let cursor = &mut p.cluster_editor_desc_cursor;
+                p.cluster_editor_desc.insert(*cursor, '\n');
+                *cursor += 1;
             }
             _ if !p.cluster_editor_field.is_bool() && p.cluster_editor_field != PlClusterEditorField::Type => {
                 let (text, cursor) = match p.cluster_editor_field {

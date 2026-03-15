@@ -696,7 +696,7 @@ fn draw_pl_groups(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_pl_group_editor(f: &mut Frame, app: &mut App, area: Rect) {
-    let popup_area = center_popup(60, 8, area);
+    let popup_area = center_popup(60, 9, area);
     f.render_widget(Clear, popup_area);
 
     let title = if app.parliament.group_editor_is_new {
@@ -714,15 +714,70 @@ fn draw_pl_group_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // Title
-            Constraint::Length(2), // Description
+            Constraint::Length(1), // Title
+            Constraint::Min(4),   // Description (bordered paragraph)
             Constraint::Length(1), // Footer
         ])
         .split(inner);
 
     let is_title = app.parliament.group_editor_field == crate::app::PlGroupEditorField::Title;
-    render_text_input(f, &app.parliament.group_editor_title, app.parliament.group_editor_title_cursor, is_title, "Title", chunks[0]);
-    render_text_input(f, &app.parliament.group_editor_desc, app.parliament.group_editor_desc_cursor, !is_title, "Description", chunks[1]);
+    let label_w = 14u16;
+
+    // Title field
+    let title_style = if is_title { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::White) };
+    let title_line = Line::from(vec![
+        Span::styled("Title:        ", Style::default().fg(Color::Cyan)),
+        Span::styled(app.parliament.group_editor_title.clone(), title_style),
+    ]);
+    f.render_widget(Paragraph::new(title_line), chunks[0]);
+    if is_title {
+        let cursor = app.parliament.group_editor_title_cursor.min(app.parliament.group_editor_title.len());
+        f.set_cursor_position((chunks[0].x + label_w + cursor as u16, chunks[0].y));
+    }
+
+    // Description field (bordered paragraph)
+    let desc_style = if !is_title { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::White) };
+    let desc_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(if !is_title { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) })
+        .title("Description");
+    let desc_inner = desc_block.inner(chunks[1]);
+    let desc_text = &app.parliament.group_editor_desc;
+    let inner_width = desc_inner.width as usize;
+    let cursor = app.parliament.group_editor_desc_cursor.min(desc_text.len());
+
+    // Calculate which row/col the cursor is on with wrapping
+    let mut row = 0u16;
+    let mut col = 0u16;
+    for (i, ch) in desc_text.chars().enumerate() {
+        if i == cursor { break; }
+        if ch == '\n' {
+            row += 1;
+            col = 0;
+        } else {
+            col += 1;
+            if inner_width > 0 && col as usize >= inner_width {
+                row += 1;
+                col = 0;
+            }
+        }
+    }
+    let scroll = if row >= desc_inner.height { row - desc_inner.height + 1 } else { 0 };
+
+    let desc_lines: Vec<Line> = desc_text.split('\n')
+        .map(|l| Line::from(Span::styled(l, desc_style)))
+        .collect();
+
+    f.render_widget(
+        Paragraph::new(desc_lines)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll, 0))
+            .block(desc_block),
+        chunks[1],
+    );
+    if !is_title {
+        f.set_cursor_position((desc_inner.x + col, desc_inner.y + row - scroll));
+    }
 
     f.render_widget(
         Paragraph::new(" Tab:switch field  Ctrl+S:save  Esc:cancel")
@@ -751,9 +806,17 @@ fn draw_pl_cluster_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
     let p = &app.parliament;
     let field = p.cluster_editor_field;
+    let label_w = 20u16; // Widest label "Hide Arkime Nodes: "
 
+    // Build constraints: Description gets extra space, others get 1 line
     let constraints: Vec<Constraint> = PlClusterEditorField::ALL.iter()
-        .map(|_| Constraint::Length(1))
+        .map(|fd| {
+            if *fd == PlClusterEditorField::Description {
+                Constraint::Min(4) // bordered paragraph
+            } else {
+                Constraint::Length(1)
+            }
+        })
         .chain(std::iter::once(Constraint::Length(1))) // footer
         .collect();
 
@@ -764,7 +827,6 @@ fn draw_pl_cluster_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
     for (i, f_def) in PlClusterEditorField::ALL.iter().enumerate() {
         let is_active = *f_def == field;
-        let label = f_def.label();
 
         if f_def.is_bool() {
             let val = match f_def {
@@ -784,7 +846,7 @@ fn draw_pl_cluster_editor(f: &mut Frame, app: &mut App, area: Rect) {
             };
             let indicator = if is_active { "▸ " } else { "  " };
             f.render_widget(
-                Paragraph::new(format!("{}{}: {} {}", indicator, label, checkbox, if val { "Yes" } else { "No" })).style(style),
+                Paragraph::new(format!("{}{}: {} {}", indicator, f_def.label(), checkbox, if val { "Yes" } else { "No" })).style(style),
                 chunks[i],
             );
         } else if *f_def == PlClusterEditorField::Type {
@@ -796,18 +858,72 @@ fn draw_pl_cluster_editor(f: &mut Frame, app: &mut App, area: Rect) {
             };
             let indicator = if is_active { "▸ " } else { "  " };
             f.render_widget(
-                Paragraph::new(format!("{}{}: {} (Enter to cycle)", indicator, label, val)).style(style),
+                Paragraph::new(format!("{}{}: {} (Enter to cycle)", indicator, f_def.label(), val)).style(style),
                 chunks[i],
             );
+        } else if *f_def == PlClusterEditorField::Description {
+            // Multiline bordered paragraph
+            let desc_style = if is_active { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::White) };
+            let desc_block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(if is_active { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) })
+                .title("Description");
+            let desc_inner = desc_block.inner(chunks[i]);
+            let desc_text = &p.cluster_editor_desc;
+            let cursor = p.cluster_editor_desc_cursor.min(desc_text.len());
+            let inner_width = desc_inner.width as usize;
+
+            let mut row = 0u16;
+            let mut col = 0u16;
+            for (ci, ch) in desc_text.chars().enumerate() {
+                if ci == cursor { break; }
+                if ch == '\n' {
+                    row += 1;
+                    col = 0;
+                } else {
+                    col += 1;
+                    if inner_width > 0 && col as usize >= inner_width {
+                        row += 1;
+                        col = 0;
+                    }
+                }
+            }
+            let scroll = if row >= desc_inner.height { row - desc_inner.height + 1 } else { 0 };
+
+            let desc_lines: Vec<Line> = desc_text.split('\n')
+                .map(|l| Line::from(Span::styled(l, desc_style)))
+                .collect();
+
+            f.render_widget(
+                Paragraph::new(desc_lines)
+                    .wrap(Wrap { trim: false })
+                    .scroll((scroll, 0))
+                    .block(desc_block),
+                chunks[i],
+            );
+            if is_active {
+                f.set_cursor_position((desc_inner.x + col, desc_inner.y + row - scroll));
+            }
         } else {
-            let (text, cursor) = match f_def {
+            // Inline text fields: Title, URL, Local URL
+            let (text, text_cursor) = match f_def {
                 PlClusterEditorField::Title => (&p.cluster_editor_title, p.cluster_editor_title_cursor),
                 PlClusterEditorField::Url => (&p.cluster_editor_url, p.cluster_editor_url_cursor),
                 PlClusterEditorField::LocalUrl => (&p.cluster_editor_local_url, p.cluster_editor_local_url_cursor),
-                PlClusterEditorField::Description => (&p.cluster_editor_desc, p.cluster_editor_desc_cursor),
                 _ => continue,
             };
-            render_text_input(f, text, cursor, is_active, label, chunks[i]);
+            let val_style = if is_active { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::White) };
+            let indicator = if is_active { "▸ " } else { "  " };
+            let padded_label = format!("{}{:<18}", indicator, format!("{}:", f_def.label()));
+            let line = Line::from(vec![
+                Span::styled(padded_label, Style::default().fg(Color::Cyan)),
+                Span::styled(text.clone(), val_style),
+            ]);
+            f.render_widget(Paragraph::new(line), chunks[i]);
+            if is_active {
+                let cursor = text_cursor.min(text.len());
+                f.set_cursor_position((chunks[i].x + label_w + cursor as u16, chunks[i].y));
+            }
         }
     }
 
