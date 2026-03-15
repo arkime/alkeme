@@ -370,4 +370,41 @@ impl App {
             Cont3xtUrl => s.cont3xt_url = value.to_string(),
         }
     }
+
+    pub fn pl_save_backup(&mut self, filename: &str) {
+        let groups: Vec<serde_json::Value> = self.parliament.groups.iter().map(|g| {
+            let clusters: Vec<serde_json::Value> = g.clusters.iter().map(|c| {
+                let mut obj = serde_json::json!({
+                    "title": c.title,
+                    "description": c.description,
+                    "url": c.url,
+                    "localUrl": c.local_url,
+                    "type": c.cluster_type,
+                });
+                if c.hide_delta_bps { obj["hideDeltaBPS"] = serde_json::json!(true); }
+                if c.hide_delta_tdps { obj["hideDeltaTDPS"] = serde_json::json!(true); }
+                if c.hide_monitoring { obj["hideMonitoring"] = serde_json::json!(true); }
+                if c.hide_arkime_nodes { obj["hideArkimeNodes"] = serde_json::json!(true); }
+                if c.hide_data_nodes { obj["hideDataNodes"] = serde_json::json!(true); }
+                if c.hide_total_nodes { obj["hideTotalNodes"] = serde_json::json!(true); }
+                obj
+            }).collect();
+            serde_json::json!({
+                "title": g.title,
+                "description": g.description,
+                "clusters": clusters,
+            })
+        }).collect();
+
+        let json = serde_json::json!({ "groups": groups });
+        match serde_json::to_string_pretty(&json) {
+            Ok(content) => {
+                match std::fs::write(filename, &content) {
+                    Ok(_) => self.status_msg = format!("Saved {} groups to {filename}", self.parliament.groups.len()),
+                    Err(e) => self.status_msg = format!("Error writing {filename}: {e}"),
+                }
+            }
+            Err(e) => self.status_msg = format!("Error serializing: {e}"),
+        }
+    }
 }

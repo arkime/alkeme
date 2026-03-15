@@ -1121,15 +1121,17 @@ impl PlIssueSort {
 pub enum PlSettingsTab {
     Groups,
     General,
+    Notifiers,
 }
 
 impl PlSettingsTab {
-    pub const ALL: [PlSettingsTab; 2] = [PlSettingsTab::Groups, PlSettingsTab::General];
+    pub const ALL: [PlSettingsTab; 3] = [PlSettingsTab::Groups, PlSettingsTab::General, PlSettingsTab::Notifiers];
 
     pub fn label(&self) -> &'static str {
         match self {
             PlSettingsTab::Groups => "Groups",
             PlSettingsTab::General => "General",
+            PlSettingsTab::Notifiers => "Notifiers",
         }
     }
 }
@@ -1388,6 +1390,9 @@ pub struct ParliamentState {
     pub general_editing: bool,
     pub general_edit_value: String,
     pub general_edit_cursor: usize,
+
+    // Backup
+    pub backup_prompt: Option<String>,
 }
 
 impl Default for ParliamentState {
@@ -1455,6 +1460,8 @@ impl Default for ParliamentState {
             general_editing: false,
             general_edit_value: String::new(),
             general_edit_cursor: 0,
+
+            backup_prompt: None,
         }
     }
 }

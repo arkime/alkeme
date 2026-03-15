@@ -597,6 +597,7 @@ fn draw_pl_settings(f: &mut Frame, app: &mut App, area: Rect) {
     match app.parliament.settings_tab {
         PlSettingsTab::Groups => draw_pl_groups(f, app, chunks[1]),
         PlSettingsTab::General => draw_pl_general(f, app, chunks[1]),
+        PlSettingsTab::Notifiers => super::arkime::draw_under_construction(f, app, chunks[1]),
     }
 
     // Draw group/cluster editor popup on top if active
@@ -604,6 +605,28 @@ fn draw_pl_settings(f: &mut Frame, app: &mut App, area: Rect) {
         PlSettingsLevel::GroupEditor => draw_pl_group_editor(f, app, area),
         PlSettingsLevel::ClusterEditor => draw_pl_cluster_editor(f, app, area),
         _ => {}
+    }
+
+    // Draw backup filename prompt on top
+    if let Some(ref filename) = app.parliament.backup_prompt {
+        let popup_width = 60u16.min(area.width.saturating_sub(4));
+        let popup_height = 3u16;
+        let popup_area = center_popup(popup_width, popup_height, area);
+        f.render_widget(Clear, popup_area);
+
+        let line = Line::from(vec![
+            Span::styled("Filename: ", Style::default().fg(Color::Yellow)),
+            Span::styled(filename, Style::default().fg(Color::White)),
+            Span::styled("█", Style::default().fg(Color::Gray)),
+        ]);
+        let paragraph = Paragraph::new(line)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan))
+                    .title(" Backup Groups "),
+            );
+        f.render_widget(paragraph, popup_area);
     }
 }
 

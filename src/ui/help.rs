@@ -512,7 +512,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             hdr!("Navigation"),
             blank(),
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
-            Line::from(vec![key("1 / 2"), Span::raw("Switch sub-tab (Groups / General)")]),
+            Line::from(vec![key("1 / 2 / 3"), Span::raw("Switch sub-tab (Groups / General / Notifiers)")]),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate items")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
@@ -526,6 +526,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
                     Line::from(vec![key("n"), Span::raw("New group")]),
                     Line::from(vec![key("a"), Span::raw("Add cluster to group")]),
                     Line::from(vec![key("d / x"), Span::raw("Delete selected")]),
+                    Line::from(vec![key("B"), Span::raw("Backup groups to JSON file")]),
                     Line::from(vec![key("r"), Span::raw("Refresh")]),
                     Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
                 ]);
@@ -538,6 +539,13 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
                     Line::from(vec![key("Ctrl+S"), Span::raw("Save all settings")]),
                     Line::from(vec![key("r"), Span::raw("Refresh")]),
                     Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+                ]);
+            }
+            PlSettingsTab::Notifiers => {
+                lines.extend(vec![
+                    hdr!("Notifiers"),
+                    blank(),
+                    Line::from(vec![Span::styled("Under construction", Style::default().fg(Color::Yellow))]),
                 ]);
             }
         }

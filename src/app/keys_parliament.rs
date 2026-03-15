@@ -331,6 +331,36 @@ impl App {
     async fn handle_parliament_settings_key(&mut self, key: KeyEvent) {
         use crate::app::types::*;
 
+        // Backup prompt intercept
+        if self.parliament.backup_prompt.is_some() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.parliament.backup_prompt = None;
+                }
+                KeyCode::Enter => {
+                    if let Some(filename) = self.parliament.backup_prompt.take() {
+                        if filename.is_empty() {
+                            self.status_msg = "No filename provided".to_string();
+                        } else {
+                            self.pl_save_backup(&filename);
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    if let Some(ref mut f) = self.parliament.backup_prompt {
+                        f.pop();
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(ref mut f) = self.parliament.backup_prompt {
+                        f.push(c);
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match self.parliament.settings_level {
             PlSettingsLevel::GroupEditor => {
                 self.handle_pl_group_editor_key(key).await;
@@ -346,6 +376,7 @@ impl App {
         match self.parliament.settings_tab {
             PlSettingsTab::Groups => self.handle_pl_groups_key(key).await,
             PlSettingsTab::General => self.handle_pl_general_key(key).await,
+            PlSettingsTab::Notifiers => self.handle_pl_notifiers_key(key).await,
         }
     }
 
@@ -358,9 +389,17 @@ impl App {
             KeyCode::BackTab => self.prev_tab(),
             KeyCode::Char('1') => self.parliament.settings_tab = PlSettingsTab::Groups,
             KeyCode::Char('2') => self.parliament.settings_tab = PlSettingsTab::General,
+            KeyCode::Char('3') => self.parliament.settings_tab = PlSettingsTab::Notifiers,
             KeyCode::Char('h') | KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('D') => self.show_debug = !self.show_debug,
             KeyCode::Char('r') => self.pl_fetch_data().await,
+            KeyCode::Char('B') => {
+                if self.parliament.groups.is_empty() {
+                    self.status_msg = "No groups to backup".to_string();
+                } else {
+                    self.parliament.backup_prompt = Some("parliament-backup.json".to_string());
+                }
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if items_len > 0 && self.parliament.settings_selected + 1 < items_len {
                     self.parliament.settings_selected += 1;
@@ -519,6 +558,7 @@ impl App {
             KeyCode::BackTab => self.prev_tab(),
             KeyCode::Char('1') => self.parliament.settings_tab = PlSettingsTab::Groups,
             KeyCode::Char('2') => self.parliament.settings_tab = PlSettingsTab::General,
+            KeyCode::Char('3') => self.parliament.settings_tab = PlSettingsTab::Notifiers,
             KeyCode::Char('h') | KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('D') => self.show_debug = !self.show_debug,
             KeyCode::Down | KeyCode::Char('j') => {
@@ -548,6 +588,20 @@ impl App {
                 self.pl_save_general_settings().await;
             }
             KeyCode::Char('r') => self.pl_fetch_data().await,
+            _ => {}
+        }
+    }
+
+    async fn handle_pl_notifiers_key(&mut self, key: KeyEvent) {
+        use crate::app::types::*;
+        match key.code {
+            KeyCode::Tab => self.next_tab(),
+            KeyCode::BackTab => self.prev_tab(),
+            KeyCode::Char('1') => self.parliament.settings_tab = PlSettingsTab::Groups,
+            KeyCode::Char('2') => self.parliament.settings_tab = PlSettingsTab::General,
+            KeyCode::Char('3') => self.parliament.settings_tab = PlSettingsTab::Notifiers,
+            KeyCode::Char('h') | KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('D') => self.show_debug = !self.show_debug,
             _ => {}
         }
     }
