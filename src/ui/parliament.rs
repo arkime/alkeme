@@ -18,6 +18,7 @@ pub fn draw_parliament(f: &mut Frame, app: &mut App) {
         Tab::Dashboard => draw_dashboard(f, app, chunks[1]),
         Tab::Issues => draw_issues(f, app, chunks[1]),
         Tab::Settings => draw_pl_settings(f, app, chunks[1]),
+        Tab::Users => super::users::draw_users_tab(f, app, chunks[1]),
         _ => {
             let block = Block::default().borders(Borders::ALL).title(app.active_tab.name());
             f.render_widget(block, chunks[1]);

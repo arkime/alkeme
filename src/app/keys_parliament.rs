@@ -263,6 +263,9 @@ impl App {
         self.app_mode = AppMode::Viewer;
         self.active_tab = Tab::Sessions;
 
+        // Fetch user from new server for role-based tabs
+        self.fetch_user().await;
+
         // Restore saved viewer expression
         self.expression = self.parliament.saved_viewer_expression.clone();
         self.expression_edit = self.expression.clone();
@@ -286,6 +289,7 @@ impl App {
             self.client = saved;
             self.app_mode = AppMode::Parliament;
             self.active_tab = Tab::Dashboard;
+            self.fetch_user().await;
             self.status_msg = "Returned to Parliament".into();
             self.force_clear = true;
             // Refresh data
@@ -300,6 +304,9 @@ impl App {
 
         self.app_mode = AppMode::Cont3xt;
         self.active_tab = Tab::Search;
+
+        // Fetch user from new server for role-based tabs
+        self.fetch_user().await;
 
         // Restore saved cont3xt expression
         self.expression = self.parliament.saved_c3_expression.clone();
@@ -323,6 +330,9 @@ impl App {
 
         self.app_mode = AppMode::Wise;
         self.active_tab = Tab::WsStats;
+
+        // Fetch user from new server for role-based tabs
+        self.fetch_user().await;
 
         self.ws_fetch_stats().await;
         self.ws_fetch_sources_types().await;

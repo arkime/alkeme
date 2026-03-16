@@ -704,6 +704,13 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             needs_redraw = true;
         }
 
+        // Users tab: auto-fetch on first visit
+        if app.active_tab == app::Tab::Users && app.us_needs_fetch {
+            app.us_needs_fetch = false;
+            app.us_fetch_users().await;
+            needs_redraw = true;
+        }
+
         // Trigger periodic redraws for animated pages (under construction owl)
         if app.needs_animation() {
             needs_redraw = true;

@@ -8,6 +8,7 @@ mod cont3xt_settings;
 mod parliament;
 mod wise;
 mod files;
+mod users;
 
 // Re-export app types for sub-modules via `use super::*`
 #[allow(unused_imports)]
@@ -161,6 +162,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     // Common overlays (shared across modes)
+    if app.us_editing {
+        users::draw_users_editor(f, app, f.area());
+    }
+    if app.us_role_popup_open {
+        users::draw_users_role_popup(f, app, f.area());
+    }
     if app.confirm_dialog.is_some() {
         popups::draw_confirm_dialog(f, app, f.area());
     }
@@ -254,6 +261,7 @@ fn draw_default_layout(f: &mut Frame, app: &mut App) {
     match app.active_tab {
         Tab::Sessions => sessions::draw_sessions(f, app, chunks[idx]),
         Tab::Arkime => arkime::draw_arkime(f, app, chunks[idx]),
+        Tab::Users => users::draw_users_tab(f, app, chunks[idx]),
         Tab::Settings => {
             let block = Block::default()
                 .borders(Borders::ALL)
@@ -306,7 +314,7 @@ fn draw_files_layout(f: &mut Frame, app: &mut App) {
 }
 
 pub(super) fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
-    let tabs_list = app.app_mode.tabs();
+    let tabs_list = app.tabs();
     let titles: Vec<Line> = tabs_list
         .iter()
         .map(|t| Line::from(t.name()))

@@ -642,6 +642,7 @@ pub enum Tab {
     WsStats,
     WsQuery,
     Settings,
+    Users,
 }
 
 impl Tab {
@@ -659,6 +660,7 @@ impl Tab {
             Tab::WsStats => "Stats",
             Tab::WsQuery => "Query",
             Tab::Settings => "Settings",
+            Tab::Users => "Users",
         }
     }
 }

@@ -16,10 +16,10 @@ pub fn draw_wise(f: &mut Frame, app: &mut App) {
         .split(f.area());
 
     // Tab bar
-    let tabs: Vec<Line> = app.app_mode.tabs().iter().map(|t| {
+    let tabs: Vec<Line> = app.tabs().iter().map(|t| {
         Line::from(t.name())
     }).collect();
-    let tab_idx = app.app_mode.tabs().iter().position(|&t| t == app.active_tab).unwrap_or(0);
+    let tab_idx = app.tabs().iter().position(|&t| t == app.active_tab).unwrap_or(0);
     let tabs_widget = Tabs::new(tabs)
         .select(tab_idx)
         .style(Style::default().fg(Color::White))
@@ -30,6 +30,7 @@ pub fn draw_wise(f: &mut Frame, app: &mut App) {
     match app.active_tab {
         Tab::WsStats => draw_ws_stats(f, app, chunks[1]),
         Tab::WsQuery => draw_ws_query(f, app, chunks[1]),
+        Tab::Users => super::users::draw_users_tab(f, app, chunks[1]),
         _ => {
             arkime::draw_under_construction(f, app, chunks[1]);
             arkime::draw_owl(f, app, chunks[1]);

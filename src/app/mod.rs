@@ -6,6 +6,7 @@ mod keys_cont3xt;
 mod keys_cont3xt_settings;
 mod keys_parliament;
 mod keys_wise;
+mod keys_users;
 mod viewer;
 mod cont3xt;
 mod cont3xt_settings;
@@ -97,6 +98,34 @@ pub struct App {
 
     // Cached background buffer for popup double-buffering
     pub popup_bg_cache: Option<ratatui::buffer::Buffer>,
+    pub visible_tabs: Vec<Tab>,
+
+    // Users tab state
+    pub us_users: Vec<Value>,
+    pub us_total: usize,
+    pub us_filtered: usize,
+    pub us_selected: usize,
+    pub us_table_state: ratatui::widgets::TableState,
+    pub us_filter: String,
+    pub us_sort_field: String,
+    pub us_sort_desc: bool,
+    pub us_page_start: usize,
+    pub us_page_size: usize,
+    pub us_needs_fetch: bool,
+    // User editor state
+    pub us_editing: bool,
+    pub us_editor_user: Value,
+    pub us_editor_field: usize,
+    pub us_editor_text: String,
+    pub us_editor_cursor: usize,
+    // Role popup state (within user editor)
+    pub us_all_roles: Vec<String>,
+    pub us_role_popup_open: bool,
+    pub us_role_popup_selected: usize,
+    pub us_role_popup_filter: String,
+    pub us_role_popup_cursor: usize,
+    pub us_role_popup_filtering: bool,
+    pub us_editor_roles: Vec<(String, bool)>,
 }
 
 impl App {
@@ -150,6 +179,32 @@ impl App {
             wise: WiseState::default(),
 
             popup_bg_cache: None,
+            visible_tabs: app_mode.tabs().to_vec(),
+
+            // Users tab state
+            us_users: Vec::new(),
+            us_total: 0,
+            us_filtered: 0,
+            us_selected: 0,
+            us_table_state: ratatui::widgets::TableState::default(),
+            us_filter: String::new(),
+            us_sort_field: "userId".to_string(),
+            us_sort_desc: false,
+            us_page_start: 0,
+            us_page_size: 100,
+            us_needs_fetch: true,
+            us_editing: false,
+            us_editor_user: Value::Null,
+            us_editor_field: 0,
+            us_editor_text: String::new(),
+            us_editor_cursor: 0,
+            us_all_roles: Vec::new(),
+            us_role_popup_open: false,
+            us_role_popup_selected: 0,
+            us_role_popup_filter: String::new(),
+            us_role_popup_cursor: 0,
+            us_role_popup_filtering: false,
+            us_editor_roles: Vec::new(),
         }
     }
 
@@ -160,7 +215,9 @@ impl App {
     pub fn needs_animation(&self) -> bool {
         match self.app_mode {
             AppMode::Viewer => self.active_tab == Tab::Settings,
-            AppMode::Cont3xt => self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Overviews,
+            AppMode::Cont3xt => {
+                self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Overviews
+            }
             AppMode::Wise => self.active_tab == Tab::Settings,
             AppMode::Parliament => self.active_tab == Tab::Settings,
         }
@@ -169,6 +226,8 @@ impl App {
     /// Returns true if any popup overlay is open that could use background caching
     pub fn has_popup_open(&self) -> bool {
         self.confirm_dialog.is_some()
+            || self.us_editing
+            || self.us_role_popup_open
             || self.cont3xt.show_card_popup
             || self.cont3xt.show_overview_popup
             || self.cont3xt.show_link_popup
@@ -188,6 +247,7 @@ impl App {
     /// Returns true if q should close a popup instead of quitting the app
     pub fn q_closes_popup(&self) -> bool {
         self.confirm_dialog.is_some()
+            || self.us_editing || self.us_role_popup_open
             || self.show_help || self.show_debug || self.parliament.show_detail
             || self.viewer.show_column_editor || self.viewer.show_layout_popup || self.viewer.show_view_popup
             || self.viewer.stats_show_column_editor || self.viewer.stats_show_layout_popup
@@ -198,18 +258,18 @@ impl App {
             || self.cont3xt.int_editor_open
     }
 
-    pub fn tabs(&self) -> &'static [Tab] {
-        self.app_mode.tabs()
+    pub fn tabs(&self) -> &[Tab] {
+        &self.visible_tabs
     }
 
     pub fn next_tab(&mut self) {
-        let tabs = self.tabs();
+        let tabs = &self.visible_tabs;
         let idx = tabs.iter().position(|&t| t == self.active_tab).unwrap_or(0);
         self.active_tab = tabs[(idx + 1) % tabs.len()];
     }
 
     pub fn prev_tab(&mut self) {
-        let tabs = self.tabs();
+        let tabs = &self.visible_tabs;
         let idx = tabs.iter().position(|&t| t == self.active_tab).unwrap_or(0);
         self.active_tab = tabs[(idx + tabs.len() - 1) % tabs.len()];
     }
@@ -280,14 +340,32 @@ impl App {
     }
 
     pub async fn fetch_user(&mut self) {
-        match self.client.get_user().await {
+        let api_prefix = match self.app_mode {
+            AppMode::Parliament => "/parliament/api",
+            _ => "/api",
+        };
+        match self.client.get_user(api_prefix).await {
             Ok(user) => {
                 self.user = user;
+                self.rebuild_visible_tabs();
             }
             Err(e) => {
                 self.status_msg = format!("Error fetching user: {e}");
             }
         }
+    }
+
+    pub fn rebuild_visible_tabs(&mut self) {
+        let mut tabs = self.app_mode.tabs().to_vec();
+        let roles = self.user.get("roles");
+        let has_users_admin = roles
+            .and_then(|r| r.as_array())
+            .map(|arr| arr.iter().any(|v| v.as_str() == Some("usersAdmin")))
+            .unwrap_or(false);
+        if has_users_admin {
+            tabs.push(Tab::Users);
+        }
+        self.visible_tabs = tabs;
     }
 
     pub fn enter_expression_mode(&mut self) {
@@ -305,6 +383,152 @@ impl App {
         let idx = self.time_ranges.iter().position(|t| t == &self.time_range).unwrap_or(0);
         let len = self.time_ranges.len();
         self.time_range = self.time_ranges[(idx + len - 1) % len].clone();
+    }
+
+    // --- Users tab methods ---
+
+    pub fn us_api_prefix(&self) -> &str {
+        match self.app_mode {
+            AppMode::Parliament => "/parliament/api",
+            _ => "/api",
+        }
+    }
+
+    pub async fn us_fetch_users(&mut self) {
+        let prefix = self.us_api_prefix().to_string();
+        let sort_field = self.us_sort_field.clone();
+        let filter = self.us_filter.clone();
+        match self.client.get_users(&prefix, &sort_field, self.us_sort_desc, &filter, self.us_page_start, self.us_page_size).await {
+            Ok(val) => {
+                self.us_users = val.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+                self.us_total = val.get("recordsTotal").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                self.us_filtered = val.get("recordsFiltered").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                if self.us_selected >= self.us_users.len() && !self.us_users.is_empty() {
+                    self.us_selected = self.us_users.len() - 1;
+                }
+            }
+            Err(e) => {
+                self.status_msg = format!("Error fetching users: {e}");
+            }
+        }
+    }
+
+    pub async fn us_save_user(&mut self) {
+        let user_id = self.us_editor_user.get("userId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if user_id.is_empty() { return; }
+        let prefix = self.us_api_prefix().to_string();
+        let mut data = self.us_editor_user.clone();
+        if let Some(obj) = data.as_object_mut() {
+            obj.remove("userId");
+        }
+        match self.client.update_user(&prefix, &user_id, &data).await {
+            Ok(msg) => {
+                self.status_msg = msg;
+                self.us_editing = false;
+                self.us_fetch_users().await;
+            }
+            Err(e) => {
+                self.status_msg = format!("Error saving user: {e}");
+            }
+        }
+    }
+
+    pub fn us_editor_fields() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("userId", "text"),
+            ("userName", "text"),
+            ("enabled", "bool"),
+            ("webEnabled", "bool"),
+            ("headerAuthEnabled", "bool"),
+            ("emailSearch", "bool"),
+            ("removeEnabled", "bool"),
+            ("packetSearch", "bool"),
+            ("hideStats", "bool"),
+            ("hideFiles", "bool"),
+            ("hidePcap", "bool"),
+            ("disablePcapDownload", "bool"),
+            ("expression", "text"),
+            ("timeLimit", "text"),
+            ("roles", "roles"),
+        ]
+    }
+
+    pub fn us_commit_editor_field(&mut self) {
+        let fields = Self::us_editor_fields();
+        if self.us_editor_field >= fields.len() { return; }
+        let (field_name, field_type) = fields[self.us_editor_field];
+        if field_name == "userId" || field_type == "bool" || field_type == "roles" { return; }
+
+        if field_name == "timeLimit" {
+            if let Ok(n) = self.us_editor_text.parse::<u64>() {
+                self.us_editor_user["timeLimit"] = Value::Number(n.into());
+            }
+        } else {
+            self.us_editor_user[field_name] = Value::String(self.us_editor_text.clone());
+        }
+    }
+
+    pub fn us_load_editor_field(&mut self) {
+        let fields = Self::us_editor_fields();
+        if self.us_editor_field >= fields.len() { return; }
+        let (field_name, field_type) = fields[self.us_editor_field];
+        if field_type == "bool" || field_type == "roles" {
+            self.us_editor_text.clear();
+            self.us_editor_cursor = 0;
+            return;
+        }
+
+        if field_name == "timeLimit" {
+            self.us_editor_text = self.us_editor_user.get("timeLimit")
+                .and_then(|v| v.as_u64())
+                .map(|n| n.to_string())
+                .unwrap_or_default();
+        } else {
+            self.us_editor_text = self.us_editor_user.get(field_name)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+        }
+        self.us_editor_cursor = self.us_editor_text.len();
+    }
+
+    /// Commit role selections from us_editor_roles back to us_editor_user
+    pub fn us_commit_roles(&mut self) {
+        let roles: Vec<Value> = self.us_editor_roles.iter()
+            .filter(|(_, sel)| *sel)
+            .map(|(name, _)| Value::String(name.clone()))
+            .collect();
+        self.us_editor_user["roles"] = Value::Array(roles);
+    }
+
+    /// Build us_editor_roles from us_all_roles + current user's roles
+    pub fn us_build_editor_roles(&mut self) {
+        let user_roles: std::collections::HashSet<String> = self.us_editor_user.get("roles")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        self.us_editor_roles = self.us_all_roles.iter()
+            .map(|r| (r.clone(), user_roles.contains(r)))
+            .collect();
+    }
+
+    /// Filtered indices into us_all_roles for role popup
+    pub fn us_role_popup_filtered(&self) -> Vec<usize> {
+        let filter = self.us_role_popup_filter.to_lowercase();
+        self.us_editor_roles.iter().enumerate()
+            .filter(|(_, (name, _))| filter.is_empty() || name.to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    pub async fn us_fetch_roles(&mut self) {
+        let prefix = self.us_api_prefix().to_string();
+        match self.client.get_roles(&prefix).await {
+            Ok(roles) => {
+                self.us_all_roles = roles;
+            }
+            Err(e) => self.status_msg = format!("Error fetching roles: {e}"),
+        }
     }
 }
 

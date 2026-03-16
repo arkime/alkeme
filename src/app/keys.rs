@@ -83,6 +83,19 @@ impl App {
             }
             return;
         }
+        // Users tab: handle early to avoid viewer-specific intercepts
+        if self.active_tab == Tab::Users && self.us_role_popup_open {
+            self.handle_users_role_popup_key(key).await;
+            return;
+        }
+        if self.active_tab == Tab::Users && self.us_editing {
+            self.handle_users_editor_key(key).await;
+            return;
+        }
+        if self.active_tab == Tab::Users && self.input_mode == InputMode::Normal && !self.us_editing {
+            self.handle_users_key(key).await;
+            return;
+        }
         if self.action_menu.is_some() {
             self.handle_action_menu_key(key);
             return;
@@ -153,6 +166,20 @@ impl App {
             self.pl_return_to_parliament().await;
             return;
         }
+        // Users tab is handled the same way regardless of app mode
+        if self.active_tab == Tab::Users && self.us_role_popup_open {
+            self.handle_users_role_popup_key(key).await;
+            return;
+        }
+        if self.active_tab == Tab::Users && !self.us_editing {
+            // Skip if expression mode — that's handled above (but we already returned if so)
+            self.handle_users_key(key).await;
+            return;
+        }
+        if self.active_tab == Tab::Users && self.us_editing {
+            self.handle_users_editor_key(key).await;
+            return;
+        }
         match self.app_mode {
             crate::app::AppMode::Viewer => {
                 match self.active_tab {
@@ -192,6 +219,7 @@ impl App {
     async fn handle_expression_key(&mut self, key: KeyEvent) {
         let is_stats = self.active_tab == Tab::Stats;
         let is_files = self.active_tab == Tab::Files;
+        let is_users = self.active_tab == Tab::Users;
         let is_pl_issues = self.app_mode == crate::app::AppMode::Parliament && self.active_tab == Tab::Issues;
         let is_ws_stats = self.app_mode == crate::app::AppMode::Wise && self.active_tab == Tab::WsStats;
         let is_ws_query = self.app_mode == crate::app::AppMode::Wise && self.active_tab == Tab::WsQuery;
@@ -210,7 +238,13 @@ impl App {
         };
         match key.code {
             KeyCode::Enter => {
-                if is_pl_issues {
+                if is_users {
+                    self.us_filter = self.expression_edit.clone();
+                    self.input_mode = InputMode::Normal;
+                    self.us_page_start = 0;
+                    self.us_selected = 0;
+                    self.us_fetch_users().await;
+                } else if is_pl_issues {
                     self.parliament.issues_filter = self.parliament.issues_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
                     self.parliament.issues_selected = 0;
@@ -252,7 +286,9 @@ impl App {
                 }
             }
             KeyCode::Esc => {
-                if is_pl_issues {
+                if is_users {
+                    self.expression_edit = self.us_filter.clone();
+                } else if is_pl_issues {
                     self.parliament.issues_filter_edit = self.parliament.issues_filter.clone();
                 } else if is_ws_stats {
                     self.wise.stats_filter_edit = self.wise.stats_filter.clone();
@@ -326,6 +362,13 @@ impl App {
                 }
             }
             _ => {}
+        }
+        // Users filter: live search as-you-type
+        if is_users {
+            self.us_filter = self.expression_edit.clone();
+            self.us_page_start = 0;
+            self.us_selected = 0;
+            self.us_fetch_users().await;
         }
     }
 

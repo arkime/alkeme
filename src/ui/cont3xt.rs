@@ -138,6 +138,10 @@ fn draw_cont3xt_background(f: &mut Frame, app: &mut App) {
             let settings_area = Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, chunks[1].height + chunks[2].height);
             c3_draw_settings(f, app, settings_area);
         }
+        Tab::Users => {
+            let users_area = Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, chunks[1].height + chunks[2].height);
+            super::users::draw_users_tab(f, app, users_area);
+        }
         _ => {}
     }
 

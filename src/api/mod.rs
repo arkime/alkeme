@@ -502,8 +502,8 @@ impl ArkimeClient {
         Self::append_view(url, view);
     }
 
-    pub async fn get_user(&self) -> Result<Value> {
-        let url = format!("{}/api/user", self.base_url);
+    pub async fn get_user(&self, api_prefix: &str) -> Result<Value> {
+        let url = format!("{}{}/user", self.base_url, api_prefix);
         let body = self.authenticated_get(&url).await?;
         let user: Value = serde_json::from_str(&body)?;
         Ok(user)
@@ -727,5 +727,39 @@ impl ArkimeClient {
         let result = resp.json().await?;
         log_http(&self.http_log, "DELETE", url, None, status, first_byte, start.elapsed().as_millis() as u64, None);
         Ok(result)
+    }
+
+    // --- Users API ---
+
+    pub async fn get_users(&self, api_prefix: &str, sort_field: &str, desc: bool, filter: &str, start: usize, length: usize) -> Result<Value> {
+        let url = format!("{}{}/users", self.base_url, api_prefix);
+        let body = serde_json::json!({
+            "sortField": sort_field,
+            "desc": desc,
+            "filter": filter,
+            "start": start,
+            "length": length,
+        });
+        self.authenticated_post_json(&url, &body).await
+    }
+
+    pub async fn update_user(&self, api_prefix: &str, user_id: &str, data: &Value) -> Result<String> {
+        let url = format!("{}{}/user/{}", self.base_url, api_prefix, urlencoding::encode(user_id));
+        let val = self.authenticated_post_json(&url, data).await?;
+        if val.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+            Ok(val.get("text").and_then(|v| v.as_str()).unwrap_or("Updated").to_string())
+        } else {
+            anyhow::bail!("{}", val.get("text").and_then(|v| v.as_str()).unwrap_or("Update failed"))
+        }
+    }
+
+    pub async fn get_roles(&self, api_prefix: &str) -> Result<Vec<String>> {
+        let url = format!("{}{}/roles", self.base_url, api_prefix);
+        let body = self.authenticated_get_with_cookie(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let roles = parsed.get("roles").and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        Ok(roles)
     }
 }
