@@ -526,7 +526,11 @@ impl ArkimeClient {
     /// Fetch the ARKIME-COOKIE from /api/user/settings (has setCookie middleware).
     /// Must be called once at startup for layout API support.
     pub async fn fetch_cookie(&mut self) -> Result<()> {
-        let url = format!("{}/api/user/settings", self.base_url);
+        self.fetch_cookie_from("/api").await
+    }
+
+    pub async fn fetch_cookie_from(&mut self, api_prefix: &str) -> Result<()> {
+        let url = format!("{}{}/user/settings", self.base_url, api_prefix);
         let username = match self.username.as_deref() {
             Some(u) => u,
             None => return Ok(()),
@@ -558,17 +562,84 @@ impl ArkimeClient {
     fn extract_cookie(&mut self, resp: &reqwest::Response) {
         for cookie_val in resp.headers().get_all("set-cookie") {
             if let Ok(s) = cookie_val.to_str() {
-                if let Some(val) = s.strip_prefix("CONT3XT-COOKIE=") {
-                    let val = val.split(';').next().unwrap_or(val);
-                    self.arkime_cookie = Some(val.to_string());
-                    self.cookie_header_name = "x-cont3xt-cookie";
-                } else if let Some(val) = s.strip_prefix("ARKIME-COOKIE=") {
-                    let val = val.split(';').next().unwrap_or(val);
-                    self.arkime_cookie = Some(val.to_string());
-                    self.cookie_header_name = "x-arkime-cookie";
+                // Each Arkime app uses its own cookie name and header
+                let cookie_map: &[(&str, &str)] = &[
+                    ("CONT3XT-COOKIE=", "x-cont3xt-cookie"),
+                    ("ARKIME-COOKIE=", "x-arkime-cookie"),
+                    ("PARLIAMENT-COOKIE=", "x-parliament-cookie"),
+                    ("WISESERVICE-COOKIE=", "x-wiseservice-cookie"),
+                ];
+                for &(prefix, header) in cookie_map {
+                    if let Some(val) = s.strip_prefix(prefix) {
+                        let val = val.split(';').next().unwrap_or(val);
+                        self.arkime_cookie = Some(val.to_string());
+                        self.cookie_header_name = header;
+                        break;
+                    }
                 }
             }
         }
+    }
+
+    /// Like authenticated_post_json but takes &mut self to extract cookies from the response.
+    async fn authenticated_post_json_extract_cookie(&mut self, url: &str, body: &Value) -> Result<Value> {
+        let start = Instant::now();
+        let post_data = Some(body.to_string());
+        let username = match self.username.as_deref() {
+            Some(u) => u.to_string(),
+            None => {
+                let mut req = self.client.post(url)
+                    .header("Content-Type", "application/json");
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header(self.cookie_header_name, cookie);
+                }
+                let resp = req.body(body.to_string()).send().await?;
+                self.extract_cookie(&resp);
+                let first_byte = start.elapsed().as_millis() as u64;
+                let status = resp.status().as_u16();
+                let result = resp.json().await?;
+                log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, None);
+                return Ok(result);
+            }
+        };
+        let password = self.password.as_deref().unwrap_or("").to_string();
+
+        let mut req = match self.auth_mode {
+            AuthMode::None => self.client.post(url),
+            AuthMode::Basic => self.client.post(url).basic_auth(&username, Some(&password)),
+            AuthMode::Digest => {
+                let resp = self.client.post(url).send().await?;
+                if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                    self.extract_cookie(&resp);
+                    let first_byte = start.elapsed().as_millis() as u64;
+                    let status = resp.status().as_u16();
+                    let text = resp.text().await?;
+                    log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
+                    return Ok(serde_json::from_str(&text)?);
+                }
+                let auth_header = digest_auth_header(&resp, url, &username, &password, "POST")?;
+                self.client.post(url).header("Authorization", auth_header)
+            }
+            AuthMode::Form | AuthMode::Web | AuthMode::Okta => self.client.post(url),
+        };
+        if let Some(ref cookie) = self.arkime_cookie {
+            req = req.header(self.cookie_header_name, cookie);
+        }
+        let resp = req
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .send().await?;
+        self.extract_cookie(&resp);
+        let first_byte = start.elapsed().as_millis() as u64;
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, Some(&text));
+            anyhow::bail!("HTTP {} (see debug log [D] for details)", status);
+        }
+        let result = resp.json().await?;
+        log_http(&self.http_log, "POST", url, post_data, status, first_byte, start.elapsed().as_millis() as u64, None);
+        Ok(result)
     }
 
     pub(super) async fn authenticated_post_json(&self, url: &str, body: &Value) -> Result<Value> {
@@ -577,10 +648,12 @@ impl ArkimeClient {
         let username = match self.username.as_deref() {
             Some(u) => u,
             None => {
-                let resp = self.client.post(url)
-                    .header("Content-Type", "application/json")
-                    .body(body.to_string())
-                    .send().await?;
+                let mut req = self.client.post(url)
+                    .header("Content-Type", "application/json");
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header(self.cookie_header_name, cookie);
+                }
+                let resp = req.body(body.to_string()).send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let result = resp.json().await?;
@@ -632,10 +705,12 @@ impl ArkimeClient {
         let username = match self.username.as_deref() {
             Some(u) => u,
             None => {
-                let resp = self.client.put(url)
-                    .header("Content-Type", "application/json")
-                    .body(body.to_string())
-                    .send().await?;
+                let mut req = self.client.put(url)
+                    .header("Content-Type", "application/json");
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header(self.cookie_header_name, cookie);
+                }
+                let resp = req.body(body.to_string()).send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let result = resp.json().await?;
@@ -686,7 +761,11 @@ impl ArkimeClient {
         let username = match self.username.as_deref() {
             Some(u) => u,
             None => {
-                let resp = self.client.delete(url).send().await?;
+                let mut req = self.client.delete(url);
+                if let Some(ref cookie) = self.arkime_cookie {
+                    req = req.header(self.cookie_header_name, cookie);
+                }
+                let resp = req.send().await?;
                 let first_byte = start.elapsed().as_millis() as u64;
                 let status = resp.status().as_u16();
                 let result = resp.json().await?;
@@ -731,7 +810,7 @@ impl ArkimeClient {
 
     // --- Users API ---
 
-    pub async fn get_users(&self, api_prefix: &str, sort_field: &str, desc: bool, filter: &str, start: usize, length: usize) -> Result<Value> {
+    pub async fn get_users(&mut self, api_prefix: &str, sort_field: &str, desc: bool, filter: &str, start: usize, length: usize) -> Result<Value> {
         let url = format!("{}{}/users", self.base_url, api_prefix);
         let body = serde_json::json!({
             "sortField": sort_field,
@@ -740,6 +819,11 @@ impl ArkimeClient {
             "start": start,
             "length": length,
         });
+        // Use raw POST to extract cookie from response (for Parliament etc.)
+        if self.arkime_cookie.is_none() {
+            let val = self.authenticated_post_json_extract_cookie(&url, &body).await?;
+            return Ok(val);
+        }
         self.authenticated_post_json(&url, &body).await
     }
 
@@ -761,5 +845,25 @@ impl ArkimeClient {
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
             .unwrap_or_default();
         Ok(roles)
+    }
+
+    pub async fn create_user(&self, api_prefix: &str, data: &Value) -> Result<String> {
+        let url = format!("{}{}/user", self.base_url, api_prefix);
+        let val = self.authenticated_post_json(&url, data).await?;
+        if val.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+            Ok(val.get("text").and_then(|v| v.as_str()).unwrap_or("Created").to_string())
+        } else {
+            anyhow::bail!("{}", val.get("text").and_then(|v| v.as_str()).unwrap_or("Create failed"))
+        }
+    }
+
+    pub async fn delete_user(&self, api_prefix: &str, user_id: &str) -> Result<String> {
+        let url = format!("{}{}/user/{}", self.base_url, api_prefix, urlencoding::encode(user_id));
+        let val = self.authenticated_delete(&url).await?;
+        if val.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+            Ok(val.get("text").and_then(|v| v.as_str()).unwrap_or("Deleted").to_string())
+        } else {
+            anyhow::bail!("{}", val.get("text").and_then(|v| v.as_str()).unwrap_or("Delete failed"))
+        }
     }
 }

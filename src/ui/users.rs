@@ -105,17 +105,27 @@ fn draw_users_list(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 pub(super) fn draw_users_editor(f: &mut Frame, app: &mut App, area: Rect) {
-    let fields = crate::app::App::us_editor_fields();
+    let fields = app.us_editor_fields();
     let popup_height = (fields.len() as u16 + 4).min(area.height.saturating_sub(2));
     let popup_width = 72u16.min(area.width.saturating_sub(4));
     let popup_area = center_popup(popup_width, popup_height, area);
     f.render_widget(Clear, popup_area);
 
-    let user_id = app.us_editor_user.get("userId").and_then(|v| v.as_str()).unwrap_or("?");
+    let title = if app.us_creating {
+        let user_id = app.us_editor_user.get("userId").and_then(|v| v.as_str()).unwrap_or("");
+        if user_id.starts_with("role:") {
+            " New Role ".to_string()
+        } else {
+            " New User ".to_string()
+        }
+    } else {
+        let user_id = app.us_editor_user.get("userId").and_then(|v| v.as_str()).unwrap_or("?");
+        format!(" Edit User: {} ", user_id)
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(format!(" Edit User: {} ", user_id))
+        .title(title)
         .title_bottom(Line::from(" Tab/↑↓:navigate  Space:toggle  Ctrl+S:save  Esc:cancel ").fg(Color::DarkGray));
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
@@ -134,11 +144,12 @@ pub(super) fn draw_users_editor(f: &mut Frame, app: &mut App, area: Rect) {
         if y >= inner.y + inner.height { break; }
         let row_area = Rect::new(inner.x, y, inner.width, 1);
         let is_active = i == app.us_editor_field;
-        let is_readonly = *field_name == "userId";
+        let is_readonly = *field_name == "userId" && !app.us_creating;
 
         let friendly = match *field_name {
             "userId" => "User ID",
             "userName" => "User Name",
+            "password" => "Password",
             "enabled" => "Enabled",
             "webEnabled" => "Web Enabled",
             "headerAuthEnabled" => "Header Auth",
@@ -187,8 +198,13 @@ pub(super) fn draw_users_editor(f: &mut Frame, app: &mut App, area: Rect) {
             ]);
             f.render_widget(Paragraph::new(line), row_area);
         } else {
+            let is_password = *field_name == "password";
             let value = if is_active && !is_readonly {
-                app.us_editor_text.clone()
+                if is_password {
+                    "*".repeat(app.us_editor_text.len())
+                } else {
+                    app.us_editor_text.clone()
+                }
             } else if *field_name == "timeLimit" {
                 app.us_editor_user.get("timeLimit")
                     .and_then(|v| v.as_u64())

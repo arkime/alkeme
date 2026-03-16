@@ -55,7 +55,25 @@ impl App {
                     self.us_editor_user = user.clone();
                     self.us_editor_field = 1; // start on userName (skip userId)
                     self.us_editing = true;
+                    self.us_creating = false;
                     self.us_load_editor_field();
+                }
+            }
+            KeyCode::Char('n') => {
+                self.us_start_create(false);
+            }
+            KeyCode::Char('N') => {
+                self.us_start_create(true);
+            }
+            KeyCode::Char('d') | KeyCode::Char('x') => {
+                if let Some(user) = self.us_users.get(self.us_selected) {
+                    let user_id = user.get("userId").and_then(|v| v.as_str()).unwrap_or("?");
+                    let kind = if user_id.starts_with("role:") { "role" } else { "user" };
+                    self.confirm_dialog = Some(crate::app::ConfirmDialog {
+                        title: format!("Delete {kind}"),
+                        message: format!("Delete {kind} '{user_id}'?"),
+                        action: format!("delete_user:{user_id}"),
+                    });
                 }
             }
             KeyCode::Right => {
@@ -85,18 +103,23 @@ impl App {
     }
 
     pub(crate) async fn handle_users_editor_key(&mut self, key: KeyEvent) {
-        let fields = Self::us_editor_fields();
+        let fields = self.us_editor_fields();
         let field_count = fields.len();
         let is_text_field = if self.us_editor_field < field_count {
             let (name, ft) = fields[self.us_editor_field];
-            ft == "text" && name != "userId"
+            let is_readonly = name == "userId" && !self.us_creating;
+            ft == "text" && !is_readonly
         } else {
             false
         };
 
+        // When creating, allow starting from field 0 (userId)
+        let min_field = if self.us_creating { 0 } else { 1 };
+
         match key.code {
             KeyCode::Esc => {
                 self.us_editing = false;
+                self.us_creating = false;
             }
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.us_commit_editor_field();
@@ -106,12 +129,12 @@ impl App {
             KeyCode::Tab | KeyCode::Down => {
                 self.us_commit_editor_field();
                 self.us_editor_field = (self.us_editor_field + 1) % field_count;
-                if self.us_editor_field == 0 { self.us_editor_field = 1; }
+                if self.us_editor_field < min_field { self.us_editor_field = min_field; }
                 self.us_load_editor_field();
             }
             KeyCode::BackTab | KeyCode::Up => {
                 self.us_commit_editor_field();
-                if self.us_editor_field <= 1 {
+                if self.us_editor_field <= min_field {
                     self.us_editor_field = field_count - 1;
                 } else {
                     self.us_editor_field -= 1;
@@ -121,7 +144,7 @@ impl App {
             KeyCode::Char(' ') | KeyCode::Enter if !is_text_field => {
                 if self.us_editor_field >= field_count { return; }
                 let (field_name, field_type) = fields[self.us_editor_field];
-                if field_name == "userId" { return; }
+                if field_name == "userId" && !self.us_creating { return; }
                 if field_type == "bool" {
                     let current = self.us_editor_user.get(field_name)
                         .and_then(|v| v.as_bool()).unwrap_or(false);
@@ -140,7 +163,24 @@ impl App {
             }
             _ => {
                 if is_text_field {
+                    // For role creation, protect the "role:" prefix
+                    let is_role_id = self.us_creating
+                        && self.us_editor_field < field_count
+                        && fields[self.us_editor_field].0 == "userId"
+                        && self.us_editor_text.starts_with("role:");
+                    let prefix_len = if is_role_id { 5 } else { 0 }; // "role:" = 5 chars
+                    if is_role_id && self.us_editor_cursor < prefix_len {
+                        self.us_editor_cursor = prefix_len;
+                    }
                     handle_text_input_key(key.code, &mut self.us_editor_text, &mut self.us_editor_cursor);
+                    // Restore prefix if it was damaged
+                    if is_role_id && !self.us_editor_text.starts_with("role:") {
+                        self.us_editor_text = format!("role:{}", self.us_editor_text.trim_start_matches("role").trim_start_matches(':'));
+                        self.us_editor_cursor = self.us_editor_cursor.max(prefix_len);
+                    }
+                    if is_role_id && self.us_editor_cursor < prefix_len {
+                        self.us_editor_cursor = prefix_len;
+                    }
                 }
             }
         }

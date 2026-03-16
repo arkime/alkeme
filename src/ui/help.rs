@@ -441,6 +441,42 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("d"), Span::raw("Edit date range for links")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
         ]).collect())
+    } else if app.active_tab == Tab::Users {
+        let mut ht = vec![
+            hdr!("Navigation"),
+            blank(),
+            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
+            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate users")]),
+            Line::from(vec![key("← / →"), Span::raw("Previous / next page")]),
+            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
+            Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
+        ];
+        if app.parliament.saved_client.is_some() {
+            ht.push(Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")]));
+        }
+        ht.push(Line::from(vec![key("q"), Span::raw("Quit")]));
+        ht.extend(vec![
+            blank(),
+            hdr!("Actions"),
+            blank(),
+            Line::from(vec![key("Enter"), Span::raw("Edit user")]),
+            Line::from(vec![key("n"), Span::raw("New user")]),
+            Line::from(vec![key("N"), Span::raw("New role")]),
+            Line::from(vec![key("d / x"), Span::raw("Delete user/role")]),
+            Line::from(vec![key("/ / E"), Span::raw("Filter users (live)")]),
+            Line::from(vec![key("s"), Span::raw("Next sort column")]),
+            Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
+            Line::from(vec![key("r"), Span::raw("Refresh")]),
+            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
+            blank(),
+            hdr!("Editor"),
+            blank(),
+            Line::from(vec![key("Tab / ↑ / ↓"), Span::raw("Navigate fields")]),
+            Line::from(vec![key("Space / Enter"), Span::raw("Toggle bool / open roles")]),
+            Line::from(vec![key("Ctrl+S"), Span::raw("Save changes")]),
+            Line::from(vec![key("Esc"), Span::raw("Cancel editing")]),
+        ]);
+        ("Users", ht)
     } else if app.app_mode == AppMode::Cont3xt {
         (if app.active_tab == Tab::Search { "Cont3xt Results" } else { "Cont3xt" }, vec![
             hdr!("Navigation"),
@@ -594,39 +630,6 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("Enter"), Span::raw("Run query")]),
             Line::from(vec![key("D"), Span::raw("HTTP debug log (Enter:expand)")]),
         ]).collect())
-    } else if app.active_tab == Tab::Users {
-        let mut ht = vec![
-            hdr!("Navigation"),
-            blank(),
-            Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
-            Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate users")]),
-            Line::from(vec![key("← / →"), Span::raw("Previous / next page")]),
-            Line::from(vec![key("Shift+↑ / Shift+↓"), Span::raw("Page up / down")]),
-            Line::from(vec![key("Home / End"), Span::raw("Jump to top / bottom")]),
-        ];
-        if app.parliament.saved_client.is_some() {
-            ht.push(Line::from(vec![key("Ctrl+p"), Span::raw("Return to Parliament")]));
-        }
-        ht.push(Line::from(vec![key("q"), Span::raw("Quit")]));
-        ht.extend(vec![
-            blank(),
-            hdr!("Actions"),
-            blank(),
-            Line::from(vec![key("Enter"), Span::raw("Edit user")]),
-            Line::from(vec![key("/ / E"), Span::raw("Filter users")]),
-            Line::from(vec![key("s"), Span::raw("Next sort column")]),
-            Line::from(vec![key("S"), Span::raw("Toggle sort direction")]),
-            Line::from(vec![key("r"), Span::raw("Refresh")]),
-            Line::from(vec![key("D"), Span::raw("HTTP debug log")]),
-            blank(),
-            hdr!("Editor"),
-            blank(),
-            Line::from(vec![key("Tab / ↑ / ↓"), Span::raw("Navigate fields")]),
-            Line::from(vec![key("Space / Enter"), Span::raw("Toggle boolean")]),
-            Line::from(vec![key("Ctrl+S"), Span::raw("Save changes")]),
-            Line::from(vec![key("Esc"), Span::raw("Cancel editing")]),
-        ]);
-        ("Users", ht)
     } else {
         let mut ht = vec![
             hdr!("Navigation"),

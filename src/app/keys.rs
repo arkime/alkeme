@@ -363,12 +363,17 @@ impl App {
             }
             _ => {}
         }
-        // Users filter: live search as-you-type
+        // Users filter: live search as-you-type (only on text-changing keys)
         if is_users {
-            self.us_filter = self.expression_edit.clone();
-            self.us_page_start = 0;
-            self.us_selected = 0;
-            self.us_fetch_users().await;
+            match key.code {
+                KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete => {
+                    self.us_filter = self.expression_edit.clone();
+                    self.us_page_start = 0;
+                    self.us_selected = 0;
+                    self.us_fetch_users().await;
+                }
+                _ => {}
+            }
         }
     }
 

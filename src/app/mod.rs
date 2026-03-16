@@ -126,6 +126,8 @@ pub struct App {
     pub us_role_popup_cursor: usize,
     pub us_role_popup_filtering: bool,
     pub us_editor_roles: Vec<(String, bool)>,
+    // Create user/role state
+    pub us_creating: bool, // true = creating new user/role, false = editing existing
 }
 
 impl App {
@@ -205,6 +207,7 @@ impl App {
             us_role_popup_cursor: 0,
             us_role_popup_filtering: false,
             us_editor_roles: Vec::new(),
+            us_creating: false,
         }
     }
 
@@ -227,6 +230,7 @@ impl App {
     pub fn has_popup_open(&self) -> bool {
         self.confirm_dialog.is_some()
             || self.us_editing
+            || self.us_creating
             || self.us_role_popup_open
             || self.cont3xt.show_card_popup
             || self.cont3xt.show_overview_popup
@@ -247,7 +251,7 @@ impl App {
     /// Returns true if q should close a popup instead of quitting the app
     pub fn q_closes_popup(&self) -> bool {
         self.confirm_dialog.is_some()
-            || self.us_editing || self.us_role_popup_open
+            || self.us_editing || self.us_creating || self.us_role_popup_open
             || self.show_help || self.show_debug || self.parliament.show_detail
             || self.viewer.show_column_editor || self.viewer.show_layout_popup || self.viewer.show_view_popup
             || self.viewer.stats_show_column_editor || self.viewer.stats_show_layout_popup
@@ -336,6 +340,15 @@ impl App {
                     }
                 }
             }
+        } else if let Some(user_id) = action.strip_prefix("delete_user:") {
+            let prefix = self.us_api_prefix().to_string();
+            match self.client.delete_user(&prefix, user_id).await {
+                Ok(msg) => {
+                    self.status_msg = msg;
+                    self.us_fetch_users().await;
+                }
+                Err(e) => self.status_msg = format!("Error deleting: {e}"),
+            }
         }
     }
 
@@ -347,12 +360,12 @@ impl App {
         match self.client.get_user(api_prefix).await {
             Ok(user) => {
                 self.user = user;
-                self.rebuild_visible_tabs();
             }
             Err(e) => {
                 self.status_msg = format!("Error fetching user: {e}");
             }
         }
+        self.rebuild_visible_tabs();
     }
 
     pub fn rebuild_visible_tabs(&mut self) {
@@ -362,7 +375,7 @@ impl App {
             .and_then(|r| r.as_array())
             .map(|arr| arr.iter().any(|v| v.as_str() == Some("usersAdmin")))
             .unwrap_or(false);
-        if has_users_admin {
+        if has_users_admin && self.app_mode != AppMode::Wise {
             tabs.push(Tab::Users);
         }
         self.visible_tabs = tabs;
@@ -417,26 +430,71 @@ impl App {
         let user_id = self.us_editor_user.get("userId").and_then(|v| v.as_str()).unwrap_or("").to_string();
         if user_id.is_empty() { return; }
         let prefix = self.us_api_prefix().to_string();
-        let mut data = self.us_editor_user.clone();
-        if let Some(obj) = data.as_object_mut() {
-            obj.remove("userId");
-        }
-        match self.client.update_user(&prefix, &user_id, &data).await {
-            Ok(msg) => {
-                self.status_msg = msg;
-                self.us_editing = false;
-                self.us_fetch_users().await;
+        if self.us_creating {
+            let data = self.us_editor_user.clone();
+            match self.client.create_user(&prefix, &data).await {
+                Ok(msg) => {
+                    self.status_msg = msg;
+                    self.us_editing = false;
+                    self.us_creating = false;
+                    self.us_fetch_users().await;
+                }
+                Err(e) => {
+                    self.status_msg = format!("Error creating: {e}");
+                }
             }
-            Err(e) => {
-                self.status_msg = format!("Error saving user: {e}");
+        } else {
+            let mut data = self.us_editor_user.clone();
+            if let Some(obj) = data.as_object_mut() {
+                obj.remove("userId");
+            }
+            match self.client.update_user(&prefix, &user_id, &data).await {
+                Ok(msg) => {
+                    self.status_msg = msg;
+                    self.us_editing = false;
+                    self.us_fetch_users().await;
+                }
+                Err(e) => {
+                    self.status_msg = format!("Error saving user: {e}");
+                }
             }
         }
     }
 
-    pub fn us_editor_fields() -> Vec<(&'static str, &'static str)> {
-        vec![
+    pub fn us_start_create(&mut self, is_role: bool) {
+        self.us_editor_user = serde_json::json!({
+            "userId": if is_role { "role:" } else { "" },
+            "userName": "",
+            "password": "",
+            "enabled": true,
+            "webEnabled": false,
+            "headerAuthEnabled": false,
+            "emailSearch": false,
+            "removeEnabled": false,
+            "packetSearch": false,
+            "hideStats": false,
+            "hideFiles": false,
+            "hidePcap": false,
+            "disablePcapDownload": false,
+            "expression": "",
+            "timeLimit": 0,
+            "roles": [],
+        });
+        self.us_editor_field = 0; // start on userId
+        self.us_editing = true;
+        self.us_creating = true;
+        self.us_load_editor_field();
+    }
+
+    pub fn us_editor_fields(&self) -> Vec<(&'static str, &'static str)> {
+        let mut fields = vec![
             ("userId", "text"),
             ("userName", "text"),
+        ];
+        if self.us_creating {
+            fields.push(("password", "text"));
+        }
+        fields.extend_from_slice(&[
             ("enabled", "bool"),
             ("webEnabled", "bool"),
             ("headerAuthEnabled", "bool"),
@@ -450,14 +508,17 @@ impl App {
             ("expression", "text"),
             ("timeLimit", "text"),
             ("roles", "roles"),
-        ]
+        ]);
+        fields
     }
 
     pub fn us_commit_editor_field(&mut self) {
-        let fields = Self::us_editor_fields();
+        let fields = self.us_editor_fields();
         if self.us_editor_field >= fields.len() { return; }
         let (field_name, field_type) = fields[self.us_editor_field];
-        if field_name == "userId" || field_type == "bool" || field_type == "roles" { return; }
+        if field_type == "bool" || field_type == "roles" { return; }
+        // userId is editable when creating, readonly when editing
+        if field_name == "userId" && !self.us_creating { return; }
 
         if field_name == "timeLimit" {
             if let Ok(n) = self.us_editor_text.parse::<u64>() {
@@ -469,7 +530,7 @@ impl App {
     }
 
     pub fn us_load_editor_field(&mut self) {
-        let fields = Self::us_editor_fields();
+        let fields = self.us_editor_fields();
         if self.us_editor_field >= fields.len() { return; }
         let (field_name, field_type) = fields[self.us_editor_field];
         if field_type == "bool" || field_type == "roles" {
