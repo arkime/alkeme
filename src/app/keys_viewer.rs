@@ -559,7 +559,9 @@ impl App {
                                             other => other.to_string(),
                                         })
                                         .collect();
-                                    if items.len() == 1 {
+                                    if items.is_empty() {
+                                        ("-".into(), None)
+                                    } else if items.len() == 1 {
                                         (items[0].clone(), None)
                                     } else {
                                         (items[0].clone(), Some(items))
