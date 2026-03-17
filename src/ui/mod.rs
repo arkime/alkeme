@@ -17,7 +17,9 @@ use crate::app::{App, AppMode, ActionTarget, C3StatsTab, C3_HISTORY_COLUMNS, Col
 use chrono::{DateTime, Local};
 use ratatui::{
     prelude::*,
+    symbols::Marker,
     widgets::*,
+    widgets::canvas::{Canvas, Line as CanvasLine},
 };
 
 pub(super) fn format_epoch(val: &serde_json::Value, _field_type: &str) -> String {
@@ -394,12 +396,10 @@ fn draw_graph(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let inner_width = area.width.saturating_sub(2) as usize;
-    let inner_height = area.height.saturating_sub(2) as usize;
-    if inner_width == 0 || inner_height == 0 {
+    if inner_width == 0 {
         return;
     }
 
-    // Map sparse timestamp data into pixel columns using first/last timestamps
     let first_ts = src_histo.first().map(|(t, _)| *t).unwrap_or(0.0);
     let last_ts = src_histo.last().map(|(t, _)| *t).unwrap_or(0.0);
     let ts_range = last_ts - first_ts;
@@ -411,14 +411,12 @@ fn draw_graph(f: &mut Frame, app: &App, area: Rect) {
         vec![0u64; inner_width]
     };
 
-    // For split view, max is max of either; for sessions, just src
     let max_val = if is_split {
         src_buckets.iter().chain(dst_buckets.iter()).copied().max().unwrap_or(1).max(1)
     } else {
         src_buckets.iter().copied().max().unwrap_or(1).max(1)
     };
 
-    // Compute human-readable bar duration
     let bar_dur = if inner_width > 1 && ts_range > 0.0 {
         format_duration_ms(ts_range / inner_width as f64)
     } else {
@@ -428,54 +426,57 @@ fn draw_graph(f: &mut Frame, app: &App, area: Rect) {
     let start_label = format_epoch_short(first_ts);
     let stop_label = format_epoch_short(last_ts);
 
-    // Render into a buffer manually using block characters
-    let block = Block::default().borders(Borders::ALL)
-        .title(if is_split {
-            format!(" {title} (max: {max_val}, {bar_dur}/bar) Src=cyan Dst=green g/G ")
-        } else {
-            format!(" {title} (max: {max_val}, {bar_dur}/bar) g/G ")
-        })
-        .title_bottom(Line::from(vec![
-            Span::raw(format!(" {start_label} ")),
-        ]).alignment(Alignment::Left))
-        .title_bottom(Line::from(vec![
-            Span::raw(format!(" {stop_label} ")),
-        ]).alignment(Alignment::Right));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
+    // Normalize buckets to [0.0, 100.0] for canvas y-axis
+    let src_pts: Vec<(f64, f64)> = src_buckets.iter().enumerate()
+        .map(|(i, &v)| (i as f64, v as f64 / max_val as f64 * 100.0))
+        .collect();
+    let dst_pts: Vec<(f64, f64)> = dst_buckets.iter().enumerate()
+        .map(|(i, &v)| (i as f64, v as f64 / max_val as f64 * 100.0))
+        .collect();
 
-    // Draw columns using half-block characters for resolution
+    let x_max = (inner_width.saturating_sub(1)) as f64;
     let src_color = Color::Cyan;
     let dst_color = Color::Green;
-    let buf = f.buffer_mut();
 
-    for col in 0..inner_width.min(inner.width as usize) {
-        let x = inner.x + col as u16;
+    let block_title = if is_split {
+        format!(" {title} (max: {max_val}, {bar_dur}/bar) Src=cyan Dst=green g/G ")
+    } else {
+        format!(" {title} (max: {max_val}, {bar_dur}/bar) g/G ")
+    };
 
-        if is_split {
-            let src_h = (src_buckets[col] as f64 / max_val as f64 * inner_height as f64).round() as usize;
-            let dst_h = (dst_buckets[col] as f64 / max_val as f64 * inner_height as f64).round() as usize;
-
-            for row in 0..inner_height {
-                let y = inner.y + (inner_height - 1 - row) as u16;
-                if y >= inner.y + inner.height { continue; }
-                if row < src_h && row < dst_h {
-                    buf[(x, y)].set_char('▐').set_style(Style::default().fg(dst_color).bg(src_color));
-                } else if row < src_h {
-                    buf[(x, y)].set_char('█').set_style(Style::default().fg(src_color));
-                } else if row < dst_h {
-                    buf[(x, y)].set_char('█').set_style(Style::default().fg(dst_color));
+    let canvas = Canvas::default()
+        .block(Block::default().borders(Borders::ALL)
+            .title(block_title)
+            .title_bottom(Line::from(format!(" {start_label} ")).alignment(Alignment::Left))
+            .title_bottom(Line::from(format!(" {stop_label} ")).alignment(Alignment::Right)))
+        .marker(Marker::Braille)
+        .x_bounds([0.0, x_max])
+        .y_bounds([0.0, 100.0])
+        .paint(move |ctx| {
+            // Draw filled area for src: vertical lines from 0 to value at each column
+            for &(x, y) in &src_pts {
+                if y > 0.0 {
+                    ctx.draw(&CanvasLine {
+                        x1: x, y1: 0.0,
+                        x2: x, y2: y,
+                        color: src_color,
+                    });
                 }
             }
-        } else {
-            let h = (src_buckets[col] as f64 / max_val as f64 * inner_height as f64).round() as usize;
-            for row in 0..h.min(inner_height) {
-                let y = inner.y + (inner_height - 1 - row) as u16;
-                if y >= inner.y + inner.height { continue; }
-                buf[(x, y)].set_char('█').set_style(Style::default().fg(src_color));
+            if is_split {
+                for &(x, y) in &dst_pts {
+                    if y > 0.0 {
+                        ctx.draw(&CanvasLine {
+                            x1: x, y1: 0.0,
+                            x2: x, y2: y,
+                            color: dst_color,
+                        });
+                    }
+                }
             }
-        }
-    }
+        });
+
+    f.render_widget(canvas, area);
 }
 fn spread_to_columns(histo: &[(f64, f64)], first_ts: f64, ts_range: f64, width: usize) -> Vec<u64> {
     let mut buckets = vec![0u64; width];
