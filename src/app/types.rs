@@ -2476,7 +2476,7 @@ impl Default for ViewerState {
             graph_type: GraphType::Sessions,
             graph_data: None,
             // Stats tab state
-            stats_tab: StatsTab::CaptureGraphs,
+            stats_tab: StatsTab::Capture,
             stats_data: Vec::new(),
             stats_total: 0,
             stats_filtered: 0,
