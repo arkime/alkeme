@@ -439,6 +439,7 @@ fn drain_c3_results(app: &mut App, vec: &[crate::api::Cont3xtResult], consumed: 
 }
 
 async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+    let mut stats_handle: Option<tokio::task::JoinHandle<app::StatsFetchResult>> = None;
     let mut packets_handle: Option<tokio::task::JoinHandle<Result<crate::api::PacketsData, anyhow::Error>>> = None;
     let mut summary_handle: Option<tokio::task::JoinHandle<Result<Vec<crate::api::SummaryItem>, anyhow::Error>>> = None;
     let mut c3_search_handle: Option<tokio::task::JoinHandle<Result<(u64, String, Vec<(String, String)>), anyhow::Error>>> = None;
@@ -494,10 +495,29 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
 
             if app.viewer.pending_stats_fetch {
                 app.viewer.pending_stats_fetch = false;
-                app.vr_fetch_stats().await;
-                app.show_loading = false;
+                if stats_handle.is_none() {
+                    stats_handle = Some(app.vr_spawn_stats_fetch());
+                }
                 needs_redraw = true;
                 continue;
+            }
+
+            // Check if background stats fetch completed
+            if let Some(ref mut handle) = stats_handle {
+                if handle.is_finished() {
+                    let handle = stats_handle.take().unwrap();
+                    match handle.await {
+                        Ok(result) => {
+                            app.vr_process_stats_result(result);
+                        }
+                        Err(e) => {
+                            app.status_msg = format!("Error: {e}");
+                        }
+                    }
+                    app.show_loading = false;
+                    needs_redraw = true;
+                    continue;
+                }
             }
 
             if app.viewer.pending_summary_fetch {

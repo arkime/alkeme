@@ -50,17 +50,23 @@ impl ArkimeClient {
     }
 
     async fn vr_get_sorted_filtered(&self, endpoint: &str, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
+        let url = Self::vr_sorted_filtered_url(&self.base_url, endpoint, filter, sort_field, sort_desc);
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    /// Build URL for sorted/filtered stats endpoints (usable with FetchClient)
+    pub fn vr_sorted_filtered_url(base_url: &str, endpoint: &str, filter: &str, sort_field: &str, sort_desc: bool) -> String {
         let dir = if sort_desc { "desc" } else { "asc" };
         let mut url = format!(
             "{}/api/{}?sortField={}&desc={}",
-            self.base_url, endpoint, urlencoding::encode(sort_field), dir
+            base_url, endpoint, urlencoding::encode(sort_field), dir
         );
         if !filter.is_empty() {
             url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
         }
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
+        url
     }
 
     pub async fn vr_get_stats(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
@@ -76,17 +82,22 @@ impl ArkimeClient {
     }
 
     pub async fn vr_get_estasks(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
+        let url = Self::vr_estasks_url(&self.base_url, filter, sort_field, sort_desc);
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    pub fn vr_estasks_url(base_url: &str, filter: &str, sort_field: &str, sort_desc: bool) -> String {
         let desc = if sort_desc { "true" } else { "false" };
         let mut url = format!(
             "{}/api/estasks?sortField={}&desc={}&size=1000",
-            self.base_url, urlencoding::encode(sort_field), desc
+            base_url, urlencoding::encode(sort_field), desc
         );
         if !filter.is_empty() {
             url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
         }
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
+        url
     }
 
     pub async fn vr_cancel_estask(&self, task_id: &str) -> Result<Value> {
@@ -100,16 +111,21 @@ impl ArkimeClient {
     }
 
     pub async fn vr_get_esshards(&self, filter: &str, show: &str) -> Result<Value> {
+        let url = Self::vr_esshards_url(&self.base_url, filter, show);
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    pub fn vr_esshards_url(base_url: &str, filter: &str, show: &str) -> String {
         let mut url = format!(
             "{}/api/esshards?show={}&sortField=index&desc=false",
-            self.base_url, urlencoding::encode(show)
+            base_url, urlencoding::encode(show)
         );
         if !filter.is_empty() {
             url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
         }
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
+        url
     }
 
     pub async fn vr_get_allocation_explain(&self, index: &str, shard: &str, primary: bool) -> Result<Value> {
@@ -123,17 +139,49 @@ impl ArkimeClient {
     }
 
     pub async fn vr_get_esrecovery(&self, filter: &str, sort_field: &str, sort_desc: bool, show: &str) -> Result<Value> {
+        let url = Self::vr_esrecovery_url(&self.base_url, filter, sort_field, sort_desc, show);
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    pub fn vr_esrecovery_url(base_url: &str, filter: &str, sort_field: &str, sort_desc: bool, show: &str) -> String {
         let desc = if sort_desc { "true" } else { "false" };
         let mut url = format!(
             "{}/api/esrecovery?sortField={}&desc={}&show={}",
-            self.base_url, urlencoding::encode(sort_field), desc, urlencoding::encode(show)
+            base_url, urlencoding::encode(sort_field), desc, urlencoding::encode(show)
         );
         if !filter.is_empty() {
             url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
         }
-        let body = self.authenticated_get(&url).await?;
-        let parsed: Value = serde_json::from_str(&body)?;
-        Ok(parsed)
+        url
+    }
+
+    /// Build URL for fetching detailed stats for a single node
+    pub fn vr_dstats_url(base_url: &str, node: &str, metric: &str, interval: u64, start: u64, stop: u64) -> String {
+        let step = interval;
+        format!(
+            "{}/api/dstats?nodeName={}&name={}&interval={}&start={}&stop={}&step={}",
+            base_url,
+            urlencoding::encode(node),
+            urlencoding::encode(metric),
+            interval, start, stop, step
+        )
+    }
+
+    /// Build URL for fetching node list
+    pub fn vr_stats_nodes_url(base_url: &str, filter: &str, hide: &str) -> String {
+        let mut url = format!(
+            "{}/api/stats?sortField=nodeName&desc=false&start=0&length=1000",
+            base_url
+        );
+        if !filter.is_empty() {
+            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
+        }
+        if hide != "none" {
+            url.push_str(&format!("&hide={}", urlencoding::encode(hide)));
+        }
+        url
     }
 
     /// Fetch detailed stats for a single node for capture graphs.

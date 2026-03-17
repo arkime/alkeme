@@ -21,6 +21,214 @@ impl App {
         self.show_loading = true;
     }
 
+    /// Spawn a background stats fetch, returns JoinHandle producing StatsFetchResult.
+    /// The tab type is captured so the result can be processed correctly.
+    pub fn vr_spawn_stats_fetch(&self) -> tokio::task::JoinHandle<StatsFetchResult> {
+        use crate::api::ArkimeClient;
+
+        let client = self.client.clone_for_fetch();
+        let base_url = self.client.base_url.clone();
+        let tab = self.viewer.stats_tab;
+        let filter = self.viewer.stats_filter.clone();
+        let sort_field = self.vr_stats_sort_field().to_string();
+        let sort_desc = self.viewer.stats_sort_desc;
+
+        match tab {
+            StatsTab::Capture => {
+                let url = ArkimeClient::vr_sorted_filtered_url(&base_url, "stats", &filter, &sort_field, sort_desc);
+                tokio::spawn(async move {
+                    match client.fetch_url(&url).await {
+                        Ok(body) => match serde_json::from_str(&body) {
+                            Ok(v) => StatsFetchResult::Table(StatsTab::Capture, v),
+                            Err(e) => StatsFetchResult::Error(format!("Parse error: {e}")),
+                        },
+                        Err(e) => StatsFetchResult::Error(format!("{e}")),
+                    }
+                })
+            }
+            StatsTab::DBStats => {
+                let url = ArkimeClient::vr_sorted_filtered_url(&base_url, "esstats", &filter, &sort_field, sort_desc);
+                tokio::spawn(async move {
+                    match client.fetch_url(&url).await {
+                        Ok(body) => match serde_json::from_str(&body) {
+                            Ok(v) => StatsFetchResult::Table(StatsTab::DBStats, v),
+                            Err(e) => StatsFetchResult::Error(format!("Parse error: {e}")),
+                        },
+                        Err(e) => StatsFetchResult::Error(format!("{e}")),
+                    }
+                })
+            }
+            StatsTab::DBIndices => {
+                let url = ArkimeClient::vr_sorted_filtered_url(&base_url, "esindices", &filter, &sort_field, sort_desc);
+                tokio::spawn(async move {
+                    match client.fetch_url(&url).await {
+                        Ok(body) => match serde_json::from_str(&body) {
+                            Ok(v) => StatsFetchResult::Table(StatsTab::DBIndices, v),
+                            Err(e) => StatsFetchResult::Error(format!("Parse error: {e}")),
+                        },
+                        Err(e) => StatsFetchResult::Error(format!("{e}")),
+                    }
+                })
+            }
+            StatsTab::DBTasks => {
+                let url = ArkimeClient::vr_estasks_url(&base_url, &filter, &sort_field, sort_desc);
+                tokio::spawn(async move {
+                    match client.fetch_url(&url).await {
+                        Ok(body) => match serde_json::from_str(&body) {
+                            Ok(v) => StatsFetchResult::Table(StatsTab::DBTasks, v),
+                            Err(e) => StatsFetchResult::Error(format!("Parse error: {e}")),
+                        },
+                        Err(e) => StatsFetchResult::Error(format!("{e}")),
+                    }
+                })
+            }
+            StatsTab::DBRecovery => {
+                let show = if self.viewer.recovery_show_all { "all" } else { "notdone" };
+                let url = ArkimeClient::vr_esrecovery_url(&base_url, &filter, &sort_field, sort_desc, show);
+                tokio::spawn(async move {
+                    match client.fetch_url(&url).await {
+                        Ok(body) => match serde_json::from_str(&body) {
+                            Ok(v) => StatsFetchResult::Table(StatsTab::DBRecovery, v),
+                            Err(e) => StatsFetchResult::Error(format!("Parse error: {e}")),
+                        },
+                        Err(e) => StatsFetchResult::Error(format!("{e}")),
+                    }
+                })
+            }
+            StatsTab::DBShards => {
+                let show = self.viewer.shards_show.api_value().to_string();
+                let url = ArkimeClient::vr_esshards_url(&base_url, &filter, &show);
+                tokio::spawn(async move {
+                    match client.fetch_url(&url).await {
+                        Ok(body) => match serde_json::from_str(&body) {
+                            Ok(v) => StatsFetchResult::Shards(v),
+                            Err(e) => StatsFetchResult::Error(format!("Parse error: {e}")),
+                        },
+                        Err(e) => StatsFetchResult::Error(format!("{e}")),
+                    }
+                })
+            }
+            StatsTab::CaptureGraphs => {
+                use crate::app::types::CAPTURE_GRAPH_METRICS;
+                let metric = CAPTURE_GRAPH_METRICS[self.viewer.cg_metric_index].field.to_string();
+                let interval = self.viewer.cg_interval.seconds();
+                let hide = self.viewer.cg_hide.api_value().to_string();
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let duration = interval * 1440;
+                let start = now.saturating_sub(duration);
+                let stop = now;
+
+                tokio::spawn(async move {
+                    // First get node list
+                    let nodes_url = ArkimeClient::vr_stats_nodes_url(&base_url, &filter, &hide);
+                    let nodes_body = match client.fetch_url(&nodes_url).await {
+                        Ok(b) => b,
+                        Err(e) => return StatsFetchResult::Error(format!("Nodes: {e}")),
+                    };
+                    let nodes_parsed: serde_json::Value = match serde_json::from_str(&nodes_body) {
+                        Ok(v) => v,
+                        Err(e) => return StatsFetchResult::Error(format!("Parse nodes: {e}")),
+                    };
+                    let node_list: Vec<String> = nodes_parsed["data"]
+                        .as_array()
+                        .map(|arr| arr.iter().filter_map(|v| v["id"].as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default();
+
+                    // Fetch dstats per node
+                    let mut nodes_data = Vec::new();
+                    for node_name in &node_list {
+                        let url = ArkimeClient::vr_dstats_url(&base_url, node_name, &metric, interval, start, stop);
+                        let values = match client.fetch_url(&url).await {
+                            Ok(body) => {
+                                let parsed: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                                parsed.as_array()
+                                    .map(|arr| arr.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect())
+                                    .unwrap_or_default()
+                            }
+                            Err(_) => Vec::new(),
+                        };
+                        nodes_data.push(CaptureGraphNodeData {
+                            node_name: node_name.clone(),
+                            values,
+                        });
+                    }
+                    StatsFetchResult::CaptureGraphs(nodes_data)
+                })
+            }
+        }
+    }
+
+    /// Process a completed stats fetch result into app state
+    pub fn vr_process_stats_result(&mut self, result: StatsFetchResult) {
+        match result {
+            StatsFetchResult::Table(tab, value) => {
+                self.viewer.stats_data = value.get("data")
+                    .and_then(|d| d.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                self.viewer.stats_total = value.get("recordsTotal")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                self.viewer.stats_filtered = value.get("recordsFiltered")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                self.viewer.stats_selected = 0;
+                self.viewer.stats_table_state.select(Some(0));
+                self.viewer.stats_last_refresh = std::time::Instant::now();
+                self.status_msg = format!(
+                    "{}: {} items",
+                    tab.name(), self.viewer.stats_data.len()
+                );
+            }
+            StatsFetchResult::Shards(value) => {
+                let mut nodes: Vec<String> = value.get("nodes")
+                    .and_then(|n| n.as_object())
+                    .map(|obj| obj.keys().cloned().collect())
+                    .unwrap_or_default();
+                nodes.sort_by(|a, b| {
+                    if a == "Unassigned" { std::cmp::Ordering::Less }
+                    else if b == "Unassigned" { std::cmp::Ordering::Greater }
+                    else { a.cmp(b) }
+                });
+                let indices: Vec<String> = value.get("indices")
+                    .and_then(|i| i.as_array())
+                    .map(|arr| arr.iter().filter_map(|idx| idx.get("name").and_then(|n| n.as_str()).map(String::from)).collect())
+                    .unwrap_or_default();
+                let num_indices = indices.len();
+                self.viewer.shards_nodes = nodes;
+                self.viewer.shards_indices = indices;
+                self.viewer.shards_data = value;
+                self.viewer.shards_selected_row = 0;
+                self.viewer.shards_loaded = true;
+                self.viewer.stats_last_refresh = std::time::Instant::now();
+                self.status_msg = format!(
+                    "DB Shards: {} indices, {} nodes [{}]",
+                    num_indices, self.viewer.shards_nodes.len(), self.viewer.shards_show.label()
+                );
+            }
+            StatsFetchResult::CaptureGraphs(nodes_data) => {
+                use crate::app::types::CAPTURE_GRAPH_METRICS;
+                let count = nodes_data.len();
+                self.viewer.cg_nodes = nodes_data;
+                self.viewer.cg_scroll = 0;
+                self.viewer.cg_loaded = true;
+                self.viewer.stats_last_refresh = std::time::Instant::now();
+                self.status_msg = format!(
+                    "Capture Graphs: {} nodes, {} [{}]",
+                    count,
+                    CAPTURE_GRAPH_METRICS[self.viewer.cg_metric_index].label,
+                    self.viewer.cg_interval.label()
+                );
+            }
+            StatsFetchResult::Error(msg) => {
+                self.status_msg = format!("Error: {msg}");
+            }
+        }
+    }
+
     /// Load user state and fetch data when first visiting Files tab
     pub async fn vr_init_files_tab(&mut self) {
         if !self.viewer.files_state_loaded {

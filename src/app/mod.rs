@@ -216,6 +216,9 @@ impl App {
     }
 
     pub fn needs_animation(&self) -> bool {
+        if self.show_loading {
+            return true;
+        }
         match self.app_mode {
             AppMode::Viewer => self.active_tab == Tab::Settings,
             AppMode::Cont3xt => {

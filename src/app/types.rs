@@ -1228,6 +1228,18 @@ pub struct CaptureGraphNodeData {
     pub values: Vec<f64>,
 }
 
+/// Result from a background stats fetch
+pub enum StatsFetchResult {
+    /// Column-based tab result (Capture, DBStats, DBIndices, DBTasks, DBRecovery)
+    Table(StatsTab, Value),
+    /// DB Shards grid result
+    Shards(Value),
+    /// Capture Graphs per-node data
+    CaptureGraphs(Vec<CaptureGraphNodeData>),
+    /// Error
+    Error(String),
+}
+
 #[derive(PartialEq)]
 pub enum StatsView {
     List,
