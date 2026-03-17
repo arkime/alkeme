@@ -983,14 +983,35 @@ pub(super) fn draw_loading(f: &mut Frame, app: &mut App, area: Rect) {
         } else {
             app.loading_owl_x = new_x as u16;
         }
+
+        // Random jump: ~5% chance per tick when not already jumping
+        if app.loading_owl_jump_frame == 0 {
+            // Simple pseudo-random using tick count parity + position
+            let seed = (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos() >> 4) as u16;
+            if seed % 20 == 0 {
+                app.loading_owl_jump_frame = 6; // 6 frames of jump animation
+            }
+        }
+
+        // Advance jump animation: up for 3 frames, down for 3 frames
+        if app.loading_owl_jump_frame > 0 {
+            app.loading_owl_jump_frame -= 1;
+            app.loading_owl_jump_y = if app.loading_owl_jump_frame >= 3 { 2 } else { 1 };
+            if app.loading_owl_jump_frame == 0 {
+                app.loading_owl_jump_y = 0;
+            }
+        }
     }
 
     let owl = if app.loading_owl_dx > 0 { &owl_right } else { &owl_left };
 
     // Draw owl at animated position
     for (i, row) in owl.iter().enumerate() {
-        let y = inner.y + 1 + i as u16;
-        if y < inner.y + inner.height {
+        let y = (inner.y + 1 + i as u16).saturating_sub(app.loading_owl_jump_y);
+        if y >= inner.y && y < inner.y + inner.height {
             let x = inner.x + app.loading_owl_x;
             let owl_area = Rect::new(x, y, owl_w.min(inner.width - app.loading_owl_x), 1);
             f.render_widget(
