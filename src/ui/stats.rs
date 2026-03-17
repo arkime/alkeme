@@ -775,12 +775,11 @@ fn draw_capture_graphs(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     let metric = CAPTURE_GRAPH_METRICS[app.viewer.cg_metric_index];
-    let graph_height: u16 = 3; // each node graph is 3 lines
     let node_count = app.viewer.cg_nodes.len();
 
-    // Compute how many nodes fit in the area (accounting for border)
+    // 1 row per node (horizon chart style)
     let inner_height = area.height.saturating_sub(2); // top+bottom border
-    let visible_count = (inner_height / graph_height).max(1) as usize;
+    let visible_count = inner_height.max(1) as usize;
     let scroll = app.viewer.cg_scroll.min(node_count.saturating_sub(visible_count));
     app.viewer.cg_scroll = scroll;
 
@@ -818,45 +817,53 @@ fn draw_capture_graphs(f: &mut Frame, app: &mut App, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    // Determine the graph width (inner width minus label column)
-    let graph_width = inner.width.saturating_sub(label_width) as usize;
-    if graph_width < 2 {
+    // Graph width: each braille char = 2 data points
+    let graph_char_width = inner.width.saturating_sub(label_width) as usize;
+    if graph_char_width < 2 {
         return;
     }
+    let graph_data_width = graph_char_width * 2;
 
-    // Draw each visible node
+    // Find global max across ALL nodes for consistent scale
+    let global_max = app.viewer.cg_nodes.iter()
+        .flat_map(|n| n.values.iter())
+        .cloned()
+        .fold(0.0f64, f64::max);
+
+    // Horizon band colors (cubism-style, increasing intensity)
+    let band_colors: [Color; 4] = [
+        Color::Rgb(20, 60, 100),   // darkest blue
+        Color::Rgb(40, 130, 190),  // medium blue
+        Color::Rgb(70, 190, 235),  // light blue
+        Color::Rgb(110, 230, 255), // brightest cyan
+    ];
+
     let visible_nodes = &app.viewer.cg_nodes[scroll..(scroll + visible_count).min(node_count)];
 
     for (i, node) in visible_nodes.iter().enumerate() {
-        let y = inner.y + (i as u16) * graph_height;
-        if y + graph_height > inner.y + inner.height {
+        let y = inner.y + i as u16;
+        if y >= inner.y + inner.height {
             break;
         }
 
-        // Label area
-        let label_area = Rect::new(inner.x, y, label_width, graph_height);
+        // Node name label
         let label_text = if node.node_name.len() > label_width as usize {
             &node.node_name[..label_width as usize]
         } else {
             &node.node_name
         };
-        // Center the label vertically in the 3-row area
-        let label_y_offset = graph_height / 2;
         let label = Paragraph::new(label_text.to_string())
             .style(Style::default().fg(Color::Yellow));
-        f.render_widget(label, Rect::new(label_area.x, label_area.y + label_y_offset, label_area.width, 1));
+        f.render_widget(label, Rect::new(inner.x, y, label_width, 1));
 
-        // Graph area
-        let graph_area = Rect::new(inner.x + label_width, y, graph_width as u16, graph_height);
-
-        // Downsample values to graph_width columns
+        // Downsample values to graph_data_width points
         let values = &node.values;
         let num_points = values.len();
-        let mut columns = vec![0.0f64; graph_width];
+        let mut columns = vec![0.0f64; graph_data_width];
         if num_points > 0 {
             for (ci, col) in columns.iter_mut().enumerate() {
-                let start_idx = ci * num_points / graph_width;
-                let end_idx = ((ci + 1) * num_points / graph_width).min(num_points);
+                let start_idx = ci * num_points / graph_data_width;
+                let end_idx = ((ci + 1) * num_points / graph_data_width).min(num_points);
                 if end_idx > start_idx {
                     let sum: f64 = values[start_idx..end_idx].iter().sum();
                     *col = sum / (end_idx - start_idx) as f64;
@@ -864,43 +871,56 @@ fn draw_capture_graphs(f: &mut Frame, app: &mut App, area: Rect) {
             }
         }
 
-        // Find max value for normalization
-        let max_val = columns.iter().cloned().fold(0.0f64, f64::max);
-        if max_val <= 0.0 {
-            // Empty graph - just draw the border
-            let empty_block = Block::default().borders(Borders::NONE);
-            f.render_widget(empty_block, graph_area);
-            continue;
+        // Build braille characters with horizon-chart band coloring
+        let mut spans = Vec::with_capacity(graph_char_width);
+        for ci in 0..graph_char_width {
+            let left_val = columns.get(ci * 2).copied().unwrap_or(0.0);
+            let right_val = columns.get(ci * 2 + 1).copied().unwrap_or(0.0);
+
+            let (left_band, left_h) = horizon_band_height(left_val, global_max);
+            let (right_band, right_h) = horizon_band_height(right_val, global_max);
+
+            let ch = braille_from_heights(left_h, right_h);
+            let color = band_colors[left_band.max(right_band) as usize];
+
+            spans.push(Span::styled(
+                String::from(ch),
+                Style::default().fg(color),
+            ));
         }
 
-        let x_max = (graph_width as f64 - 1.0).max(1.0);
-        let pts: Vec<(f64, f64)> = columns.iter().enumerate()
-            .map(|(x, &v)| (x as f64, (v / max_val) * 100.0))
-            .collect();
-
-        let canvas = Canvas::default()
-            .marker(Marker::Braille)
-            .x_bounds([0.0, x_max])
-            .y_bounds([0.0, 100.0])
-            .paint(move |ctx| {
-                for &(x, y) in &pts {
-                    if y > 0.0 {
-                        ctx.draw(&CanvasLine {
-                            x1: x, y1: 0.0,
-                            x2: x, y2: y,
-                            color: Color::Cyan,
-                        });
-                    }
-                }
-            });
-
-        f.render_widget(canvas, graph_area);
+        let graph_area = Rect::new(inner.x + label_width, y, graph_char_width as u16, 1);
+        f.render_widget(Paragraph::new(Line::from(spans)), graph_area);
     }
 
     // Draw metric popup if open
     if app.viewer.cg_show_metric_popup {
         draw_metric_popup(f, app, area);
     }
+}
+
+/// Horizon chart: divide value range into 4 bands, return (band_index, height_within_band).
+/// Height is 0-4 (braille dots from bottom).
+fn horizon_band_height(value: f64, max_val: f64) -> (u8, u8) {
+    if max_val <= 0.0 || value <= 0.0 {
+        return (0, 0);
+    }
+    let norm = (value / max_val).min(1.0);
+    let band = (norm * 4.0).floor().min(3.0) as u8;
+    let within = norm * 4.0 - band as f64;
+    // ceil + max(1) ensures any positive value shows at least 1 dot
+    let height = (within * 4.0).ceil().max(1.0).min(4.0) as u8;
+    (band, height)
+}
+
+/// Build a braille character from left/right column fill heights (0-4 dots from bottom).
+fn braille_from_heights(left: u8, right: u8) -> char {
+    // Left column bottom-to-top: dot7(0x40), dot3(0x04), dot2(0x02), dot1(0x01)
+    const LEFT: [u8; 5] = [0x00, 0x40, 0x44, 0x46, 0x47];
+    // Right column bottom-to-top: dot8(0x80), dot6(0x20), dot5(0x10), dot4(0x08)
+    const RIGHT: [u8; 5] = [0x00, 0x80, 0xA0, 0xB0, 0xB8];
+    let bits = LEFT[left.min(4) as usize] | RIGHT[right.min(4) as usize];
+    char::from_u32(0x2800 + bits as u32).unwrap_or(' ')
 }
 
 fn draw_metric_popup(f: &mut Frame, app: &App, area: Rect) {

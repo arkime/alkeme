@@ -1485,11 +1485,11 @@ impl App {
                 self.input_mode = InputMode::Expression;
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                let page = (self.visible_rows / 3).max(1);
+                let page = self.visible_rows.max(1);
                 self.viewer.cg_scroll = (self.viewer.cg_scroll + page).min(self.viewer.cg_nodes.len().saturating_sub(1));
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                let page = (self.visible_rows / 3).max(1);
+                let page = self.visible_rows.max(1);
                 self.viewer.cg_scroll = self.viewer.cg_scroll.saturating_sub(page);
             }
             KeyCode::Down | KeyCode::Char('j') => {
