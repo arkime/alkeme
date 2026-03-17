@@ -847,7 +847,7 @@ fn draw_capture_graphs(f: &mut Frame, app: &mut App, area: Rect) {
         }
 
         // Alternating subtle background for row separation
-        let row_bg = if i % 2 == 1 { Some(Color::Rgb(25, 25, 35)) } else { None };
+        let row_bg = if i % 2 == 1 { Some(Color::Rgb(35, 35, 50)) } else { None };
 
         // Node name label
         let label_text = if node.node_name.len() > label_width as usize {
