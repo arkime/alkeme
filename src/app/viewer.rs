@@ -6,12 +6,11 @@ impl App {
 
     /// Load user state and fetch data when first visiting Stats tab
     pub async fn vr_init_stats_tab(&mut self) {
-        if let Some(idx) = self.viewer.stats_tab.col_index() {
-            if !self.viewer.stats_state_loaded[idx] {
+        if let Some(idx) = self.viewer.stats_tab.col_index()
+            && !self.viewer.stats_state_loaded[idx] {
                 self.vr_load_stats_state(self.viewer.stats_tab).await;
                 self.viewer.stats_state_loaded[idx] = true;
             }
-        }
         self.vr_request_stats_fetch();
     }
 
@@ -592,12 +591,11 @@ impl App {
         let new_cols = stats_columns_from_fields(&field_refs, &all);
         if !new_cols.is_empty() {
             self.viewer.files_columns = new_cols;
-            if !shareable.sort_field.is_empty() {
-                if let Some(pos) = self.viewer.files_columns.iter().position(|c| c.sort == shareable.sort_field || c.field == shareable.sort_field) {
+            if !shareable.sort_field.is_empty()
+                && let Some(pos) = self.viewer.files_columns.iter().position(|c| c.sort == shareable.sort_field || c.field == shareable.sort_field) {
                     self.viewer.files_sort_column = pos;
                     self.viewer.files_sort_desc = shareable.sort_dir == "desc";
                 }
-            }
         }
     }
 
@@ -1119,12 +1117,11 @@ impl App {
         if let Some(order) = state.get("order").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.as_array()) {
             let sort_field = order.first().and_then(|v| v.as_str()).unwrap_or("");
             let sort_dir = order.get(1).and_then(|v| v.as_str()).unwrap_or("asc");
-            if !sort_field.is_empty() {
-                if let Some(pos) = self.viewer.stats_columns[idx].iter().position(|c| c.sort == sort_field || c.field == sort_field) {
+            if !sort_field.is_empty()
+                && let Some(pos) = self.viewer.stats_columns[idx].iter().position(|c| c.sort == sort_field || c.field == sort_field) {
                     self.viewer.stats_sort_column = pos;
                     self.viewer.stats_sort_desc = sort_dir == "desc";
                 }
-            }
         }
     }
 
@@ -1147,12 +1144,11 @@ impl App {
         if let Some(order) = state.get("order").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.as_array()) {
             let sort_field = order.first().and_then(|v| v.as_str()).unwrap_or("");
             let sort_dir = order.get(1).and_then(|v| v.as_str()).unwrap_or("asc");
-            if !sort_field.is_empty() {
-                if let Some(pos) = self.viewer.files_columns.iter().position(|c| c.sort == sort_field || c.field == sort_field) {
+            if !sort_field.is_empty()
+                && let Some(pos) = self.viewer.files_columns.iter().position(|c| c.sort == sort_field || c.field == sort_field) {
                     self.viewer.files_sort_column = pos;
                     self.viewer.files_sort_desc = sort_dir == "desc";
                 }
-            }
         }
     }
 }

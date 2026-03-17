@@ -77,8 +77,8 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
             lines.push(line);
 
             // Show issues as grouped counts (e.g., "2 Out of Date, 1 Low Packets")
-            if let Some(issues) = issues {
-                if !issues.is_empty() {
+            if let Some(issues) = issues
+                && !issues.is_empty() {
                     // Count issues by title
                     let mut counts: Vec<(String, u32, bool)> = Vec::new();
                     for issue in issues {
@@ -103,7 +103,6 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
                     }
                     lines.push(Line::from(issue_spans));
                 }
-            }
         }
         lines.push(Line::from("")); // spacer between groups
     }
@@ -113,7 +112,7 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
         .title(" Dashboard (↑/↓ navigate, Enter=open cluster, i=detail, r=refresh) ");
 
     // Auto-scroll to keep selected cluster visible
-    let content_height = area.height.saturating_sub(2) as u16; // borders
+    let content_height = area.height.saturating_sub(2); // borders
     app.visible_rows = content_height as usize;
     // Calculate line index of selected cluster
     let mut selected_line: u16 = 0;
@@ -134,11 +133,10 @@ fn draw_dashboard(f: &mut Frame, app: &mut App, area: Rect) {
             }
             line_count += 1; // cluster line
             let cluster_id = _cluster.id.as_deref().unwrap_or("");
-            if let Some(issues) = app.parliament.issues_map.get(cluster_id) {
-                if !issues.is_empty() {
+            if let Some(issues) = app.parliament.issues_map.get(cluster_id)
+                && !issues.is_empty() {
                     line_count += 1; // single grouped-counts line
                 }
-            }
         }
         line_count += 1; // spacer
     }
@@ -209,8 +207,8 @@ fn build_cluster_line<'a>(
     ));
 
     // Stats (only for non-disabled, non-multiviewer clusters)
-    if cluster.cluster_type != "disabled" && cluster.cluster_type != "multiviewer" {
-        if let Some(stats) = stats {
+    if cluster.cluster_type != "disabled" && cluster.cluster_type != "multiviewer"
+        && let Some(stats) = stats {
             // BPS
             spans.push(Span::styled(
                 format!(" {:>10}", format_human_bps(stats.delta_bps)),
@@ -227,7 +225,7 @@ fn build_cluster_line<'a>(
             // Monitoring sessions
             let mon_color = if stats.monitoring == 0 { Color::Yellow } else { Color::Cyan };
             spans.push(Span::styled(
-                format!(" {:>11} sess", format_number(stats.monitoring as u64)),
+                format!(" {:>11} sess", format_number(stats.monitoring)),
                 Style::default().fg(mon_color),
             ));
 
@@ -259,7 +257,6 @@ fn build_cluster_line<'a>(
                 spans.push(Span::styled(" ⚠stats", Style::default().fg(Color::Red)));
             }
         }
-    }
 
     Line::from(spans)
 }

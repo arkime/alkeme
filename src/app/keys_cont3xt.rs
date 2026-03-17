@@ -229,8 +229,8 @@ impl App {
                 KeyCode::Char('s') | KeyCode::Char('w') => {
                     // Write card definition to /tmp file
                     let actual_idx = self.cont3xt.tree_order.get(self.cont3xt.selected).and_then(|t| t.result_idx());
-                    if let Some(actual_idx) = actual_idx {
-                        if let Some(result) = self.cont3xt.results.get(actual_idx) {
+                    if let Some(actual_idx) = actual_idx
+                        && let Some(result) = self.cont3xt.results.get(actual_idx) {
                             let card = self.cont3xt.integrations.iter()
                                 .find(|i| i.name == result.name)
                                 .and_then(|i| i.card.as_ref());
@@ -245,7 +245,6 @@ impl App {
                                 Err(e) => self.status_msg = format!("Error writing card: {e}"),
                             }
                         }
-                    }
                 }
                 _ => {}
             }
@@ -359,11 +358,10 @@ impl App {
                             // Delete selected view
                             if self.cont3xt.view_selected > 0 {
                                 let view_idx = self.cont3xt.view_selected - 1;
-                                if let Some(view) = self.cont3xt.views.get(view_idx) {
-                                    if view.editable {
+                                if let Some(view) = self.cont3xt.views.get(view_idx)
+                                    && view.editable {
                                         self.cont3xt.integration_popup_mode = IntegrationPopupMode::ConfirmDelete;
                                     }
-                                }
                             }
                         }
                         _ => {}
@@ -947,17 +945,16 @@ impl App {
                     self.cont3xt.int_editor_show_password = !self.cont3xt.int_editor_show_password;
                 }
                 KeyCode::Char(' ') | KeyCode::Enter => {
-                    if let Some(entry) = self.cont3xt.int_editor_values.get_mut(self.cont3xt.int_editor_selected) {
-                        if entry.3 { // is_boolean
+                    if let Some(entry) = self.cont3xt.int_editor_values.get_mut(self.cont3xt.int_editor_selected)
+                        && entry.3 { // is_boolean
                             entry.1 = if entry.1 == "true" { "false".to_string() } else { "true".to_string() };
                             self.cont3xt.int_settings_dirty = true;
                         }
-                    }
                 }
                 _ => {
                     // Text input for non-boolean fields
-                    if let Some(entry) = self.cont3xt.int_editor_values.get(self.cont3xt.int_editor_selected) {
-                        if !entry.3 { // not boolean
+                    if let Some(entry) = self.cont3xt.int_editor_values.get(self.cont3xt.int_editor_selected)
+                        && !entry.3 { // not boolean
                             let locked = self.cont3xt.int_editor_idx < self.cont3xt.int_settings.len() && self.cont3xt.int_settings[self.cont3xt.int_editor_idx].locked;
                             if !locked {
                                 match key.code {
@@ -969,21 +966,19 @@ impl App {
                                         }
                                     }
                                     KeyCode::Backspace => {
-                                        if self.cont3xt.int_editor_cursor > 0 {
-                                            if let Some(entry) = self.cont3xt.int_editor_values.get_mut(self.cont3xt.int_editor_selected) {
+                                        if self.cont3xt.int_editor_cursor > 0
+                                            && let Some(entry) = self.cont3xt.int_editor_values.get_mut(self.cont3xt.int_editor_selected) {
                                                 entry.1.remove(self.cont3xt.int_editor_cursor - 1);
                                                 self.cont3xt.int_editor_cursor -= 1;
                                                 self.cont3xt.int_settings_dirty = true;
                                             }
-                                        }
                                     }
                                     KeyCode::Delete => {
-                                        if let Some(entry) = self.cont3xt.int_editor_values.get_mut(self.cont3xt.int_editor_selected) {
-                                            if self.cont3xt.int_editor_cursor < entry.1.len() {
+                                        if let Some(entry) = self.cont3xt.int_editor_values.get_mut(self.cont3xt.int_editor_selected)
+                                            && self.cont3xt.int_editor_cursor < entry.1.len() {
                                                 entry.1.remove(self.cont3xt.int_editor_cursor);
                                                 self.cont3xt.int_settings_dirty = true;
                                             }
-                                        }
                                     }
                                     KeyCode::Left => {
                                         if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -1026,7 +1021,6 @@ impl App {
                                 }
                             }
                         }
-                    }
                 }
             }
             return;
@@ -1058,18 +1052,16 @@ impl App {
 
 
         // Link group settings editor intercept
-        if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::LinkGroups {
-            if self.handle_c3_lg_settings_key(key) {
+        if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::LinkGroups
+            && self.handle_c3_lg_settings_key(key) {
                 return;
             }
-        }
 
         // Overview settings editor intercept
-        if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Overviews {
-            if self.handle_c3_ov_settings_key(key) {
+        if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Overviews
+            && self.handle_c3_ov_settings_key(key) {
                 return;
             }
-        }
 
 
         // Integration settings filter
@@ -1274,36 +1266,32 @@ impl App {
                 }
             }
             KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if self.active_tab == Tab::Search && self.cont3xt.focus == Cont3xtFocus::Results {
-                    if let Some(name) = self.c3_current_integration_name() {
+                if self.active_tab == Tab::Search && self.cont3xt.focus == Cont3xtFocus::Results
+                    && let Some(name) = self.c3_current_integration_name() {
                         for i in (self.cont3xt.selected + 1)..self.cont3xt.tree_order.len() {
-                            if let Some(idx) = self.cont3xt.tree_order[i].result_idx() {
-                                if self.cont3xt.results.get(idx).map(|r| r.name.as_str()) == Some(&name) {
+                            if let Some(idx) = self.cont3xt.tree_order[i].result_idx()
+                                && self.cont3xt.results.get(idx).map(|r| r.name.as_str()) == Some(&name) {
                                     self.cont3xt.selected = i;
                                     self.cont3xt.detail_scroll = 0;
                                     self.cont3xt.detail_hscroll = 0;
                                     break;
                                 }
-                            }
                         }
                     }
-                }
             }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if self.active_tab == Tab::Search && self.cont3xt.focus == Cont3xtFocus::Results {
-                    if let Some(name) = self.c3_current_integration_name() {
+                if self.active_tab == Tab::Search && self.cont3xt.focus == Cont3xtFocus::Results
+                    && let Some(name) = self.c3_current_integration_name() {
                         for i in (0..self.cont3xt.selected).rev() {
-                            if let Some(idx) = self.cont3xt.tree_order[i].result_idx() {
-                                if self.cont3xt.results.get(idx).map(|r| r.name.as_str()) == Some(&name) {
+                            if let Some(idx) = self.cont3xt.tree_order[i].result_idx()
+                                && self.cont3xt.results.get(idx).map(|r| r.name.as_str()) == Some(&name) {
                                     self.cont3xt.selected = i;
                                     self.cont3xt.detail_scroll = 0;
                                     self.cont3xt.detail_hscroll = 0;
                                     break;
                                 }
-                            }
                         }
                     }
-                }
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 if self.active_tab == Tab::Search {
@@ -1490,12 +1478,11 @@ impl App {
                         self.cont3xt.lg_selected -= 1;
                         self.cont3xt.lg_table_state.select(Some(self.cont3xt.lg_selected));
                     }
-                } else if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Overviews {
-                    if self.cont3xt.ov_selected > 0 {
+                } else if self.active_tab == Tab::Settings && self.cont3xt.settings_tab == C3SettingsTab::Overviews
+                    && self.cont3xt.ov_selected > 0 {
                         self.cont3xt.ov_selected -= 1;
                         self.cont3xt.ov_table_state.select(Some(self.cont3xt.ov_selected));
                     }
-                }
             }
             KeyCode::PageDown => {
                 if self.active_tab == Tab::Search && self.cont3xt.focus == Cont3xtFocus::Detail {
@@ -1608,7 +1595,7 @@ impl App {
                         }
                     }
                 } else if self.active_tab == Tab::History {
-                    let total_pages = (self.cont3xt.history_total + 99) / 100;
+                    let total_pages = self.cont3xt.history_total.div_ceil(100);
                     if self.cont3xt.history_page < total_pages {
                         self.cont3xt.history_page += 1;
                         self.cont3xt.history_selected = 0;
@@ -1672,14 +1659,13 @@ impl App {
                 });
             }
             KeyCode::Char('d') if self.active_tab == Tab::History => {
-                if let Some(item) = self.cont3xt.history_data.get(self.cont3xt.history_selected) {
-                    if let Some(id) = item.get("_id").and_then(|v| v.as_str()) {
+                if let Some(item) = self.cont3xt.history_data.get(self.cont3xt.history_selected)
+                    && let Some(id) = item.get("_id").and_then(|v| v.as_str()) {
                         let id = id.to_string();
                         tokio::task::block_in_place(|| {
                             tokio::runtime::Handle::current().block_on(self.c3_delete_history(&id))
                         });
                     }
-                }
             }
             KeyCode::Enter if self.active_tab == Tab::History => {
                 // Re-run the search from the selected history entry

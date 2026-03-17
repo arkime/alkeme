@@ -12,7 +12,7 @@ impl App {
                     for (name, info) in obj {
                         let doable = info.get("doable").and_then(|v| v.as_bool()).unwrap_or(false);
                         let order = info.get("order").and_then(|v| v.as_u64()).unwrap_or(10000) as u32;
-                        let card = info.get("card").and_then(|c| parse_card(c));
+                        let card = info.get("card").and_then(parse_card);
                         integrations.push(Cont3xtIntegration {
                             name: name.clone(),
                             doable,
@@ -211,7 +211,7 @@ impl App {
                 .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
             if let serde_json::Value::Object(map) = indicator_obj {
                 // Store itype alongside integration data
-                map.insert(format!("_cont3xt_itype"), serde_json::Value::String(result.itype.clone()));
+                map.insert("_cont3xt_itype".to_string(), serde_json::Value::String(result.itype.clone()));
                 map.insert(result.name.clone(), result.data.clone());
             }
         }
@@ -380,7 +380,7 @@ impl App {
                 if link.is_separator() {
                     continue;
                 }
-                if !link.itypes.iter().any(|t| *t == itype) {
+                if !link.itypes.contains(&itype) {
                     continue;
                 }
                 if !filter.is_empty() {

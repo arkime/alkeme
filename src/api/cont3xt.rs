@@ -264,15 +264,14 @@ impl ArkimeClient {
                             is_boolean,
                         });
 
-                        if let Some(vo) = values_obj {
-                            if let Some(val) = vo.get(field_name) {
+                        if let Some(vo) = values_obj
+                            && let Some(val) = vo.get(field_name) {
                                 if is_boolean {
                                     values.insert(field_name.clone(), val.as_bool().unwrap_or(false).to_string());
                                 } else {
                                     values.insert(field_name.clone(), val.as_str().unwrap_or("").to_string());
                                 }
                             }
-                        }
                     }
                 }
 
@@ -523,8 +522,8 @@ impl FetchClient {
                         let parent_itype = obj.get("parentIndicator")
                             .and_then(|v| v.get("itype"))
                             .and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        if !child_query.is_empty() && !parent_query.is_empty() {
-                            if let Ok(mut vec) = results.lock() {
+                        if !child_query.is_empty() && !parent_query.is_empty()
+                            && let Ok(mut vec) = results.lock() {
                                 // Store link as a special marker result with empty name
                                 vec.push(Cont3xtResult {
                                     name: String::new(),
@@ -537,7 +536,6 @@ impl FetchClient {
                                     has_data: false,
                                 });
                             }
-                        }
                     }
                     "data" | "fail" => {
                         // Update sent/total from every data and fail message

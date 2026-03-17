@@ -150,11 +150,10 @@ pub(super) fn handle_column_editor_key_generic<T: EditorItemTrait>(
                     items.swap(*state.selected, *state.selected + 1);
                     *state.selected += 1;
                 }
-            } else if let Some(pos) = cur_pos {
-                if pos + 1 < filtered.len() {
+            } else if let Some(pos) = cur_pos
+                && pos + 1 < filtered.len() {
                     *state.selected = filtered[pos + 1];
                 }
-            }
         }
         KeyCode::Up | KeyCode::Char('k') => {
             if *state.mode == ColumnEditorMode::Reorder {
@@ -162,11 +161,10 @@ pub(super) fn handle_column_editor_key_generic<T: EditorItemTrait>(
                     items.swap(*state.selected, *state.selected - 1);
                     *state.selected -= 1;
                 }
-            } else if let Some(pos) = cur_pos {
-                if pos > 0 {
+            } else if let Some(pos) = cur_pos
+                && pos > 0 {
                     *state.selected = filtered[pos - 1];
                 }
-            }
         }
         KeyCode::Char('m') => {
             if *state.mode == ColumnEditorMode::Reorder {
@@ -263,11 +261,10 @@ pub(super) fn handle_layout_popup_key_generic(
                         }
                     }
                     KeyCode::Up => {
-                        if let Some(pos) = cur_pos {
-                            if pos > 0 {
+                        if let Some(pos) = cur_pos
+                            && pos > 0 {
                                 *state.selected = filtered[pos - 1] + 3;
                             }
-                        }
                     }
                     _ => {
                         if handle_text_input_key(key.code, state.filter, state.filter_cursor) {
@@ -325,14 +322,12 @@ pub(super) fn handle_layout_popup_key_generic(
                     }
                 }
                 KeyCode::Char('x') | KeyCode::Delete => {
-                    if let Some(idx) = state.selected.checked_sub(3) {
-                        if let Some(item) = items.get(idx) {
-                            if !item.shared {
+                    if let Some(idx) = state.selected.checked_sub(3)
+                        && let Some(item) = items.get(idx)
+                            && !item.shared {
                                 *state.delete_name = item.name.clone();
                                 *state.mode = LayoutPopupMode::ConfirmDelete;
                             }
-                        }
-                    }
                 }
                 _ => {}
             }

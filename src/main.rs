@@ -202,11 +202,10 @@ async fn main() -> Result<()> {
 
     // If we have a cookie jar, try to reuse existing session before prompting for login
     let mut jar_session_valid = false;
-    if cli.jar.is_some() {
-        if let Ok(true) = client.check_session().await {
+    if cli.jar.is_some()
+        && let Ok(true) = client.check_session().await {
             jar_session_valid = true;
         }
-    }
 
     if !jar_session_valid && defers_prompts {
         client.login().await?;
@@ -276,13 +275,11 @@ async fn main() -> Result<()> {
         }
     };
 
-    if app_mode == app::AppMode::Viewer {
-        if let Ok(health) = client.get_eshealth().await {
-            if let Some(name) = health.get("cluster_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+    if app_mode == app::AppMode::Viewer
+        && let Ok(health) = client.get_eshealth().await
+            && let Some(name) = health.get("cluster_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                 cluster_name = Some(name.to_string());
             }
-        }
-    }
 
     let mut app = App::new(&cli.url, auth_mode, username, password, app_mode);
     if let Some(name) = cluster_name {
@@ -503,8 +500,8 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             }
 
             // Check if background stats fetch completed
-            if let Some(ref mut handle) = stats_handle {
-                if handle.is_finished() {
+            if let Some(ref mut handle) = stats_handle
+                && handle.is_finished() {
                     let handle = stats_handle.take().unwrap();
                     match handle.await {
                         Ok(result) => {
@@ -518,7 +515,6 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     needs_redraw = true;
                     continue;
                 }
-            }
 
             if app.viewer.pending_summary_fetch {
                 app.viewer.pending_summary_fetch = false;
@@ -528,12 +524,11 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 summary_handle = Some(tokio::spawn(async move {
                     let body = client.fetch_post(&url, &[("fields", field.as_str())]).await?;
                     let arr: Vec<serde_json::Value> = serde_json::from_str(&body)?;
-                    if arr.len() >= 2 {
-                        if let Some(data) = arr[1].get("data") {
+                    if arr.len() >= 2
+                        && let Some(data) = arr[1].get("data") {
                             let items: Vec<crate::api::SummaryItem> = serde_json::from_value(data.clone())?;
                             return Ok(items);
                         }
-                    }
                     Ok(Vec::new())
                 }));
                 needs_redraw = true;
@@ -541,8 +536,8 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
             }
 
             // Check if background summary fetch completed
-            if let Some(ref mut handle) = summary_handle {
-                if handle.is_finished() {
+            if let Some(ref mut handle) = summary_handle
+                && handle.is_finished() {
                     let handle = summary_handle.take().unwrap();
                     match handle.await {
                         Ok(Ok(items)) => {
@@ -565,11 +560,10 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     needs_redraw = true;
                     continue;
                 }
-            }
 
             // Check if background packets fetch completed
-            if let Some(ref mut handle) = packets_handle {
-                if handle.is_finished() {
+            if let Some(ref mut handle) = packets_handle
+                && handle.is_finished() {
                     let handle = packets_handle.take().unwrap();
                     match handle.await {
                         Ok(Ok(mut data)) => {
@@ -589,7 +583,6 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     needs_redraw = true;
                     continue;
                 }
-            }
 
             // Auto-refresh stats every 30 seconds when on Stats tab
             if app.active_tab == app::Tab::Stats
@@ -658,8 +651,8 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     app.cont3xt.search_total = live_total;
                 }
                 app.cont3xt.search_sent = live_sent;
-                if let Ok(vec) = c3_streaming_results.lock() {
-                    if vec.len() > c3_stream_consumed {
+                if let Ok(vec) = c3_streaming_results.lock()
+                    && vec.len() > c3_stream_consumed {
                         c3_stream_consumed = drain_c3_results(app, &vec, c3_stream_consumed);
                         app.popup_bg_cache = None; // background changed
                         app.status_msg = format!(
@@ -668,11 +661,10 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                         );
                         needs_redraw = true;
                     }
-                }
             }
 
-            if let Some(ref mut handle) = c3_search_handle {
-                if handle.is_finished() {
+            if let Some(ref mut handle) = c3_search_handle
+                && handle.is_finished() {
                     let handle = c3_search_handle.take().unwrap();
                     // Final drain of any remaining results
                     if let Ok(vec) = c3_streaming_results.lock() {
@@ -708,7 +700,6 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                     needs_redraw = true;
                     continue;
                 }
-            }
         }
 
         // Parliament auto-refresh every 30 seconds

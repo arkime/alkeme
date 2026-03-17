@@ -894,17 +894,15 @@ impl TimeRange {
             b'm' | b'M' => (&s[..s.len()-1], "m", 730.5),
             _ => ("", "", 0.0),
         };
-        if !num_str.is_empty() {
-            if let Ok(val) = num_str.parse::<f64>() {
-                if val > 0.0 {
+        if !num_str.is_empty()
+            && let Ok(val) = num_str.parse::<f64>()
+                && val > 0.0 {
                     let hours = val * multiplier;
                     return Ok(TimeRange::Custom {
                         label: format!("{val}{suffix}"),
                         date_value: hours.to_string(),
                     });
                 }
-            }
-        }
         Err(format!("invalid time range '{s}': use a label (15m, 1h, 24h, 1w, All), -1, or {{num}}h/w/m (e.g. 72h, 2w, 3m)"))
     }
 
@@ -998,21 +996,19 @@ impl C3StatsTab {
 
     pub fn columns(&self) -> &[(&str, &str, u16)] {
         // Both sub-tabs share the same columns
-        match self {
-            _ => &[
-                ("name", "Name", 20),
-                ("cacheLookup", "Cache Lookup", 13),
-                ("cacheFound", "Cache Found", 12),
-                ("cacheGood", "Cache Good", 11),
-                ("cacheRecentAvgMS", "Cache Avg MS", 13),
-                ("directLookup", "Direct Lookup", 14),
-                ("directFound", "Direct Found", 13),
-                ("directGood", "Direct Good", 12),
-                ("directError", "Direct Error", 13),
-                ("directRecentAvgMS", "Direct Avg MS", 14),
-                ("total", "Total", 10),
-            ],
-        }
+        &[
+            ("name", "Name", 20),
+            ("cacheLookup", "Cache Lookup", 13),
+            ("cacheFound", "Cache Found", 12),
+            ("cacheGood", "Cache Good", 11),
+            ("cacheRecentAvgMS", "Cache Avg MS", 13),
+            ("directLookup", "Direct Lookup", 14),
+            ("directFound", "Direct Found", 13),
+            ("directGood", "Direct Good", 12),
+            ("directError", "Direct Error", 13),
+            ("directRecentAvgMS", "Direct Avg MS", 14),
+            ("total", "Total", 10),
+        ]
     }
 }
 

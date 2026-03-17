@@ -21,11 +21,10 @@ impl App {
                                 return true;
                             }
                             let li = self.cont3xt.lg_editor_link_idx;
-                            if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
-                                if let Some(link) = group.links.get_mut(li) {
+                            if let Some(group) = self.cont3xt.lg_groups.get_mut(gi)
+                                && let Some(link) = group.links.get_mut(li) {
                                     *link = self.cont3xt.lg_editor_link.clone();
                                 }
-                            }
                             self.cont3xt.lg_level = C3LinkGroupLevel::LinkList;
                         }
                         KeyCode::Up | KeyCode::Char('k') if self.cont3xt.lg_editor_field == C3LinkEditorField::Itypes => {
@@ -115,8 +114,8 @@ impl App {
                             KeyCode::Char('/') => { self.cont3xt.role_popup_filtering = !self.cont3xt.role_popup_filtering; }
                             KeyCode::Char(' ') | KeyCode::Enter if !self.cont3xt.role_popup_filtering => {
                                 let filtered = self.c3_all_roles_filtered();
-                                if let Some(&idx) = filtered.get(self.cont3xt.role_popup_selected) {
-                                    if let Some(role) = self.cont3xt.all_roles.get(idx) {
+                                if let Some(&idx) = filtered.get(self.cont3xt.role_popup_selected)
+                                    && let Some(role) = self.cont3xt.all_roles.get(idx) {
                                         let role = role.clone();
                                         let roles = if self.cont3xt.lg_group_editor_field == C3GroupEditorField::ViewRoles {
                                             &mut self.cont3xt.lg_group_editor_view_roles
@@ -129,7 +128,6 @@ impl App {
                                             roles.push(role);
                                         }
                                     }
-                                }
                             }
                             KeyCode::Down if self.cont3xt.role_popup_filtering => {
                                 self.cont3xt.role_popup_filtering = false;
@@ -160,12 +158,11 @@ impl App {
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             // Save group name + roles
                             let idx = self.cont3xt.lg_group_editor_idx;
-                            if let Some(group) = self.cont3xt.lg_groups.get(idx) {
-                                if !group.editable {
+                            if let Some(group) = self.cont3xt.lg_groups.get(idx)
+                                && !group.editable {
                                     self.status_msg = "Link group is read-only".to_string();
                                     return true;
                                 }
-                            }
                             if let Some(group) = self.cont3xt.lg_groups.get_mut(idx) {
                                 group.name = self.cont3xt.lg_group_editor_name.clone();
                                 group.view_roles = self.cont3xt.lg_group_editor_view_roles.clone();
@@ -264,9 +261,9 @@ impl App {
                         KeyCode::Enter => {
                             if let Some(ri) = real_idx {
                                 let gi = self.cont3xt.lg_editing_group_idx;
-                                if let Some(group) = self.cont3xt.lg_groups.get(gi) {
-                                    if let Some(link) = group.links.get(ri) {
-                                        if !link.is_separator() {
+                                if let Some(group) = self.cont3xt.lg_groups.get(gi)
+                                    && let Some(link) = group.links.get(ri)
+                                        && !link.is_separator() {
                                             self.cont3xt.lg_editor_link = link.clone();
                                             self.cont3xt.lg_editor_link_idx = ri;
                                             self.cont3xt.lg_editor_field = C3LinkEditorField::Name;
@@ -274,15 +271,13 @@ impl App {
                                             self.cont3xt.lg_editor_itype_selected = 0;
                                             self.cont3xt.lg_level = C3LinkGroupLevel::LinkEditor;
                                         }
-                                    }
-                                }
                             }
                         }
                         KeyCode::Char('d') | KeyCode::Char('x') if is_editable => {
                             if let Some(ri) = real_idx {
                                 let gi = self.cont3xt.lg_editing_group_idx;
-                                if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
-                                    if ri < group.links.len() {
+                                if let Some(group) = self.cont3xt.lg_groups.get_mut(gi)
+                                    && ri < group.links.len() {
                                         group.links.remove(ri);
                                         let new_filtered = self.c3_lg_filtered_links();
                                         if self.cont3xt.lg_links_selected >= new_filtered.len() && !new_filtered.is_empty() {
@@ -290,7 +285,6 @@ impl App {
                                         }
                                         self.cont3xt.lg_links_table_state.select(Some(self.cont3xt.lg_links_selected));
                                     }
-                                }
                             }
                         }
                         KeyCode::Char('n') if !has_filter && is_editable => {
@@ -306,7 +300,7 @@ impl App {
                                     external_doc_name: String::new(),
                                     external_doc_url: String::new(),
                                 });
-                                self.cont3xt.lg_links_selected = self.cont3xt.lg_links_selected + 1;
+                                self.cont3xt.lg_links_selected += 1;
                                 self.cont3xt.lg_links_table_state.select(Some(self.cont3xt.lg_links_selected));
                             }
                         }
@@ -331,7 +325,7 @@ impl App {
                             if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
                                 let insert_pos = real_idx.map(|r| r + 1).unwrap_or(group.links.len()).min(group.links.len());
                                 group.links.insert(insert_pos, crate::api::Cont3xtLink::new_separator());
-                                self.cont3xt.lg_links_selected = self.cont3xt.lg_links_selected + 1;
+                                self.cont3xt.lg_links_selected += 1;
                                 self.cont3xt.lg_links_table_state.select(Some(self.cont3xt.lg_links_selected));
                             }
                         }
@@ -346,25 +340,23 @@ impl App {
                         KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter && is_editable => {
                             if let Some(ri) = real_idx {
                                 let gi = self.cont3xt.lg_editing_group_idx;
-                                if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
-                                    if ri > 0 {
+                                if let Some(group) = self.cont3xt.lg_groups.get_mut(gi)
+                                    && ri > 0 {
                                         group.links.swap(ri, ri - 1);
                                         self.cont3xt.lg_links_selected = self.cont3xt.lg_links_selected.saturating_sub(1);
                                         self.cont3xt.lg_links_table_state.select(Some(self.cont3xt.lg_links_selected));
                                     }
-                                }
                             }
                         }
                         KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter && is_editable => {
                             if let Some(ri) = real_idx {
                                 let gi = self.cont3xt.lg_editing_group_idx;
-                                if let Some(group) = self.cont3xt.lg_groups.get_mut(gi) {
-                                    if ri + 1 < group.links.len() {
+                                if let Some(group) = self.cont3xt.lg_groups.get_mut(gi)
+                                    && ri + 1 < group.links.len() {
                                         group.links.swap(ri, ri + 1);
                                         self.cont3xt.lg_links_selected += 1;
                                         self.cont3xt.lg_links_table_state.select(Some(self.cont3xt.lg_links_selected));
                                     }
-                                }
                             }
                         }
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -479,8 +471,8 @@ impl App {
                                 else { self.cont3xt.ov_fe_popup_selected = 0; }
                             }
                             KeyCode::Enter => {
-                                if let Some(&idx) = filtered.get(self.cont3xt.ov_fe_popup_selected) {
-                                    if let Some(name) = self.cont3xt.ov_fe_popup_items.get(idx).cloned() {
+                                if let Some(&idx) = filtered.get(self.cont3xt.ov_fe_popup_selected)
+                                    && let Some(name) = self.cont3xt.ov_fe_popup_items.get(idx).cloned() {
                                         if self.cont3xt.ov_fe_popup_for_field {
                                             // Field selector
                                             if name == "Custom" {
@@ -514,7 +506,6 @@ impl App {
                                             self.cont3xt.ov_field_editor_from = name;
                                         }
                                     }
-                                }
                                 self.cont3xt.ov_fe_popup_open = false;
                             }
                             _ => {}
@@ -704,8 +695,8 @@ impl App {
                             KeyCode::Char('/') => { self.cont3xt.role_popup_filtering = !self.cont3xt.role_popup_filtering; }
                             KeyCode::Char(' ') | KeyCode::Enter if !self.cont3xt.role_popup_filtering => {
                                 let filtered = self.c3_all_roles_filtered();
-                                if let Some(&idx) = filtered.get(self.cont3xt.role_popup_selected) {
-                                    if let Some(role) = self.cont3xt.all_roles.get(idx) {
+                                if let Some(&idx) = filtered.get(self.cont3xt.role_popup_selected)
+                                    && let Some(role) = self.cont3xt.all_roles.get(idx) {
                                         let role = role.clone();
                                         let roles = if self.cont3xt.role_popup_for_edit {
                                             &mut self.cont3xt.ov_editor_edit_roles
@@ -718,7 +709,6 @@ impl App {
                                             roles.push(role);
                                         }
                                     }
-                                }
                             }
                             KeyCode::Down if self.cont3xt.role_popup_filtering => {
                                 self.cont3xt.role_popup_filtering = false;
@@ -863,8 +853,8 @@ impl App {
                         KeyCode::Enter | KeyCode::Char('e') => {
                             if let Some(ri) = real_idx {
                                 let ov_idx = self.cont3xt.ov_editor_idx;
-                                if let Some(ov) = self.cont3xt.ov_list.get(ov_idx) {
-                                    if let Some(field) = ov.fields.get(ri) {
+                                if let Some(ov) = self.cont3xt.ov_list.get(ov_idx)
+                                    && let Some(field) = ov.fields.get(ri) {
                                         self.cont3xt.ov_field_editor_idx = ri;
                                         self.cont3xt.ov_field_editor_from = field.from.clone();
                                         self.cont3xt.ov_field_editor_is_custom = field.field_type == "custom";
@@ -893,14 +883,13 @@ impl App {
                                         self.cont3xt.ov_fe_popup_open = false;
                                         self.cont3xt.ov_level = C3OverviewLevel::FieldEditor;
                                     }
-                                }
                             }
                         }
                         KeyCode::Char('d') | KeyCode::Char('x') if is_editable => {
                             if let Some(ri) = real_idx {
                                 let ov_idx = self.cont3xt.ov_editor_idx;
-                                if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx) {
-                                    if ri < ov.fields.len() {
+                                if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx)
+                                    && ri < ov.fields.len() {
                                         ov.fields.remove(ri);
                                         let new_filtered = self.c3_ov_filtered_fields();
                                         if self.cont3xt.ov_fields_selected >= new_filtered.len() && !new_filtered.is_empty() {
@@ -908,7 +897,6 @@ impl App {
                                         }
                                         self.cont3xt.ov_fields_table_state.select(Some(self.cont3xt.ov_fields_selected));
                                     }
-                                }
                             }
                         }
                         KeyCode::Char('n') | KeyCode::Char('a') if !has_filter && is_editable => {
@@ -943,25 +931,23 @@ impl App {
                         KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter && is_editable => {
                             if let Some(ri) = real_idx {
                                 let ov_idx = self.cont3xt.ov_editor_idx;
-                                if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx) {
-                                    if ri > 0 {
+                                if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx)
+                                    && ri > 0 {
                                         ov.fields.swap(ri, ri - 1);
                                         self.cont3xt.ov_fields_selected = self.cont3xt.ov_fields_selected.saturating_sub(1);
                                         self.cont3xt.ov_fields_table_state.select(Some(self.cont3xt.ov_fields_selected));
                                     }
-                                }
                             }
                         }
                         KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) && !has_filter && is_editable => {
                             if let Some(ri) = real_idx {
                                 let ov_idx = self.cont3xt.ov_editor_idx;
-                                if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx) {
-                                    if ri + 1 < ov.fields.len() {
+                                if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx)
+                                    && ri + 1 < ov.fields.len() {
                                         ov.fields.swap(ri, ri + 1);
                                         self.cont3xt.ov_fields_selected += 1;
                                         self.cont3xt.ov_fields_table_state.select(Some(self.cont3xt.ov_fields_selected));
                                     }
-                                }
                             }
                         }
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1044,14 +1030,12 @@ impl App {
 
     pub(crate) fn c3_save_view_editor(&mut self) {
         // Block save for non-editable views
-        if let Some(ref id) = self.cont3xt.view_editor_id {
-            if let Some(v) = self.cont3xt.settings_views.iter().find(|v| v.id == *id) {
-                if !v.editable {
+        if let Some(ref id) = self.cont3xt.view_editor_id
+            && let Some(v) = self.cont3xt.settings_views.iter().find(|v| v.id == *id)
+                && !v.editable {
                     self.status_msg = "View is read-only".to_string();
                     return;
                 }
-            }
-        }
         let name = self.cont3xt.view_editor_name.trim().to_string();
         if name.is_empty() {
             self.status_msg = "View name cannot be empty".to_string();

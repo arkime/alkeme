@@ -85,7 +85,7 @@ impl App {
                         if s.locked { 0 }
                         else if s.disabled { 4 }
                         else if s.global_configed { 1 }
-                        else if s.fields.iter().any(|f| f.required && s.values.get(&f.name).map_or(true, |v| v.is_empty())) { 3 }
+                        else if s.fields.iter().any(|f| f.required && s.values.get(&f.name).is_none_or(|v| v.is_empty())) { 3 }
                         else { 2 }
                     };
                     status_rank(&settings[a]).cmp(&status_rank(&settings[b]))
@@ -183,7 +183,7 @@ impl App {
         let mut names: Vec<String> = self.cont3xt.integrations.iter()
             .map(|i| i.name.clone())
             .collect();
-        names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        names.sort_by_key(|a| a.to_lowercase());
         names
     }
 
@@ -195,7 +195,7 @@ impl App {
             .and_then(|i| i.card.as_ref())
             .map(|c| c.fields.iter().map(|f| f.label.clone()).collect())
             .unwrap_or_default();
-        labels.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        labels.sort_by_key(|a| a.to_lowercase());
         labels.push("Custom".to_string());
         labels
     }
@@ -429,12 +429,11 @@ impl App {
     pub async fn c3_ov_save(&mut self) {
         let idx = self.cont3xt.ov_editor_idx;
         // Block save for non-editable overviews
-        if let Some(ov) = self.cont3xt.ov_list.get(idx) {
-            if !ov.editable {
+        if let Some(ov) = self.cont3xt.ov_list.get(idx)
+            && !ov.editable {
                 self.status_msg = "Overview is read-only".to_string();
                 return;
             }
-        }
         // Apply editor fields to the overview
         if let Some(ov) = self.cont3xt.ov_list.get_mut(idx) {
             ov.name = self.cont3xt.ov_editor_name.clone();
@@ -464,8 +463,8 @@ impl App {
             return;
         }
         let fi = self.cont3xt.ov_field_editor_idx;
-        if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx) {
-            if let Some(field) = ov.fields.get_mut(fi) {
+        if let Some(ov) = self.cont3xt.ov_list.get_mut(ov_idx)
+            && let Some(field) = ov.fields.get_mut(fi) {
                 field.from = self.cont3xt.ov_field_editor_from.clone();
                 if self.cont3xt.ov_field_editor_is_custom {
                     let json_str = self.cont3xt.ov_fe_json_lines.join("\n");
@@ -492,7 +491,6 @@ impl App {
                     field.custom = None;
                 }
             }
-        }
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.c3_ov_save())
         });

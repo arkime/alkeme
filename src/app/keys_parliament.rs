@@ -210,8 +210,8 @@ impl App {
     }
 
     fn pl_resolve_url(&self, url: &str) -> String {
-        if url.starts_with('/') {
-            if let Ok(parsed) = reqwest::Url::parse(self.client.base_url()) {
+        if url.starts_with('/')
+            && let Ok(parsed) = reqwest::Url::parse(self.client.base_url()) {
                 let host = parsed.host_str().unwrap_or("");
                 return if let Some(port) = parsed.port() {
                     format!("{}://{}:{}{}", parsed.scheme(), host, port, url)
@@ -219,7 +219,6 @@ impl App {
                     format!("{}://{}{}", parsed.scheme(), host, url)
                 };
             }
-        }
         url.to_string()
     }
 
@@ -254,11 +253,10 @@ impl App {
 
         // Fetch cluster name for title bar
         self.title_name = url.to_string();
-        if let Ok(health) = self.client.get_eshealth().await {
-            if let Some(name) = health.get("cluster_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        if let Ok(health) = self.client.get_eshealth().await
+            && let Some(name) = health.get("cluster_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                 self.title_name = name.to_string();
             }
-        }
 
         self.app_mode = AppMode::Viewer;
         self.active_tab = Tab::Sessions;

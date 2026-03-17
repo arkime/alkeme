@@ -373,8 +373,8 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
         let w = inner.width as usize;
 
         // For result rows, extract _cont3xt.count and severity
-        if let Some(idx) = result_idx {
-            if let Some(result) = app.cont3xt.results.get(*idx) {
+        if let Some(idx) = result_idx
+            && let Some(result) = app.cont3xt.results.get(*idx) {
                 let count_val = result.data.get("_cont3xt")
                     .and_then(|c| c.get("count"))
                     .and_then(|v| v.as_u64());
@@ -405,7 +405,6 @@ fn draw_cont3xt_results(f: &mut Frame, app: &mut App, area: Rect) {
                     continue;
                 }
             }
-        }
 
         let full_label = format!("{prefix}{label}");
         let truncated = if full_label.len() > w {
@@ -843,7 +842,7 @@ fn flatten_json_to_lines(value: &serde_json::Value, prefix: &str, depth: usize) 
                     serde_json::Value::Array(arr) => {
                         if arr.iter().all(|v| !v.is_object() && !v.is_array()) {
                             // Simple array: show inline
-                            let vals: Vec<String> = arr.iter().map(|v| format_json_value(v)).collect();
+                            let vals: Vec<String> = arr.iter().map(format_json_value).collect();
                             lines.push(JsonLine::KeyValue(display_key, vals.join(", ")));
                         } else {
                             lines.push(JsonLine::Header(display_key, true));
@@ -1001,7 +1000,7 @@ fn render_card_lines(card: &Cont3xtCard, data: &serde_json::Value, _indicator: &
                         }
                     }
                 }
-                lines.push(JsonLine::Close(format!("  ]")));
+                lines.push(JsonLine::Close("  ]".to_string()));
             }
             "array" => {
                 if let Some(arr) = val.and_then(|v| v.as_array()) {
@@ -1022,7 +1021,7 @@ fn render_card_lines(card: &Cont3xtCard, data: &serde_json::Value, _indicator: &
                         for item in items {
                             lines.push(JsonLine::ArrayValue(format_json_value(item)));
                         }
-                        lines.push(JsonLine::Close(format!("  ]")));
+                        lines.push(JsonLine::Close("  ]".to_string()));
                     }
                 } else if let Some(v) = val {
                     lines.push(JsonLine::KeyValue(field_def.label.clone(), format_card_value(v, field_def)));
@@ -1036,7 +1035,7 @@ fn render_card_lines(card: &Cont3xtCard, data: &serde_json::Value, _indicator: &
                         lines.push(JsonLine::ArrayValue(json_line.to_string()));
                     }
                 }
-                lines.push(JsonLine::Close(format!("  }}")));
+                lines.push(JsonLine::Close("  }".to_string()));
             }
             "dnsRecords" => {
                 // DNS records: data is an object with record types as keys
@@ -1062,9 +1061,8 @@ fn render_card_lines(card: &Cont3xtCard, data: &serde_json::Value, _indicator: &
                 // string, url, externalLink, date, ms, seconds
                 if let Some(v) = val {
                     if v.is_null() { continue; }
-                    if let Some(s) = v.as_str() {
-                        if s.is_empty() { continue; }
-                    }
+                    if let Some(s) = v.as_str()
+                        && s.is_empty() { continue; }
                     lines.push(JsonLine::KeyValue(field_def.label.clone(), format_card_value(v, field_def)));
                 }
             }
@@ -1146,7 +1144,7 @@ fn c3_draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
                 }
                 _ => {
                     val.and_then(|v| v.as_u64())
-                        .map(|v| format_number(v))
+                        .map(format_number)
                         .unwrap_or_else(|| "0".to_string())
                 }
             };
@@ -1263,7 +1261,7 @@ fn c3_draw_history(f: &mut Frame, app: &mut App, area: Rect) {
         String::new()
     };
 
-    let total_pages = (app.cont3xt.history_total + 99) / 100;
+    let total_pages = app.cont3xt.history_total.div_ceil(100);
     let page_start = (app.cont3xt.history_page - 1) * 100 + 1;
     let page_end = (page_start + app.cont3xt.history_data.len()).saturating_sub(1);
     let page_info = if app.cont3xt.history_total > 0 {

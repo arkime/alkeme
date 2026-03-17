@@ -92,11 +92,10 @@ impl ArkimeClient {
                 if tag == "script" || tag == "style" || tag == "input" {
                     return;
                 }
-                if matches!(tag, "br" | "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" | "tr") {
-                    if !out.is_empty() && !out.ends_with('\n') {
+                if matches!(tag, "br" | "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" | "tr")
+                    && !out.is_empty() && !out.ends_with('\n') {
                         out.push('\n');
                     }
-                }
                 for child in el.children() {
                     if let Some(text) = child.value().as_text() {
                         let t = text.trim();

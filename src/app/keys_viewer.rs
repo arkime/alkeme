@@ -192,7 +192,7 @@ impl App {
         let action = handle_column_editor_key_generic(
             key, &mut state, &mut self.viewer.column_editor_available, &mut self.show_help,
         );
-        match action.as_deref() {
+        match action {
             Some("apply") => {
                 self.vr_apply_column_editor();
                 self.viewer.show_column_editor = false;
@@ -271,15 +271,13 @@ impl App {
                     }
                     Err(e) => self.status_msg = format!("Error saving layout: {e}"),
                 }
-            } else if let Some(idx_str) = cmd.strip_prefix("select:") {
-                if let Ok(idx) = idx_str.parse::<usize>() {
-                    if let Some(layout) = self.viewer.saved_layouts.get(idx).cloned() {
+            } else if let Some(idx_str) = cmd.strip_prefix("select:")
+                && let Ok(idx) = idx_str.parse::<usize>()
+                    && let Some(layout) = self.viewer.saved_layouts.get(idx).cloned() {
                         self.vr_apply_layout(&layout);
                         self.viewer.page_start = 0;
                         self.vr_fetch_sessions().await;
                     }
-                }
-            }
         }
     }
 
@@ -467,15 +465,14 @@ impl App {
                         }
                     }
                     _ => {
-                        if self.viewer.view_filter_active {
-                            if handle_text_input_key(key.code, &mut self.viewer.view_filter, &mut self.viewer.view_filter_cursor) {
+                        if self.viewer.view_filter_active
+                            && handle_text_input_key(key.code, &mut self.viewer.view_filter, &mut self.viewer.view_filter_cursor) {
                                 if self.viewer.view_filter.is_empty() {
                                     self.viewer.view_filter_active = false;
                                 } else {
                                     self.viewer.view_popup_selected = 2;
                                 }
                             }
-                        }
                     }
                 }
             }
@@ -657,30 +654,26 @@ impl App {
                         self.cont3xt.detail_scroll = 0;
                     }
                 } else if is_shards {
-                    if let Some(ref mut detail) = self.viewer.shards_detail {
-                        if handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
+                    if let Some(ref mut detail) = self.viewer.shards_detail
+                        && handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
                             detail.scroll = 0;
                         }
-                    }
                 } else if is_stats {
-                    if let Some(ref mut detail) = self.viewer.stats_detail {
-                        if handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
+                    if let Some(ref mut detail) = self.viewer.stats_detail
+                        && handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
                             detail.scroll = 0;
                         }
-                    }
                 } else if is_files {
-                    if let Some(ref mut detail) = self.viewer.files_detail {
-                        if handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
+                    if let Some(ref mut detail) = self.viewer.files_detail
+                        && handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
                             detail.scroll = 0;
                         }
-                    }
-                } else if let Some(ref mut detail) = self.viewer.session_detail {
-                    if handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
+                } else if let Some(ref mut detail) = self.viewer.session_detail
+                    && handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
                         detail.selected = 0;
                         detail.scroll = 0;
                         self.recalc_detail_rows();
                     }
-                }
             }
         }
     }
@@ -1161,12 +1154,10 @@ impl App {
             // --- CaptureGraphs-specific keys ---
             _ if self.viewer.stats_tab == StatsTab::CaptureGraphs => {
                 self.handle_capture_graphs_key(key).await;
-                return;
             }
             // --- DB Shards-specific keys ---
             _ if self.viewer.stats_tab == StatsTab::DBShards => {
                 self.handle_shards_key(key).await;
-                return;
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.viewer.stats_data.is_empty() {
@@ -1338,7 +1329,7 @@ impl App {
         let action = handle_column_editor_key_generic(
             key, &mut state, &mut self.viewer.stats_column_editor_items, &mut self.show_help,
         );
-        match action.as_deref() {
+        match action {
             Some("apply") => {
                 self.vr_stats_apply_column_editor();
                 self.viewer.stats_show_column_editor = false;
@@ -1394,15 +1385,13 @@ impl App {
                 }
             } else if let Some(name) = cmd.strip_prefix("save:") {
                 self.vr_stats_save_shareable(name).await;
-            } else if let Some(idx_str) = cmd.strip_prefix("select:") {
-                if let Ok(idx) = idx_str.parse::<usize>() {
-                    if let Some(shareable) = self.viewer.stats_saved_shareables.get(idx).cloned() {
+            } else if let Some(idx_str) = cmd.strip_prefix("select:")
+                && let Ok(idx) = idx_str.parse::<usize>()
+                    && let Some(shareable) = self.viewer.stats_saved_shareables.get(idx).cloned() {
                         self.vr_stats_apply_shareable(&shareable);
                         self.vr_request_stats_fetch();
                         self.vr_save_stats_state().await;
                     }
-                }
-            }
         }
         // Sync delete name back for UI display
         self.viewer.stats_layout_delete_name = delete_name_for_id;
@@ -2117,7 +2106,7 @@ impl App {
         let action = handle_column_editor_key_generic(
             key, &mut state, &mut self.viewer.files_column_editor_items, &mut self.show_help,
         );
-        match action.as_deref() {
+        match action {
             Some("apply") => {
                 self.vr_files_apply_column_editor();
                 self.viewer.files_show_column_editor = false;
@@ -2177,17 +2166,15 @@ impl App {
                 }
             } else if let Some(name) = cmd.strip_prefix("save:") {
                 self.vr_files_save_shareable(name).await;
-            } else if let Some(idx_str) = cmd.strip_prefix("select:") {
-                if let Ok(idx) = idx_str.parse::<usize>() {
-                    if let Some(shareable) = self.viewer.files_saved_shareables.get(idx).cloned() {
+            } else if let Some(idx_str) = cmd.strip_prefix("select:")
+                && let Ok(idx) = idx_str.parse::<usize>()
+                    && let Some(shareable) = self.viewer.files_saved_shareables.get(idx).cloned() {
                         self.vr_files_apply_shareable(&shareable);
                         self.viewer.files_page_start = 0;
                         self.viewer.files_selected = 0;
                         self.vr_fetch_files().await;
                         self.vr_save_files_state().await;
                     }
-                }
-            }
         }
         self.viewer.files_layout_delete_name = delete_name_for_id;
     }

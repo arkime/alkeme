@@ -389,7 +389,7 @@ fn c3_draw_settings_integrations(f: &mut Frame, app: &mut App, area: Rect) {
             "🌍 global".to_string()
         } else {
             let has_unset_required = int.fields.iter().any(|f| {
-                f.required && int.values.get(&f.name).map_or(true, |v| v.is_empty())
+                f.required && int.values.get(&f.name).is_none_or(|v| v.is_empty())
             });
             if has_unset_required {
                 " ✗ not configured".to_string()
@@ -405,7 +405,7 @@ fn c3_draw_settings_integrations(f: &mut Frame, app: &mut App, area: Rect) {
             Style::default().fg(Color::Blue)
         } else {
             let has_unset_required = int.fields.iter().any(|f| {
-                f.required && int.values.get(&f.name).map_or(true, |v| v.is_empty())
+                f.required && int.values.get(&f.name).is_none_or(|v| v.is_empty())
             });
             if has_unset_required {
                 Style::default().fg(Color::Yellow)
@@ -889,12 +889,10 @@ fn c3_draw_lg_link_editor(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|g| g.editable).unwrap_or(false);
     let title = if app.cont3xt.lg_editor_link.name.is_empty() {
         if lg_editable { " Edit Link ".to_string() } else { " Link (read-only) ".to_string() }
+    } else if lg_editable {
+        format!(" Edit Link: {} ", app.cont3xt.lg_editor_link.name)
     } else {
-        if lg_editable {
-            format!(" Edit Link: {} ", app.cont3xt.lg_editor_link.name)
-        } else {
-            format!(" Link: {} (read-only) ", app.cont3xt.lg_editor_link.name)
-        }
+        format!(" Link: {} (read-only) ", app.cont3xt.lg_editor_link.name)
     };
     let block = Block::default()
         .borders(Borders::ALL)

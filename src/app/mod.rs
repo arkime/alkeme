@@ -337,11 +337,10 @@ impl App {
                             let detail_filter = self.viewer.stats_detail.as_ref().map(|d| d.filter.clone()).unwrap_or_default();
                             let detail_filter_cursor = self.viewer.stats_detail.as_ref().map(|d| d.filter_cursor).unwrap_or(0);
                             self.vr_fetch_stats().await;
-                            if let Some(name) = detail_name {
-                                if let Some(row) = self.viewer.stats_data.iter().find(|r| crate::api::str_val(r, "name") == name) {
+                            if let Some(name) = detail_name
+                                && let Some(row) = self.viewer.stats_data.iter().find(|r| crate::api::str_val(r, "name") == name) {
                                     self.viewer.stats_detail = Some(StatsDetail { data: row.clone(), scroll: detail_scroll, filter: detail_filter, filter_cursor: detail_filter_cursor });
                                 }
-                            }
                         }
                         Err(e) => self.status_msg = format!("Error: {e}"),
                     }
@@ -698,8 +697,7 @@ fn parse_date_input(s: &str) -> Option<chrono::DateTime<Utc>> {
     }
 
     // @snap only (e.g., "@day" = start of today)
-    if s.starts_with('@') {
-        let snap = &s[1..];
+    if let Some(snap) = s.strip_prefix('@') {
         let now = Utc::now();
         return match snap {
             "s" | "sec" | "second" | "seconds" => Some(now.with_nanosecond(0)?),
@@ -869,11 +867,10 @@ fn process_advanced_placeholder(
             let fmt = obj.get("format").and_then(|v| v.as_str()).unwrap_or("YYYY-MM-DD");
             let chrono_fmt = convert_date_format(fmt);
             let mut dt = if keyword == "start" { start } else { end };
-            if let Some(snap_str) = obj.get("timeSnap").and_then(|v| v.as_str()) {
-                if let Some(dur) = parse_time_snap(snap_str) {
-                    dt = dt + dur;
+            if let Some(snap_str) = obj.get("timeSnap").and_then(|v| v.as_str())
+                && let Some(dur) = parse_time_snap(snap_str) {
+                    dt += dur;
                 }
-            }
             Some(dt.format(&chrono_fmt).to_string())
         }
         "array" => {

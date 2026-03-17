@@ -279,14 +279,13 @@ pub fn load_cookie_store(path: &str, password: Option<&str>) -> Result<(reqwest_
         data
     };
     // Try new envelope format: {"username":"...","cookies":[...]}
-    if let Ok(wrapper) = serde_json::from_slice::<serde_json::Value>(&json) {
-        if wrapper.get("cookies").is_some() {
+    if let Ok(wrapper) = serde_json::from_slice::<serde_json::Value>(&json)
+        && wrapper.get("cookies").is_some() {
             let username = wrapper.get("username").and_then(|v| v.as_str()).map(String::from);
             let cookies_bytes = serde_json::to_vec(wrapper.get("cookies").unwrap()).unwrap_or_default();
             let reader = std::io::BufReader::new(cookies_bytes.as_slice());
             return Ok((cookie_store::serde::json::load_all(reader).unwrap_or_default(), username));
         }
-    }
     // Fall back to legacy format (raw cookie array)
     let reader = std::io::BufReader::new(json.as_slice());
     Ok((cookie_store::serde::json::load_all(reader).unwrap_or_default(), None))
@@ -433,11 +432,10 @@ impl ArkimeClient {
         let status = resp.status().as_u16();
         log_http(&self.http_log, "POST", &url, Some(format!("username={}&password=***", username)), status, first_byte, start.elapsed().as_millis() as u64, None);
         if resp.status() == reqwest::StatusCode::FOUND {
-            if let Some(loc) = resp.headers().get("location").and_then(|v| v.to_str().ok()) {
-                if loc.contains("/auth") {
+            if let Some(loc) = resp.headers().get("location").and_then(|v| v.to_str().ok())
+                && loc.contains("/auth") {
                     anyhow::bail!("Form login failed: invalid username or password");
                 }
-            }
         } else if !resp.status().is_success() {
             anyhow::bail!("Form login failed: HTTP {}", resp.status());
         }
@@ -487,11 +485,10 @@ impl ArkimeClient {
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn append_view(url: &mut String, view: &Option<String>) {
-        if let Some(v) = view {
-            if !v.is_empty() {
+        if let Some(v) = view
+            && !v.is_empty() {
                 url.push_str(&format!("&view={}", urlencoding::encode(v)));
             }
-        }
     }
 
     /// Append expression and view query params (common to most session-related endpoints)

@@ -273,19 +273,17 @@ impl ArkimeClient {
                 .map(|s| s.to_string());
 
             let mut identify_body = serde_json::json!({});
-            if let Some(rem) = identify_rem {
-                if let Some(fields) = rem["value"].as_array() {
+            if let Some(rem) = identify_rem
+                && let Some(fields) = rem["value"].as_array() {
                     for field in fields {
                         let name = field["name"].as_str().unwrap_or("");
                         let mutable = field["mutable"].as_bool().unwrap_or(true);
-                        if !mutable {
-                            if let Some(val) = field.get("value") {
+                        if !mutable
+                            && let Some(val) = field.get("value") {
                                 identify_body[name] = val.clone();
                             }
-                        }
                     }
                 }
-            }
             identify_body["identifier"] = serde_json::Value::String(username.to_string());
             identify_body["credentials"] = serde_json::json!({"passcode": password});
 
@@ -338,9 +336,9 @@ impl ArkimeClient {
                     .unwrap_or(false)
             };
 
-            if needs_authenticator_select {
-                if let Some(rems) = current_resp.clone()["remediation"]["value"].as_array().cloned() {
-                    if let Some(select_auth) = rems.iter().find(|r| r["name"].as_str() == Some("select-authenticator-authenticate")) {
+            if needs_authenticator_select
+                && let Some(rems) = current_resp.clone()["remediation"]["value"].as_array().cloned()
+                    && let Some(select_auth) = rems.iter().find(|r| r["name"].as_str() == Some("select-authenticator-authenticate")) {
                 // Find the password authenticator
                 if let Some(auth_options) = select_auth["value"].as_array()
                     .and_then(|vals| vals.iter().find(|v| v["name"].as_str() == Some("authenticator")))
@@ -387,9 +385,8 @@ impl ArkimeClient {
                             .to_string();
                     }
                 }
-            }
             } // close if let select_auth
-            } // close if needs_authenticator_select
+             // close if needs_authenticator_select
 
             // Submit password via challenge/answer
             // Build body from the challenge remediation's immutable fields
@@ -408,11 +405,10 @@ impl ArkimeClient {
                 if let Some(fields) = rem["value"].as_array() {
                     for field in fields {
                         let name = field["name"].as_str().unwrap_or("");
-                        if field["mutable"].as_bool().unwrap_or(true) == false {
-                            if let Some(val) = field.get("value") {
+                        if !field["mutable"].as_bool().unwrap_or(true)
+                            && let Some(val) = field.get("value") {
                                 body[name] = val.clone();
                             }
-                        }
                     }
                 }
                 (url, accepts, body)
@@ -475,11 +471,9 @@ impl ArkimeClient {
             let mut available_auths: Vec<(String, String, String)> = Vec::new(); // (label, id, method_type)
             if let Some(select_rem) = current_resp["remediation"]["value"].as_array()
                 .and_then(|rems| rems.iter().find(|r| r["name"].as_str() == Some("select-authenticator-authenticate")))
-            {
-                if let Some(auth_field) = select_rem["value"].as_array()
+                && let Some(auth_field) = select_rem["value"].as_array()
                     .and_then(|vals| vals.iter().find(|v| v["name"].as_str() == Some("authenticator")))
-                {
-                    if let Some(options) = auth_field["options"].as_array() {
+                    && let Some(options) = auth_field["options"].as_array() {
                         for opt in options {
                             let label = opt["label"].as_str().unwrap_or("?").to_string();
                             let id = opt["value"]["form"]["value"].as_array()
@@ -493,8 +487,6 @@ impl ArkimeClient {
                             available_auths.push((label, id, method));
                         }
                     }
-                }
-            }
 
             // If challenge-authenticator is already active for a TOTP/OTP-like authenticator, prompt directly
             let challenge_rem = current_resp["remediation"]["value"].as_array()
@@ -587,8 +579,8 @@ impl ArkimeClient {
                             let challenge_request = cd.and_then(|v| v["challengeRequest"].as_str()).unwrap_or("");
                             let https_domain = cd.and_then(|v| v["httpsDomain"].as_str()).unwrap_or("");
                             let ports = cd.and_then(|v| v["ports"].as_array());
-                            if !challenge_request.is_empty() {
-                                if let Some(ports_arr) = ports {
+                            if !challenge_request.is_empty()
+                                && let Some(ports_arr) = ports {
                                     let loopback_client = Client::builder()
                                         .danger_accept_invalid_certs(true)
                                         .pool_max_idle_per_host(0)
@@ -609,19 +601,16 @@ impl ArkimeClient {
                                             .timeout(probe_timeout)
                                             .send().await {
                                             Ok(resp) if resp.status().is_success() => {
-                                                match loopback_client.post(format!("{}/challenge", base))
+                                                if let Ok(resp) = loopback_client.post(format!("{}/challenge", base))
                                                     .header("Content-Type", "application/json")
                                                     .header("Origin", &okta_origin)
                                                     .timeout(challenge_timeout)
                                                     .body(serde_json::json!({"challengeRequest": challenge_request}).to_string())
                                                     .send().await {
-                                                    Ok(resp) => {
-                                                        if resp.status().is_success() {
-                                                            loopback_ok = true;
-                                                            break;
-                                                        }
+                                                    if resp.status().is_success() {
+                                                        loopback_ok = true;
+                                                        break;
                                                     }
-                                                    Err(_) => {}
                                                 }
                                             }
                                             _ => {}
@@ -629,7 +618,6 @@ impl ArkimeClient {
                                     }
                                     let _ = loopback_ok;
                                 }
-                            }
                         }
                         // Fall through to the challenge-poll handler below
                     } else if post_select_rems.contains(&"authenticator-verification-data".to_string()) {
@@ -758,11 +746,10 @@ impl ArkimeClient {
                     if let Some(fields) = mfa_rem["value"].as_array() {
                         for field in fields {
                             let name = field["name"].as_str().unwrap_or("");
-                            if field["mutable"].as_bool().unwrap_or(true) == false {
-                                if let Some(val) = field.get("value") {
+                            if !field["mutable"].as_bool().unwrap_or(true)
+                                && let Some(val) = field.get("value") {
                                     mfa_body[name] = val.clone();
                                 }
-                            }
                         }
                     }
 
@@ -813,8 +800,8 @@ impl ArkimeClient {
             let post_mfa_rems: Vec<String> = current_resp["remediation"]["value"].as_array()
                 .map(|arr| arr.iter().filter_map(|r| r["name"].as_str().map(|s| s.to_string())).collect())
                 .unwrap_or_default();
-            if !post_mfa_rems.is_empty() && !current_resp.get("successWithInteractionCode").is_some()
-                && !current_resp.get("success").is_some() {
+            if !post_mfa_rems.is_empty() && current_resp.get("successWithInteractionCode").is_none()
+                && current_resp.get("success").is_none() {
             }
         }
 
