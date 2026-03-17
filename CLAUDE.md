@@ -29,36 +29,47 @@ cargo run -- URL --cont3xt-read-json results.json --app cont3xt  # load saved co
 
 ```
 src/
-  main.rs              - Entry point, clap CLI parsing, terminal setup, event loop (crossterm polling), drain_c3_results()
-  app/mod.rs           - App struct, state, shared methods, enter_expression_mode(), handle_text_input_key()
-  app/viewer.rs        - Viewer methods (vr_*): sessions, stats, files, columns, layouts
-  app/cont3xt.rs       - Cont3xt methods (c3_*): search, views, history, links, settings
-  app/types.rs         - Enums (AppMode, Tab, TimeRange, InputMode, etc.)
-  app/keys.rs          - Key dispatch + expression handler
-  app/keys_shared.rs   - Generic column editor + layout popup key handlers (shared trait)
-  app/keys_viewer.rs   - Viewer key handlers
-  app/keys_cont3xt.rs  - Cont3xt key handler
-  app/keys_parliament.rs - Parliament key handler
-  app/keys_wise.rs     - WISE key handler
-  api/mod.rs           - ArkimeClient + FetchClient: HTTP calls (reqwest + digest_auth), finish_response(), digest_auth_header()
-  api/types.rs         - Shared types (structs, enums, parsing functions), str_val()
-  api/auth.rs          - Web authentication, Okta login dispatcher, authenticated HTTP methods
-  api/auth_okta.rs     - Okta IDX (Identity Engine), classic authn, MFA flows
-  api/viewer.rs        - Viewer API methods (vr_*), vr_get_sorted_filtered(), vr_bulk_tag_op()
-  api/cont3xt.rs       - Cont3xt API methods (c3_*)
-  api/parliament.rs    - Parliament API methods (pl_*)
-  api/wise.rs          - WISE API methods (ws_*)
-  ui/mod.rs            - Draw dispatch, common layout (tabs, toolbar, status bar, graph), center_popup(), sort_header_style(), sort_header_label(), render_text_input(), format_number()
-  ui/sessions.rs       - Session list/detail rendering
-  ui/stats.rs          - Stats tab rendering
-  ui/files.rs          - Files tab rendering
-  ui/arkime.rs         - Summary tab + owl animation rendering
-  ui/cont3xt.rs        - Cont3xt search/results/card rendering
-  ui/cont3xt_settings.rs - Cont3xt settings UI (views editor, role popup, integration editor)
-  ui/parliament.rs     - Parliament dashboard + issues rendering
-  ui/wise.rs           - WISE stats + query rendering
-  ui/popups.rs         - Debug log, action menus, column/layout editors, packets viewer
-  ui/help.rs           - Context-sensitive help overlay
+  main.rs                - Entry point, clap CLI, terminal setup, event loop, background task polling
+  app/
+    mod.rs               - App struct, shared state, confirm handlers, text input helpers
+    viewer.rs            - Viewer methods (vr_*): sessions, stats, files, columns, layouts, background fetch
+    cont3xt.rs           - Cont3xt methods (c3_*): search, views, history, links, settings
+    cont3xt_settings.rs  - Cont3xt settings mutations (views/integrations/overviews/linkgroups CRUD)
+    keys.rs              - Key dispatch + expression handler
+    keys_shared.rs       - Generic column editor + layout popup key handlers (shared across tabs)
+    keys_viewer.rs       - Viewer key handlers (sessions, stats, files, arkime, capture graphs)
+    keys_cont3xt.rs      - Cont3xt key handlers
+    keys_cont3xt_settings.rs - Cont3xt settings key handlers
+    keys_parliament.rs   - Parliament key handlers
+    keys_wise.rs         - WISE key handlers
+    types/
+      mod.rs             - Shared types: AppMode, Tab, TimeRange, InputMode, column/layout types,
+                           stats types, action menus, graph types, capture graph types
+      viewer.rs          - ViewerState struct
+      cont3xt.rs         - Cont3xt types + Cont3xtState struct
+      parliament.rs      - Parliament types + ParliamentState struct
+      wise.rs            - WISE types + WiseState struct
+  api/
+    mod.rs               - ArkimeClient + FetchClient: HTTP, digest auth, finish_response()
+    types.rs             - API response structs, parsing functions, str_val()
+    auth.rs              - Web/Form auth, Okta login dispatcher, authenticated HTTP methods
+    auth_okta.rs         - Okta IDX (Identity Engine), classic authn, MFA flows
+    viewer.rs            - Viewer API methods (vr_*), URL builders, vr_get_sorted_filtered()
+    cont3xt.rs           - Cont3xt API methods (c3_*)
+    parliament.rs        - Parliament API methods (pl_*)
+    wise.rs              - WISE API methods (ws_*)
+  ui/
+    mod.rs               - Draw dispatch, common layout, shared helpers (center_popup, format_number, etc.)
+    sessions.rs          - Session list/detail rendering
+    stats.rs             - Stats tab rendering (capture graphs, tables, shards grid)
+    files.rs             - Files tab rendering
+    arkime.rs            - Summary tab + owl animation rendering
+    cont3xt.rs           - Cont3xt search/results/card rendering
+    cont3xt_settings.rs  - Cont3xt settings UI (views editor, role popup, integration editor)
+    parliament.rs        - Parliament dashboard + issues rendering
+    wise.rs              - WISE stats + query rendering
+    popups.rs            - Debug log, action menus, column/layout editors, packets viewer, loading owl
+    help.rs              - Context-sensitive help overlay
 ```
 
 ## Shared helpers
@@ -83,177 +94,29 @@ src/
 - `result.app` determines `AppMode`: "viewer" (default if empty), "cont3xt", "wise"/"wiseService", "parliament"
 - If `/api/appversion` fails, exits with "please upgrade to Arkime 6" message
 - `--app <mode>` CLI flag skips appversion call and forces a mode
-- `/api/user` provides user info (from `result.user` in appversion response)
 - Each mode has its own tab set via `AppMode::tabs()`:
-  - **Viewer**: Arkime, Sessions, Stats, Files, Settings (defaults to Sessions)
+  - **Viewer**: Arkime, Sessions, Stats, Files, Users, Settings (defaults to Sessions)
   - **Cont3xt**: Search, Stats, History, Settings (defaults to Search)
   - **Parliament**: Dashboard, Issues, Settings (defaults to Dashboard)
   - **Wise**: Stats, Query, Settings (defaults to Stats)
-- `AppMode::default_tab()` returns the starting tab for each mode
 - UI rendering routes through `draw_viewer()`, `draw_cont3xt()`, `draw_parliament()`, or `draw_wise()` based on mode
-- Key handling routes through mode-specific handlers in `handle_key()`
-- Viewer-specific background tasks (packets/summary fetch, stats auto-refresh) only run in Viewer mode
-- `--user username` (no colon) prompts only for password; `--auth` with no `--user` prompts for both
+- Key handling routes through mode-specific handlers in `handle_key()` → `keys_viewer.rs` / `keys_cont3xt.rs` / etc.
+- Keybindings are defined in `keys_*.rs` files and documented in `ui/help.rs` (context-sensitive help overlay, `h`/`?`)
+- Background tasks (packets/summary/stats fetch) only run in the relevant mode
 
 ## Key types
 
-- `App` — All mutable state. Passed as `&mut` to handlers and renderers. Viewer fields prefixed `vr_`, cont3xt fields prefixed `c3_`, parliament fields prefixed `pl_`, WISE fields prefixed `ws_`. Public methods follow same convention.
-- `AppMode` — Enum: `Viewer` | `Cont3xt` | `Wise` | `Parliament`. Determined at startup from `/api/appversion` `result.app` or `--app` flag. Has `tabs()`, `default_tab()`, `label()`.
-- `Tab` — Enum: `Arkime` | `Sessions` | `Stats` | `Files` | `Search` | `C3Stats` | `History` | `Dashboard` | `Issues` | `WsStats` | `WsQuery` | `Settings`. Which tabs are available depends on `AppMode::tabs()`.
-- `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
+- `App` — All mutable state. Viewer fields prefixed `vr_`, cont3xt `c3_`, parliament `pl_`, WISE `ws_`. Public methods follow same convention.
+- `AppMode` — Enum: `Viewer` | `Cont3xt` | `Wise` | `Parliament`. Has `tabs()`, `default_tab()`, `label()`.
+- `Tab` — Enum with 12 variants. Which tabs are available depends on `AppMode::tabs()`.
 - `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
-- `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
-- `StatsTab` — Enum: `CaptureGraphs` | `Capture` | `DBStats` | `DBIndices` | `DBTasks` | `DBShards` | `DBRecovery`. Sub-tabs within Stats tab. DBStats labeled "DB Nodes".
-- `CaptureGraphMetric` — Struct: `field` (&str, API field name), `label` (&str, display name). 33 metrics in `CAPTURE_GRAPH_METRICS` constant.
-- `CaptureGraphInterval` — Enum: `FiveSec` | `OneMin` | `TenMin`. Has `seconds()` and `next()`.
-- `CaptureGraphHide` — Enum: `None` | `Old` | `NoSessions` | `Both`. Has `api_value()` and `next()`.
-- `CaptureGraphNodeData` — Per-node graph data: `node_name` (String), `values` (Vec<f64>).
-- `ShardsShow` — Enum: `All` | `NotStarted` | `Initializing` | `Relocating` | `Unassigned`. Filter mode for DB Shards sub-tab. Has `label()`, `api_value()`, `next()`.
-- `StatsView` — Enum: `List` | `Detail`. Controls which stats sub-view renders.
-- `StatsDetail` — Holds detail data + scroll position for stats detail overlay.
-- `GraphType` — Enum: `Sessions` | `Packets` | `Bytes`. Selects which histogram to display.
-- `GraphSize` — Enum: `Off` | `Small` (10 rows) | `Large` (20 rows). Three-state graph toggle.
 - `ArkimeClient` — Wraps `reqwest::Client` + `base_url` + auth. All API calls return `Result<T>`.
-- `ArkimeField` — Deserialized field definition with `dbField`, `type`, `exp` (expression name), `friendlyName`, `regex` (Option), `noFacet` (Option). `is_visible()` returns false for fields with regex or noFacet="true".
-- `AuthMode` — Enum: `None` | `Basic` | `Digest` | `Form` | `Web` | `Okta`.
-- `GraphData` — Deserialized histogram data from `facets=1` API response.
-- `TableState` — ratatui widget state for session/stats list scrolling.
-- `DetailActionMenu` — Popup for adding a field/value to expression from session detail. Options: AND/AND NOT/OR/OR NOT. Stores `field` (exp name for expressions), `display` (friendlyName for UI), `value`, `selected` index, `values` (for array value picker), and `value_selected`.
-- `ActionScope` — Enum: `Visible` | `Matching`. For ALL PCAP/CSV actions, selects between visible session IDs or all matching sessions.
-- `SummaryMetric` — Enum: `Sessions` | `Packets` | `Bytes`. Selects which metric to display in Arkime summary bar chart and sort column.
-- `SummaryItem` — Deserialized summary API item with `item` (Value), `sessions`, `packets`, `bytes` (u64).
-- `SessionDetail` — Holds detail data, scroll position, selected row, total_rows, and `filter` string for live field filtering.
-- `Packet` — Parsed packet hex dump: `src` (bool), `bytes` (u32), `timestamp` (Option<u64>), `flags` (String), `lines` (Vec<String>).
-- `PacketsData` — Holds parsed packets, src/dst column labels, and total packet count. Displayed as a separate overlay via `p` key.
-- `LineMode` — Enum: `Off` | `Hex` | `Decimal`. Cycles line number display in packets view.
-- `FetchClient` — Lightweight Send-able clone of `ArkimeClient` auth state for background fetches via `tokio::spawn`. Has `fetch_url` (GET) and `fetch_post` (POST with form data) methods.
-- `ColumnDef` — Dynamic column definition: `field` (dbField String), `exp` (expression name String), `label` (String), `width` (u16). `default_columns()` returns the default set.
-- `ColumnEditorItem` — Column editor entry: `db_field`, `exp`, `friendly_name`, `enabled` (bool). Built from `all_fields`.
-- `SavedLayout` — Server-stored layout: `name`, `columns` (Vec<String>), `sort_field`, `sort_dir`.
-- `ColumnEditorMode` — Enum: `Browse` | `Reorder`. Controls column editor key behavior.
-- `LayoutPopupMode` — Enum: `List` | `SaveInput` | `ConfirmDelete`. Controls layout popup state.
-- `ArkimeView` — Server view: `id`, `name`, `expression`, `user`, `shared` (bool). Fetched from `/api/views`.
-- `ViewPopupMode` — Enum: `List` | `SaveInput` | `ConfirmDelete`. Controls view popup state.
-- `HttpLogEntry` — Records HTTP request: timestamp, method, url, post_data, status, first_byte_ms, last_byte_ms, response_body (Option, first 4096 chars for non-200). Stored in `HttpLog` (`Arc<Mutex<Vec<HttpLogEntry>>>`), shared between `ArkimeClient` and `FetchClient`.
-- `Cont3xtFocus` — Enum: `Results` | `Detail`. Controls which pane has focus in cont3xt search.
-- `Cont3xtIntegration` — Integration definition from `/api/integration`: name, doable, order, card (Option<Cont3xtCard>).
-- `Cont3xtCard` — Card display definition: title, fields (Vec<CardField>).
-- `CardField` — Card field: label, field (dot-joined path), field_type (string/url/date/ms/seconds/array/table/json/dnsRecords), join, fields (sub-fields for tables), defang, field_root, filter_empty.
-- `Cont3xtResult` — Search result from one integration: name, indicator, itype, data (Value), has_data.
-- `Cont3xtOverview` — Overview definition: id, name, title, itype, is_default, fields (Vec<Cont3xtOverviewField>).
-- `Cont3xtOverviewField` — Overview field: field_type ("linked"/"custom"), from (integration name), field (card field label), alias (display name), custom (Option<Value>).
-- `C3TreeItem` — Enum: `Indicator(itype, query)` | `Result(usize)`. Entry in the results tree; has `result_idx()` helper.
-- `Cont3xtLink` — Link definition: name, url, itypes (Vec<String>), info (String). From link groups API.
-- `Cont3xtLinkGroup` — Link group: name, links (Vec<Cont3xtLink>). Fetched from `/api/linkGroup`.
-- `PlGroup` — Parliament group: title, description, clusters (Vec<PlCluster>).
-- `PlCluster` — Parliament cluster: id, title, description, url, cluster_type (disabled/multiviewer/noAlerts/"").
-- `PlClusterStats` — Cluster stats: status, health_error, stats_error, es_version, delta_bps, delta_tdps, monitoring, arkime_nodes, data_nodes, total_nodes.
-- `PlIssue` — Issue: cluster_id, cluster, issue_type, title, text, message, severity (red/yellow), node, first_noticed, last_noticed, acknowledged, ignore_until.
-- `PlIssueSort` — Enum: `Cluster` | `Title` | `Severity` | `FirstNoticed` | `LastNoticed`. Issue sort field selector.
-- `ConfirmDialog` — Generic confirmation popup: `title` (String), `message` (String), `action` (String). Action string parsed by `handle_confirm()` (e.g., `"delete_esindex:name"`, `"esshards:name:node1:exclude"`). Used for index ops and node exclude/include.
-- Session data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
-- Stats data is also `serde_json::Value` — column definitions are in `StatsTab::columns()`.
-
-## Viewer keybindings
-
-| Key | Action |
-|---|---|
-| Tab / Shift+Tab | Switch tabs |
-| j / k / ↑ / ↓ | Navigate sessions/stats |
-| Shift+↑ / Shift+↓ | Page up/down in list, detail, or packets |
-| ← / → | Previous/next page (sessions); jump to top/bottom (detail/stats detail/arkime/packets); in expression input, move cursor |
-| Shift+← / Shift+→ | First/last page; word jump in expression input |
-| Home / End | First page; in expression input, cursor to start/end |
-| PgUp / PgDn | Page up/down in detail, stats detail, or packets view |
-| Enter | Open session/stats detail; in detail or summary, open expression menu |
-| Esc | Close overlay |
-| r | Refresh data |
-| / or E | Search expression or filter (Enter to apply, Esc to cancel); in session detail, live-filter fields |
-| t / T | Cycle time range forward/backward (sessions) |
-| s | Next sort column |
-| S | Toggle sort direction (asc/desc) |
-| g | Cycle graph: Off → Small → Large → Off (sessions tab only) |
-| G | Cycle graph type: Sessions → Packets → Bytes (sessions); cycle bar chart metric (arkime) |
-| a | Session action menu (download pcap, add/remove tags) |
-| A | All sessions action menu (download pcap, export csv, add/remove tags) — pcap/csv show Visible/Matching scope selector |
-| 1 / 2 / 3 / 4 / 5 / 6 / 7 | Switch stats sub-tab (Capture Graphs/Capture Stats/DB Nodes/DB Indices/DB Tasks/DB Shards/DB Recovery) |
-| f | Open field selector (arkime tab) |
-| p | View packet hex dump (session list or detail) |
-| c | Columns & layouts menu |
-| v | Views (select/create/delete views) |
-| d | Delete index (DB Indices); cancel task (DB Tasks); confirm dialog |
-| f | Force merge index (DB Indices); confirm dialog |
-| C | Close open index (DB Indices); confirm dialog |
-| O | Open closed index (DB Indices); confirm dialog |
-| e | Toggle exclude/include node (DB Nodes); confirm dialog |
-| x | Toggle exclude/include IP (DB Nodes); confirm dialog |
-| X | Cancel all cancellable tasks (DB Tasks); confirm dialog |
-| m | Cycle shard show mode (DB Shards): All/Not Started/Initializing/Relocating/Unassigned |
-| ← / → | Scroll nodes left/right (DB Shards) |
-| D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
-| h / ? | Show context-sensitive help overlay |
-| q | Quit |
-
-## Cont3xt keybindings
-
-| Key | Action |
-|---|---|
-| Tab / Shift+Tab | Switch tabs |
-| j / k / ↑ / ↓ | Navigate results list or scroll detail |
-| Shift+↑ / Shift+↓ | Page up/down; jump to next/prev indicator (results) |
-| PgUp / PgDn | Page up/down (detail) |
-| ← / → | Jump to top/bottom (results); scroll detail left/right |
-| Shift+← / Shift+→ | Fast scroll detail left/right; word jump in expression |
-| Home | Jump to top, reset horizontal scroll |
-| End | Jump to bottom |
-| Enter | Open detail panel (results); close detail uses Esc |
-| Esc | Return to results from detail; close popups |
-| / or E | Search expression or filter (Enter to apply, Esc to cancel) |
-| / | Filter detail fields (when in detail panel) |
-| E | Edit search indicator (when in detail panel) |
-| R | Toggle raw JSON / card view; debug mode for overview |
-| C | Card/overview definition popup (detail); s saves to /tmp/alkeme-card.txt |
-| o | Select overview (when on indicator header); d:set default, /:filter, r:refresh, h/?:help |
-| i | Integration filter popup (Space:toggle, a:all, n:none, !:invert, /:filter) |
-| v / Shift+I | Open views popup (select/create/delete integration views) |
-| r | Re-run search |
-| l | Link groups for selected indicator (Enter opens in browser, / filter) |
-| s | Next sort column (History/Stats); cycle source (WISE Query) |
-| S | Toggle sort direction (History/Stats) |
-| d | Delete history entry (History tab) |
-| J | Save all results as JSON (prompts for filename) |
-| t | Edit search tags (comma-separated, sent with queries) |
-| d | Edit date range for links (start/stop, supports relative: -7d, -1h, now, or absolute: YYYY-MM-DD) |
-| 1 / 2 / 3 / 4 | Switch Settings sub-tab (Views/Integrations/Overviews/LinkGroups) |
-| n | New view (Settings Views) |
-| e / Enter | Edit view (Settings Views) |
-| d / x | Delete view (Settings Views) |
-| Ctrl+S | Save view editor |
-| ← / → | Previous/next page (History); jump to top/bottom (results); scroll detail |
-| D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
-| h / ? | Show help |
-| q | Quit |
-
-## Parliament keybindings
-
-| Key | Action |
-|---|---|
-| Tab / Shift+Tab | Switch tabs (Dashboard/Issues/Settings) |
-| j / k / ↑ / ↓ | Navigate clusters (Dashboard) or issues (Issues) |
-| Shift+↑ / Shift+↓ | Page up/down (Issues) |
-| Home / End | Jump to top/bottom (Issues) |
-| Enter | Open cluster in Viewer mode (Dashboard) |
-| i | Cluster detail overlay (Dashboard) |
-| c | Open Cont3xt (if configured in Parliament settings) |
-| w | Open WISE (if configured in Parliament settings) |
-| Ctrl+p | Return to Parliament (from Viewer, Cont3xt, or WISE) |
-| / or E | Filter issues (Issues tab) |
-| s | Next sort column (Issues) |
-| S | Toggle sort direction (Issues) |
-| r | Refresh |
-| D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
-| h / ? | Show help |
-| q | Quit |
+- `FetchClient` — Lightweight Send-able clone of `ArkimeClient` auth state for background fetches via `tokio::spawn`. Has `fetch_url` (GET) and `fetch_post` (POST) methods.
+- `HttpLogEntry` — Records HTTP request timing/status/body. Stored in `HttpLog` (`Arc<Mutex<Vec<HttpLogEntry>>>`), shared between `ArkimeClient` and `FetchClient`.
+- `StatsFetchResult` — Enum: `Table` | `Shards` | `CaptureGraphs` | `Error`. Returned by background stats fetch task.
+- `ConfirmDialog` — Generic confirmation popup. Action string parsed by `handle_confirm()` (e.g., `"delete_esindex:name"`, `"esshards:name:node1:exclude"`).
+- Session/stats data is `serde_json::Value` (not typed structs) since Arkime fields are dynamic.
+- See `types/` sub-modules for full type definitions per mode.
 
 ## Session columns (default)
 
@@ -329,7 +192,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Node exclude/include operations refresh detail in-place (preserving scroll and filter)
 
 ### Stats columns per sub-tab
-- **Capture Graphs**: Braille Canvas time-series graphs per node. 33 metrics (Packet/s, Bytes/s, CPU, Memory, etc.). 3 intervals: 5s, 1m, 10m. 4 hide modes: None, Old, No Sessions, Both. `m` opens metric selector, `i` cycles interval, `H` cycles hide mode, `↑/↓` scroll nodes, `/` filters by node name. Each node gets a 3-line-high graph. API: `GET /api/dstats`.
+- **Capture Graphs**: Cubism-style horizon chart (1 row per node) using braille characters with 4-band color intensity (dark→bright blue/cyan). Global max normalization, alternating row backgrounds. 33 metrics, 3 intervals (5s/1m/10m), 4 hide modes. API: `GET /api/dstats` per node + `GET /api/stats` for node list.
 - **Capture Stats** (13 default, 37 total): nodeName, currentTime, monitoring, freeSpaceM, cpu, memory, packetQueue, diskQueue, esQueue, deltaPackets, deltaBytesPerSec, deltaSessions, deltaDropped (+ 24 more)
 - **DB Nodes** (10 default, 27 total): name, docs, storeSize, freeSize, heapSize, load, cpu, read, write, searches (+ 17 more)
 - **DB Indices** (9 default, 16 total): index, docs.count, store.size, pri, segmentsCount, rep, memoryTotal, health, status (+ 7 more)
@@ -557,25 +420,6 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - WISE may not require auth — if form auth fails when switching from Parliament, falls back to no auth
 - Auto-refresh: stats auto-refresh every 30 seconds on the Stats tab
 - `Ctrl+P` returns to Parliament from WISE mode (same as Viewer/Cont3xt)
-
-### WISE keybindings
-
-| Key | Action |
-|---|---|
-| Tab / Shift+Tab | Switch tabs (Stats/Query/Settings) |
-| 1 / 2 | Sources / Types sub-tab (Stats) |
-| j / k / ↑ / ↓ | Navigate rows |
-| Shift+↑ / Shift+↓ | Page up / down |
-| Home / End | Jump to top / bottom |
-| / / E | Filter stats or edit query value |
-| s | Cycle source (Query) |
-| t | Cycle type (Query) |
-| Enter | Run query (Query) |
-| r | Refresh (Stats) |
-| Ctrl+p | Return to Parliament |
-| D | HTTP debug log |
-| h / ? | Show help |
-| q | Quit |
 
 ### WISE types
 

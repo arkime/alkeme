@@ -56,9 +56,11 @@ Monitor all your Arkime clusters at a glance with health status, throughput, and
 - **Export** — export all matching or visible sessions as CSV
 - **Session detail filter** — press `/` to live-filter fields by name
 - **Packet hex dump** — press `p` to view packet contents as hex in a two-column overlay (source/destination) with timestamps, TCP flags, color-coded display, and hex offsets; `r` toggles raw frames, `l` cycles line number format; animated loading indicator for large sessions
-- **Stats tab** — view capture stats, DB nodes, and DB indices with sortable tables, filtering, detail view, and configurable columns; press `c` to toggle/reorder columns, save/load named layouts via the shareable API
+- **Stats tab** — 7 sub-tabs: Capture Graphs (cubism-style horizon charts per node), Capture Stats, DB Nodes, DB Indices, DB Tasks, DB Shards (color grid), DB Recovery; sortable tables with filtering, detail view, and configurable columns; press `c` to toggle/reorder columns, save/load named layouts via the shareable API
+- **Capture Graphs** — per-node time-series horizon charts using braille characters with 4-band color intensity; 33 metrics, 3 intervals (5s/1m/10m), 4 hide modes; auto-refresh
 - **Index operations** — delete, force merge, close, or open DB indices with confirmation dialogs
 - **Node operations** — toggle node or IP exclusion from DB Nodes list or detail view
+- **Users tab** — manage Arkime users with create, edit, delete, password change, and role management
 - **Files tab** — browse PCAP files with sortable, filterable, paginated table; configurable columns with save/load layouts via shareable API; Enter opens detail overlay with all fields
 
 ### Cont3xt
@@ -86,6 +88,7 @@ Monitor all your Arkime clusters at a glance with health status, throughput, and
 - **Cluster detail** — press `i` for a detailed overlay showing full stats and all issues for a cluster
 - **Viewer switch** — press `Enter` on a cluster to connect to it and switch to Viewer for live session browsing
 - **Cont3xt/WISE switch** — press `c` or `w` to switch to Cont3xt or WISE using URLs from Parliament settings
+- **Settings** — view and configure Parliament settings (general, notifiers)
 - **Auto-refresh** — dashboard and issues auto-refresh every 30 seconds
 
 ### WISE
@@ -98,11 +101,13 @@ Monitor all your Arkime clusters at a glance with health status, throughput, and
 - **Multi-app detection** — auto-detects Viewer, Cont3xt, WISE, or Parliament via `/api/appversion`
 - **Authentication** — supports no-auth, HTTP Basic, HTTP Digest, form-based (cookie), web (HTML form parsing with redirect support), and Okta SSO (Identity Engine + classic, with MFA push/TOTP) authentication
 - **Credential prompting** — prompts for username/password if not provided; `--user username` (no colon) prompts for password only
+- **Cookie jar** — persist session cookies and username between runs with `--jar` to avoid re-login; encrypted with a jar password
 - **User permissions** — respects `removeEnabled` from the Arkime user profile
 - **HTTP debug log** — press `D` to view all HTTP requests with timing, status, and response bodies; select entries with ↑/↓ and press Enter to expand full request/response details with pretty-printed JSON
 - **Expression input** — full cursor support with horizontal scrolling when text exceeds box width; `Shift+←`/`Shift+→` for word-at-a-time jumping
 - **Sort column indicators** — active sort column highlighted in Cyan with ▲/▼ arrow; other sortable columns shown in Yellow
-- **Keyboard-driven** — fully navigable with keyboard shortcuts
+- **Context-sensitive help** — press `h` or `?` to see all keybindings for the current mode/tab
+- **Animated loading** — walking owl animation with random jumps during background data fetches
 
 ## Requirements
 
@@ -227,7 +232,7 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --cont3xt-re
 | `a` | Session actions (download PCAP, add/remove tags) |
 | `A` | All sessions actions (download PCAP, export CSV, add/remove tags) with visible/matching selector |
 | `f` | Open field selector (summary tab) |
-| `1` / `2` / `3` | Switch stats sub-tab (Capture / DB Nodes / DB Indices) |
+| `1` – `7` | Switch stats sub-tab (Capture Graphs / Capture Stats / DB Nodes / DB Indices / DB Tasks / DB Shards / DB Recovery) |
 | `p` | View packet hex dump (sessions list or detail) |
 | `c` | Open columns & layouts menu |
 | `v` | Open views menu (select/create/delete views) |
@@ -237,6 +242,8 @@ alkeme http://cont3xt.example.com --auth form --user admin:password --cont3xt-re
 | `O` | Open closed index (DB Indices) |
 | `e` | Toggle exclude/include node (DB Nodes, list or detail) |
 | `x` | Toggle exclude/include IP (DB Nodes, list or detail) |
+| `X` | Cancel all cancellable tasks (DB Tasks) |
+| `m` | Cycle shard show mode: All / Not Started / Initializing / Relocating / Unassigned (DB Shards) |
 | `D` | Show HTTP debug log (request timing, status codes) |
 | `h` / `?` | Show context-sensitive help overlay |
 | `q` | Quit |
