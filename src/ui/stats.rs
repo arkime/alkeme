@@ -4,7 +4,7 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
     let toolbar_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(66), // sub-tabs
+            Constraint::Length(80), // sub-tabs
             Constraint::Min(0),    // filter
         ])
         .split(area);
@@ -33,6 +33,10 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(super) fn draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
+    if app.viewer.stats_tab == StatsTab::DBShards {
+        draw_stats_shards(f, app, area);
+        return;
+    }
     draw_stats_list(f, app, area);
     if app.viewer.stats_view == StatsView::Detail {
         draw_stats_detail(f, app, area);
@@ -299,6 +303,424 @@ fn draw_stats_detail(f: &mut Frame, app: &App, area: Rect) {
                 .title(title.as_str()),
         )
         .scroll((detail.scroll, 0));
+
+    f.render_widget(paragraph, popup_area);
+}
+
+fn draw_stats_shards(f: &mut Frame, app: &mut App, area: Rect) {
+    use crate::app::ShardsShow;
+
+    let nodes = &app.viewer.shards_nodes;
+    let indices = &app.viewer.shards_indices;
+
+    if !app.viewer.shards_loaded || indices.is_empty() {
+        let title = format!(
+            " DB Shards [{}] {} ",
+            app.viewer.shards_show.label(),
+            if !app.viewer.shards_loaded { "" } else { "No shards" }
+        );
+        let block = Block::default().borders(Borders::ALL).title(title);
+        f.render_widget(block, area);
+
+        // Still render mode bar on bottom border
+        let mode_line: Vec<Span> = ShardsShow::ALL.iter().map(|m| {
+            if *m == app.viewer.shards_show {
+                Span::styled(format!(" {} ", m.label()), Style::default().fg(Color::Black).bg(Color::Cyan))
+            } else {
+                Span::styled(format!(" {} ", m.label()), Style::default().fg(Color::DarkGray))
+            }
+        }).collect();
+        let mode_area = Rect {
+            x: area.x + 1,
+            y: area.y + area.height.saturating_sub(1),
+            width: area.width.saturating_sub(2).min(60),
+            height: 1,
+        };
+        f.render_widget(Line::from(mode_line), mode_area);
+        return;
+    }
+
+    let index_col_width: u16 = 36;
+    let node_col_width: u16 = 18;
+    let visible_width = area.width.saturating_sub(index_col_width + 3); // borders + index col
+    let max_visible_nodes = (visible_width / node_col_width) as usize;
+    let hscroll = app.viewer.shards_hscroll.min(nodes.len().saturating_sub(max_visible_nodes));
+    app.viewer.shards_hscroll = hscroll;
+
+    let visible_nodes: Vec<&String> = nodes.iter().skip(hscroll).take(max_visible_nodes).collect();
+    let visible_rows = area.height.saturating_sub(4) as usize; // borders + header + mode bar
+    let scroll_top = if app.viewer.shards_selected_row >= visible_rows {
+        app.viewer.shards_selected_row - visible_rows + 1
+    } else {
+        0
+    };
+
+    // Mode bar at top
+    let mode_line = ShardsShow::ALL.iter().map(|m| {
+        if *m == app.viewer.shards_show {
+            Span::styled(format!(" {} ", m.label()), Style::default().fg(Color::Black).bg(Color::Cyan))
+        } else {
+            Span::styled(format!(" {} ", m.label()), Style::default().fg(Color::DarkGray))
+        }
+    }).collect::<Vec<_>>();
+
+    let title = format!(
+        " DB Shards [{} indices, {} nodes] (m: mode, ←→: scroll) ",
+        indices.len(), nodes.len()
+    );
+
+    // Build header row
+    let mut header_cells = vec![
+        Cell::from(Line::from("Index").alignment(Alignment::Left))
+            .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+    ];
+    for node_name in &visible_nodes {
+        let label = if node_name.len() > (node_col_width as usize - 1) {
+            format!("{}…", &node_name[..node_col_width as usize - 2])
+        } else {
+            node_name.to_string()
+        };
+        let style = if node_name.as_str() == "Unassigned" {
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        };
+        header_cells.push(Cell::from(label).style(style));
+    }
+    let header = Row::new(header_cells).height(1);
+
+    // Access indices array from shards_data
+    let indices_arr = app.viewer.shards_data.get("indices")
+        .and_then(|i| i.as_array());
+
+    // Build data rows
+    let rows: Vec<Row> = indices.iter().enumerate()
+        .skip(scroll_top)
+        .take(visible_rows)
+        .map(|(row_idx, index_name)| {
+            let mut cells = vec![
+                Cell::from(
+                    if index_name.len() > index_col_width as usize - 1 {
+                        format!("{}…", &index_name[..index_col_width as usize - 2])
+                    } else {
+                        index_name.clone()
+                    }
+                ).style(Style::default().fg(Color::White)),
+            ];
+
+            // Find this index in the data
+            let index_data = indices_arr.and_then(|arr| {
+                arr.iter().find(|idx| idx.get("name").and_then(|n| n.as_str()) == Some(index_name))
+            });
+
+            for node_name in &visible_nodes {
+                let cell_text = if let Some(idx) = index_data {
+                    if let Some(node_shards) = idx.get("nodes")
+                        .and_then(|n| n.get(node_name.as_str()))
+                        .and_then(|s| s.as_array())
+                    {
+                        // Build shard badges
+                        let parts: Vec<Span> = node_shards.iter().map(|shard| {
+                            let num = shard.get("shard").map(|s| {
+                                if let Some(n) = s.as_u64() { n.to_string() }
+                                else { s.as_str().unwrap_or("?").to_string() }
+                            }).unwrap_or_else(|| "?".to_string());
+                            let prirep = shard.get("prirep").and_then(|s| s.as_str()).unwrap_or("");
+                            let state = shard.get("state").and_then(|s| s.as_str()).unwrap_or("");
+
+                            let style = if state != "STARTED" {
+                                Style::default().fg(Color::White).bg(Color::Red)
+                            } else if prirep == "p" {
+                                Style::default().fg(Color::White).bg(Color::Blue)
+                            } else {
+                                Style::default().fg(Color::White).bg(Color::DarkGray)
+                            };
+                            Span::styled(num, style)
+                        }).collect();
+
+                        // Join with spaces
+                        let mut spans = Vec::new();
+                        for (i, part) in parts.into_iter().enumerate() {
+                            if i > 0 { spans.push(Span::raw(" ")); }
+                            spans.push(part);
+                        }
+                        Cell::from(Line::from(spans))
+                    } else {
+                        Cell::from("")
+                    }
+                } else {
+                    Cell::from("")
+                };
+                cells.push(cell_text);
+            }
+
+            let row = Row::new(cells);
+            if row_idx == app.viewer.shards_selected_row {
+                row.style(Style::default().bg(Color::DarkGray))
+            } else {
+                row
+            }
+        })
+        .collect();
+
+    // Build column widths
+    let mut widths = vec![Constraint::Length(index_col_width)];
+    for _ in &visible_nodes {
+        widths.push(Constraint::Length(node_col_width));
+    }
+
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title(title));
+
+    f.render_widget(table, area);
+
+    // Render mode bar on top of the table border (last line of area)
+    let mode_area = Rect {
+        x: area.x + 1,
+        y: area.y + area.height.saturating_sub(1),
+        width: area.width.saturating_sub(2).min(60),
+        height: 1,
+    };
+    let mode_bar = Line::from(mode_line);
+    f.render_widget(mode_bar, mode_area);
+
+    // Render shards detail overlay if open
+    if app.viewer.shards_detail.is_some() {
+        draw_shards_detail(f, app, area);
+    }
+    // Render sub-detail (single shard + explain) on top
+    if app.viewer.shards_sub_detail.is_some() {
+        draw_shards_sub_detail(f, app, area);
+    }
+}
+
+fn draw_shards_detail(f: &mut Frame, app: &App, area: Rect) {
+    use ratatui::widgets::Clear;
+
+    let detail = match &app.viewer.shards_detail {
+        Some(d) => d,
+        None => return,
+    };
+
+    let popup_width = (area.width as f32 * 0.85) as u16;
+    let popup_height = (area.height as f32 * 0.85) as u16;
+    let popup_area = crate::ui::center_popup(popup_width, popup_height, area);
+    f.render_widget(Clear, popup_area);
+
+    let index_name = detail.data.get("index").and_then(|v| v.as_str()).unwrap_or("?");
+    let shards = detail.data.get("shards").and_then(|v| v.as_array());
+    let filter_lower = detail.filter.to_lowercase();
+
+    // Column definitions: label, field key, width, right-align
+    let columns: &[(&str, &str, u16, bool)] = &[
+        ("Node", "node", 28, false),
+        ("Shard", "shard", 6, true),
+        ("P/R", "prirep", 4, false),
+        ("State", "state", 14, false),
+        ("Docs", "docs", 12, true),
+        ("Store", "store", 10, true),
+        ("IP", "ip", 16, false),
+        ("Segment", "segmentCount", 8, true),
+    ];
+
+    // Build rows from shard data
+    struct ShardRow {
+        spans: Vec<(String, Style)>,
+    }
+    let mut rows: Vec<ShardRow> = Vec::new();
+    if let Some(shard_arr) = shards {
+        for shard in shard_arr {
+            let row_text: String = columns.iter().map(|(_, key, _, _)| {
+                match shard.get(*key) {
+                    Some(serde_json::Value::String(s)) => s.clone(),
+                    Some(serde_json::Value::Number(n)) => n.to_string(),
+                    Some(v) => v.to_string(),
+                    None => String::new(),
+                }
+            }).collect::<Vec<_>>().join(" ");
+
+            if !filter_lower.is_empty() && !row_text.to_lowercase().contains(&filter_lower) {
+                continue;
+            }
+
+            let prirep = shard.get("prirep").and_then(|v| v.as_str()).unwrap_or("");
+            let state = shard.get("state").and_then(|v| v.as_str()).unwrap_or("");
+
+            let fg = if state != "STARTED" {
+                Color::Red
+            } else if prirep == "p" {
+                Color::Cyan
+            } else {
+                Color::White
+            };
+
+            let mut cells = Vec::new();
+            for (_, key, width, right) in columns.iter() {
+                let val = match shard.get(*key) {
+                    Some(serde_json::Value::String(s)) => s.clone(),
+                    Some(serde_json::Value::Number(n)) => n.to_string(),
+                    Some(v) => v.to_string(),
+                    None => String::new(),
+                };
+                let w = *width as usize;
+                let formatted = if *right { format!("{:>w$}", val) } else { format!("{:<w$}", val) };
+                cells.push((formatted, Style::default().fg(fg)));
+            }
+            rows.push(ShardRow { spans: cells });
+        }
+    }
+
+    let inner = popup_area.inner(ratatui::layout::Margin { vertical: 1, horizontal: 1 });
+    let content_height = inner.height.saturating_sub(1) as usize; // -1 for header
+    let total = rows.len();
+    let selected = (detail.scroll as usize).min(total.saturating_sub(1));
+
+    // Compute scroll window
+    let scroll_top = if selected >= content_height {
+        selected - content_height + 1
+    } else {
+        0
+    };
+
+    // Build header
+    let mut header_spans = Vec::new();
+    for (i, (label, _, width, right)) in columns.iter().enumerate() {
+        if i > 0 { header_spans.push(Span::raw(" ")); }
+        let w = *width as usize;
+        let formatted = if *right { format!("{:>w$}", label) } else { format!("{:<w$}", label) };
+        header_spans.push(Span::styled(formatted, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+    }
+
+    // Build visible lines
+    let mut visible_lines: Vec<Line> = vec![Line::from(header_spans)];
+    for (i, row) in rows.iter().enumerate().skip(scroll_top).take(content_height) {
+        let is_selected = i == selected;
+        let mut spans = Vec::new();
+        for (j, (text, style)) in row.spans.iter().enumerate() {
+            if j > 0 { spans.push(Span::raw(" ")); }
+            let s = if is_selected {
+                Style::default().fg(style.fg.unwrap_or(Color::White)).bg(Color::DarkGray)
+            } else {
+                *style
+            };
+            spans.push(Span::styled(text.clone(), s));
+        }
+        visible_lines.push(Line::from(spans));
+    }
+
+    let shard_count = shards.map(|a| a.len()).unwrap_or(0);
+    let title = if !detail.filter.is_empty() {
+        format!(" {} [{} shards] filter: {} ", index_name, shard_count, detail.filter)
+    } else if app.input_mode == crate::app::InputMode::DetailFilter {
+        format!(" {} [{} shards] filter: ", index_name, shard_count)
+    } else {
+        format!(" {} [{} shards] (/ filter, Esc close) ", index_name, shard_count)
+    };
+    let position_info = if total > 0 {
+        format!(" {}/{} ", selected + 1, total)
+    } else {
+        " 0/0 ".to_string()
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_bottom(Line::from(position_info).alignment(Alignment::Right))
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let paragraph = Paragraph::new(visible_lines).block(block);
+    f.render_widget(paragraph, popup_area);
+
+    // Show cursor in filter mode
+    if app.input_mode == crate::app::InputMode::DetailFilter {
+        let filter_x = popup_area.x + 1 + index_name.len() as u16 + format!(" [{} shards] filter: ", shard_count).len() as u16 + detail.filter_cursor as u16;
+        let filter_y = popup_area.y;
+        if filter_x < popup_area.x + popup_area.width - 1 {
+            f.set_cursor_position((filter_x, filter_y));
+        }
+    }
+}
+
+fn draw_shards_sub_detail(f: &mut Frame, app: &App, area: Rect) {
+    use ratatui::widgets::Clear;
+
+    let detail = match &app.viewer.shards_sub_detail {
+        Some(d) => d,
+        None => return,
+    };
+
+    let popup_width = (area.width as f32 * 0.9) as u16;
+    let popup_height = (area.height as f32 * 0.9) as u16;
+    let popup_area = crate::ui::center_popup(popup_width, popup_height, area);
+    f.render_widget(Clear, popup_area);
+
+    let obj = detail.data.as_object();
+    let node = detail.data.get("node").and_then(|v| v.as_str()).unwrap_or("?");
+    let shard_num = detail.data.get("shard").map(|v| match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        _ => "?".to_string(),
+    }).unwrap_or_else(|| "?".to_string());
+    let prirep = detail.data.get("prirep").and_then(|v| v.as_str()).unwrap_or("?");
+    let pr_label = if prirep == "p" { "Primary" } else { "Replica" };
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Shard fields (everything except _explain)
+    lines.push(Line::from(vec![
+        Span::styled("── Shard Info ──", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+    ]));
+    if let Some(obj) = obj {
+        let mut keys: Vec<&String> = obj.keys().filter(|k| *k != "_explain").collect();
+        keys.sort();
+        for key in keys {
+            let val = &obj[key];
+            let val_str = match val {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Null => "null".to_string(),
+                _ => val.to_string(),
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("{:>20}: ", key), Style::default().fg(Color::Yellow)),
+                Span::raw(val_str),
+            ]));
+        }
+    }
+
+    // Explain section
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("── Allocation Explain ──", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+    ]));
+    if let Some(explain) = detail.data.get("_explain") {
+        if let Some(err) = explain.get("error").and_then(|v| v.as_str()) {
+            lines.push(Line::from(Span::styled(format!("  Error: {err}"), Style::default().fg(Color::Red))));
+        } else {
+            let pretty = serde_json::to_string_pretty(explain).unwrap_or_else(|_| explain.to_string());
+            for line in pretty.lines() {
+                lines.push(Line::from(Span::raw(format!("  {line}"))));
+            }
+        }
+    }
+
+    let inner = popup_area.inner(ratatui::layout::Margin { vertical: 1, horizontal: 1 });
+    let content_height = inner.height as usize;
+    let total = lines.len();
+    let scroll = (detail.scroll as usize).min(total.saturating_sub(content_height));
+
+    let title = format!(" Shard {} {} on {} (Esc close) ", shard_num, pr_label, node);
+    let position_info = format!(" {}/{} ", scroll + 1, total);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_bottom(Line::from(position_info).alignment(Alignment::Right))
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .scroll((scroll as u16, 0));
 
     f.render_widget(paragraph, popup_area);
 }

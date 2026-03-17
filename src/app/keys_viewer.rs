@@ -612,6 +612,7 @@ impl App {
 
     pub(crate) fn handle_detail_filter_key(&mut self, key: KeyEvent) {
         let is_stats = self.active_tab == Tab::Stats;
+        let is_shards = is_stats && self.viewer.stats_tab == crate::app::StatsTab::DBShards;
         let is_files = self.active_tab == Tab::Files;
         let is_c3_detail = self.app_mode == crate::app::AppMode::Cont3xt && self.active_tab == Tab::Search;
         match key.code {
@@ -620,6 +621,12 @@ impl App {
                     self.cont3xt.detail_filter.clear();
                     self.cont3xt.detail_filter_cursor = 0;
                     self.cont3xt.detail_scroll = 0;
+                } else if is_shards {
+                    if let Some(ref mut detail) = self.viewer.shards_detail {
+                        detail.filter.clear();
+                        detail.filter_cursor = 0;
+                        detail.scroll = 0;
+                    }
                 } else if is_stats {
                     if let Some(ref mut detail) = self.viewer.stats_detail {
                         detail.filter.clear();
@@ -648,6 +655,12 @@ impl App {
                 if is_c3_detail {
                     if handle_text_input_key(key.code, &mut self.cont3xt.detail_filter, &mut self.cont3xt.detail_filter_cursor) {
                         self.cont3xt.detail_scroll = 0;
+                    }
+                } else if is_shards {
+                    if let Some(ref mut detail) = self.viewer.shards_detail {
+                        if handle_text_input_key(key.code, &mut detail.filter, &mut detail.filter_cursor) {
+                            detail.scroll = 0;
+                        }
                     }
                 } else if is_stats {
                     if let Some(ref mut detail) = self.viewer.stats_detail {
@@ -1119,6 +1132,19 @@ impl App {
                     self.vr_fetch_stats().await;
                 }
             }
+            KeyCode::Char('5') => {
+                if self.viewer.stats_tab != StatsTab::DBShards {
+                    self.viewer.stats_tab = StatsTab::DBShards;
+                    if !self.viewer.shards_loaded {
+                        self.vr_fetch_shards().await;
+                    }
+                }
+            }
+            // --- DB Shards-specific keys ---
+            _ if self.viewer.stats_tab == StatsTab::DBShards => {
+                self.handle_shards_key(key).await;
+                return;
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.viewer.stats_data.is_empty() {
                     self.viewer.stats_selected = (self.viewer.stats_selected + 1).min(self.viewer.stats_data.len() - 1);
@@ -1353,6 +1379,235 @@ impl App {
         }
         // Sync delete name back for UI display
         self.viewer.stats_layout_delete_name = delete_name_for_id;
+    }
+
+    pub(crate) async fn handle_shards_key(&mut self, key: KeyEvent) {
+        // If sub-detail (single shard + explain) is open
+        if self.viewer.shards_sub_detail.is_some() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.viewer.shards_sub_detail = None;
+                }
+                KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    if let Some(ref mut d) = self.viewer.shards_sub_detail {
+                        d.scroll = d.scroll.saturating_add(self.visible_rows as u16);
+                    }
+                }
+                KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    if let Some(ref mut d) = self.viewer.shards_sub_detail {
+                        d.scroll = d.scroll.saturating_sub(self.visible_rows as u16);
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if let Some(ref mut d) = self.viewer.shards_sub_detail {
+                        d.scroll = d.scroll.saturating_add(1);
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(ref mut d) = self.viewer.shards_sub_detail {
+                        d.scroll = d.scroll.saturating_sub(1);
+                    }
+                }
+                KeyCode::PageDown => {
+                    if let Some(ref mut d) = self.viewer.shards_sub_detail {
+                        d.scroll = d.scroll.saturating_add(self.visible_rows as u16);
+                    }
+                }
+                KeyCode::PageUp => {
+                    if let Some(ref mut d) = self.viewer.shards_sub_detail {
+                        d.scroll = d.scroll.saturating_sub(self.visible_rows as u16);
+                    }
+                }
+                KeyCode::Left | KeyCode::Home => {
+                    if let Some(ref mut d) = self.viewer.shards_sub_detail {
+                        d.scroll = 0;
+                    }
+                }
+                KeyCode::Right | KeyCode::End => {
+                    if let Some(ref mut d) = self.viewer.shards_sub_detail {
+                        d.scroll = u16::MAX;
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        // If detail overlay (shard list for an index) is open
+        if self.viewer.shards_detail.is_some() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.viewer.shards_detail = None;
+                }
+                KeyCode::Enter => {
+                    self.vr_open_shard_sub_detail().await;
+                }
+                KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    if let Some(ref mut d) = self.viewer.shards_detail {
+                        d.scroll = d.scroll.saturating_add(self.visible_rows as u16);
+                    }
+                }
+                KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    if let Some(ref mut d) = self.viewer.shards_detail {
+                        d.scroll = d.scroll.saturating_sub(self.visible_rows as u16);
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if let Some(ref mut d) = self.viewer.shards_detail {
+                        d.scroll = d.scroll.saturating_add(1);
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(ref mut d) = self.viewer.shards_detail {
+                        d.scroll = d.scroll.saturating_sub(1);
+                    }
+                }
+                KeyCode::PageDown => {
+                    if let Some(ref mut d) = self.viewer.shards_detail {
+                        d.scroll = d.scroll.saturating_add(self.visible_rows as u16);
+                    }
+                }
+                KeyCode::PageUp => {
+                    if let Some(ref mut d) = self.viewer.shards_detail {
+                        d.scroll = d.scroll.saturating_sub(self.visible_rows as u16);
+                    }
+                }
+                KeyCode::Left | KeyCode::Home => {
+                    if let Some(ref mut d) = self.viewer.shards_detail {
+                        d.scroll = 0;
+                    }
+                }
+                KeyCode::Right | KeyCode::End => {
+                    if let Some(ref mut d) = self.viewer.shards_detail {
+                        d.scroll = u16::MAX;
+                    }
+                }
+                KeyCode::Char('/') => {
+                    self.input_mode = InputMode::DetailFilter;
+                }
+                KeyCode::Char('h') | KeyCode::Char('?') => {
+                    self.show_help = true;
+                }
+                KeyCode::Char('D') => {
+                    self.show_debug = true;
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Tab => {
+                self.next_tab();
+                if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
+                    self.vr_init_stats_tab().await;
+                }
+                if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
+                    self.vr_init_files_tab().await;
+                }
+            }
+            KeyCode::BackTab => {
+                self.prev_tab();
+                if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
+                    self.vr_init_stats_tab().await;
+                }
+                if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
+                    self.vr_init_files_tab().await;
+                }
+            }
+            KeyCode::Char('1') => {
+                self.viewer.stats_tab = StatsTab::Capture;
+                if !self.viewer.stats_state_loaded[0] {
+                    self.vr_load_stats_state(StatsTab::Capture).await;
+                    self.viewer.stats_state_loaded[0] = true;
+                }
+                self.vr_fetch_stats().await;
+            }
+            KeyCode::Char('2') => {
+                self.viewer.stats_tab = StatsTab::DBStats;
+                if !self.viewer.stats_state_loaded[1] {
+                    self.vr_load_stats_state(StatsTab::DBStats).await;
+                    self.viewer.stats_state_loaded[1] = true;
+                }
+                self.vr_fetch_stats().await;
+            }
+            KeyCode::Char('3') => {
+                self.viewer.stats_tab = StatsTab::DBIndices;
+                if !self.viewer.stats_state_loaded[2] {
+                    self.vr_load_stats_state(StatsTab::DBIndices).await;
+                    self.viewer.stats_state_loaded[2] = true;
+                }
+                self.vr_fetch_stats().await;
+            }
+            KeyCode::Char('4') => {
+                self.viewer.stats_tab = StatsTab::DBTasks;
+                if !self.viewer.stats_state_loaded[3] {
+                    self.vr_load_stats_state(StatsTab::DBTasks).await;
+                    self.viewer.stats_state_loaded[3] = true;
+                }
+                self.vr_fetch_stats().await;
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.viewer.shards_selected_row = (self.viewer.shards_selected_row + self.visible_rows).min(self.viewer.shards_indices.len().saturating_sub(1));
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.viewer.shards_selected_row = self.viewer.shards_selected_row.saturating_sub(self.visible_rows);
+            }
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.viewer.shards_hscroll = self.viewer.shards_hscroll.saturating_add(5);
+            }
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.viewer.shards_hscroll = self.viewer.shards_hscroll.saturating_sub(5);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if !self.viewer.shards_indices.is_empty() {
+                    self.viewer.shards_selected_row = (self.viewer.shards_selected_row + 1).min(self.viewer.shards_indices.len() - 1);
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.viewer.shards_selected_row > 0 {
+                    self.viewer.shards_selected_row -= 1;
+                }
+            }
+            KeyCode::Right => {
+                self.viewer.shards_hscroll = self.viewer.shards_hscroll.saturating_add(1);
+            }
+            KeyCode::Left => {
+                self.viewer.shards_hscroll = self.viewer.shards_hscroll.saturating_sub(1);
+            }
+            KeyCode::Home => {
+                self.viewer.shards_selected_row = 0;
+                self.viewer.shards_hscroll = 0;
+            }
+            KeyCode::End => {
+                self.viewer.shards_selected_row = self.viewer.shards_indices.len().saturating_sub(1);
+            }
+            KeyCode::Enter => {
+                self.vr_open_shards_detail();
+            }
+            KeyCode::Char('m') => {
+                self.viewer.shards_show = self.viewer.shards_show.next();
+                self.vr_fetch_shards().await;
+            }
+            KeyCode::Char('M') => {
+                self.viewer.shards_show = self.viewer.shards_show.prev();
+                self.vr_fetch_shards().await;
+            }
+            KeyCode::Char('r') => {
+                self.vr_fetch_shards().await;
+            }
+            KeyCode::Char('/') | KeyCode::Char('E') => {
+                self.viewer.stats_filter_edit = self.viewer.stats_filter.clone();
+                self.expression_cursor = self.viewer.stats_filter_edit.len();
+                self.input_mode = InputMode::Expression;
+            }
+            KeyCode::Char('h') | KeyCode::Char('?') => {
+                self.show_help = true;
+            }
+            KeyCode::Char('D') => {
+                self.show_debug = true;
+            }
+            _ => {}
+        }
     }
 
     pub(crate) fn handle_stats_detail_key(&mut self, key: KeyEvent) {

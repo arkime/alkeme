@@ -99,6 +99,29 @@ impl ArkimeClient {
         self.authenticated_post_json(&url, &serde_json::json!({})).await
     }
 
+    pub async fn vr_get_esshards(&self, filter: &str, show: &str) -> Result<Value> {
+        let mut url = format!(
+            "{}/api/esshards?show={}&sortField=index&desc=false",
+            self.base_url, urlencoding::encode(show)
+        );
+        if !filter.is_empty() {
+            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
+        }
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    pub async fn vr_get_allocation_explain(&self, index: &str, shard: &str, primary: bool) -> Result<Value> {
+        let url = format!(
+            "{}/api/esadmin/allocation?index={}&shard={}&primary={}",
+            self.base_url, urlencoding::encode(index), urlencoding::encode(shard), primary
+        );
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
     pub async fn vr_get_files(&self, filter: &str, sort_field: &str, sort_desc: bool, start: usize, length: usize) -> Result<Value> {
         let desc = if sort_desc { "true" } else { "false" };
         let mut url = format!(

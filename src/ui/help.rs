@@ -71,7 +71,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             blank(),
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
-            Line::from(vec![key("1 / 2 / 3 / 4"), Span::raw("Switch sub-tab")]),
+            Line::from(vec![key("1 / 2 / 3 / 4 / 5"), Span::raw("Switch sub-tab")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
@@ -106,6 +106,16 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             lines.push(blank());
             lines.push(Line::from(vec![key("d"), Span::raw("Cancel selected task")]));
             lines.push(Line::from(vec![key("X"), Span::raw("Cancel all cancellable tasks")]));
+        }
+        if app.viewer.stats_tab == StatsTab::DBShards {
+            lines.push(blank());
+            lines.push(hdr!("Shards Navigation"));
+            lines.push(blank());
+            lines.push(Line::from(vec![key("← / →"), Span::raw("Scroll nodes left / right")]));
+            lines.push(Line::from(vec![key("Shift+← / Shift+→"), Span::raw("Fast scroll nodes")]));
+            lines.push(Line::from(vec![key("Home"), Span::raw("Top + reset scroll")]));
+            lines.push(Line::from(vec![key("End"), Span::raw("Jump to bottom")]));
+            lines.push(Line::from(vec![key("m"), Span::raw("Cycle show mode (All/Not Started/...)")]));
         }
         ("Stats", lines)
     } else if app.active_tab == Tab::Files {

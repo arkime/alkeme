@@ -534,6 +534,9 @@ impl App {
     }
 
     pub async fn vr_fetch_stats(&mut self) {
+        if self.viewer.stats_tab == StatsTab::DBShards {
+            return self.vr_fetch_shards().await;
+        }
         self.status_msg = format!("Fetching {}...", self.viewer.stats_tab.name());
         let sort_field = self.vr_stats_sort_field().to_string();
 
@@ -542,6 +545,7 @@ impl App {
             StatsTab::DBStats => self.client.vr_get_esstats(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc).await,
             StatsTab::DBIndices => self.client.vr_get_esindices(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc).await,
             StatsTab::DBTasks => self.client.vr_get_estasks(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc).await,
+            StatsTab::DBShards => unreachable!(),
         };
 
         match result {
@@ -574,6 +578,144 @@ impl App {
         if let Some(item) = self.viewer.stats_data.get(self.viewer.stats_selected) {
             self.viewer.stats_detail = Some(StatsDetail { data: item.clone(), scroll: 0, filter: String::new(), filter_cursor: 0 });
             self.viewer.stats_view = StatsView::Detail;
+        }
+    }
+
+    pub fn vr_open_shards_detail(&mut self) {
+        let index_name = match self.viewer.shards_indices.get(self.viewer.shards_selected_row) {
+            Some(name) => name.clone(),
+            None => return,
+        };
+        // Find the index data and build a Value with all shards flattened
+        let indices_arr = self.viewer.shards_data.get("indices").and_then(|i| i.as_array());
+        let index_data = indices_arr.and_then(|arr| {
+            arr.iter().find(|idx| idx.get("name").and_then(|n| n.as_str()) == Some(&index_name))
+        });
+        if let Some(idx) = index_data {
+            // Build a combined Value: { "index": name, "shards": [ {node, shard, prirep, state, ...} ] }
+            let mut all_shards = Vec::new();
+            if let Some(nodes_obj) = idx.get("nodes").and_then(|n| n.as_object()) {
+                // Use the sorted node order from shards_nodes
+                for node_name in &self.viewer.shards_nodes {
+                    if let Some(shards) = nodes_obj.get(node_name).and_then(|s| s.as_array()) {
+                        for shard in shards {
+                            let mut entry = shard.clone();
+                            if let Some(obj) = entry.as_object_mut() {
+                                obj.insert("node".to_string(), serde_json::Value::String(node_name.clone()));
+                            }
+                            all_shards.push(entry);
+                        }
+                    }
+                }
+            }
+            let data = serde_json::json!({
+                "index": index_name,
+                "shards": all_shards,
+            });
+            self.viewer.shards_detail = Some(StatsDetail {
+                data,
+                scroll: 0,
+                filter: String::new(),
+                filter_cursor: 0,
+            });
+        }
+    }
+
+    pub async fn vr_open_shard_sub_detail(&mut self) {
+        let detail = match &self.viewer.shards_detail {
+            Some(d) => d,
+            None => return,
+        };
+        let selected = detail.scroll as usize;
+        let shards = match detail.data.get("shards").and_then(|v| v.as_array()) {
+            Some(arr) => arr,
+            None => return,
+        };
+        let filter_lower = detail.filter.to_lowercase();
+        // Get the selected shard after filtering
+        let filtered: Vec<&serde_json::Value> = shards.iter().filter(|s| {
+            if filter_lower.is_empty() { return true; }
+            let text = s.as_object().map(|o| {
+                o.values().map(|v| match v { serde_json::Value::String(s) => s.as_str(), _ => "" }).collect::<Vec<_>>().join(" ")
+            }).unwrap_or_default();
+            text.to_lowercase().contains(&filter_lower)
+        }).collect();
+        let shard = match filtered.get(selected) {
+            Some(s) => (*s).clone(),
+            None => return,
+        };
+        let index_name = detail.data.get("index").and_then(|v| v.as_str()).unwrap_or("");
+        let shard_num = match shard.get("shard") {
+            Some(serde_json::Value::Number(n)) => n.to_string(),
+            Some(serde_json::Value::String(s)) => s.clone(),
+            _ => return,
+        };
+        let is_primary = shard.get("prirep").and_then(|v| v.as_str()) == Some("p");
+
+        // Fetch allocation explain
+        self.status_msg = "Fetching allocation explain...".into();
+        let explain = match self.client.vr_get_allocation_explain(index_name, &shard_num, is_primary).await {
+            Ok(v) => v,
+            Err(e) => {
+                self.status_msg = format!("Explain error: {e}");
+                serde_json::json!({"error": e.to_string()})
+            }
+        };
+
+        // Combine shard fields + explain into one Value
+        let mut combined = serde_json::Map::new();
+        if let Some(obj) = shard.as_object() {
+            for (k, v) in obj {
+                combined.insert(k.clone(), v.clone());
+            }
+        }
+        combined.insert("_explain".to_string(), explain);
+
+        self.viewer.shards_sub_detail = Some(StatsDetail {
+            data: serde_json::Value::Object(combined),
+            scroll: 0,
+            filter: String::new(),
+            filter_cursor: 0,
+        });
+        self.status_msg = String::new();
+    }
+
+    pub async fn vr_fetch_shards(&mut self) {
+        self.status_msg = "Fetching DB Shards...".into();
+        let show = self.viewer.shards_show.api_value();
+        match self.client.vr_get_esshards(&self.viewer.stats_filter, show).await {
+            Ok(value) => {
+                // Extract sorted node names from "nodes" object
+                let mut nodes: Vec<String> = value.get("nodes")
+                    .and_then(|n| n.as_object())
+                    .map(|obj| obj.keys().cloned().collect())
+                    .unwrap_or_default();
+                // Put "Unassigned" first, then sort the rest
+                nodes.sort_by(|a, b| {
+                    if a == "Unassigned" { std::cmp::Ordering::Less }
+                    else if b == "Unassigned" { std::cmp::Ordering::Greater }
+                    else { a.cmp(b) }
+                });
+                // Extract index names from "indices" array
+                let indices: Vec<String> = value.get("indices")
+                    .and_then(|i| i.as_array())
+                    .map(|arr| arr.iter().filter_map(|idx| idx.get("name").and_then(|n| n.as_str()).map(String::from)).collect())
+                    .unwrap_or_default();
+                let num_indices = indices.len();
+                self.viewer.shards_nodes = nodes;
+                self.viewer.shards_indices = indices;
+                self.viewer.shards_data = value;
+                self.viewer.shards_selected_row = 0;
+                self.viewer.shards_loaded = true;
+                self.viewer.stats_last_refresh = std::time::Instant::now();
+                self.status_msg = format!(
+                    "DB Shards: {} indices, {} nodes [{}]",
+                    num_indices, self.viewer.shards_nodes.len(), self.viewer.shards_show.label()
+                );
+            }
+            Err(e) => {
+                self.status_msg = format!("Error: {e}");
+            }
         }
     }
 
@@ -627,6 +769,7 @@ impl App {
             StatsTab::DBStats => "esNodesCols",
             StatsTab::DBIndices => "esIndicesCols",
             StatsTab::DBTasks => "esTasksCols",
+            StatsTab::DBShards => "esShardsCols",
         }
     }
 

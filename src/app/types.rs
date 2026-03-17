@@ -358,6 +358,7 @@ pub fn stats_tab_all_columns(tab: StatsTab) -> Vec<StatsColumnDef> {
         StatsTab::DBStats => esnodes_all_columns(),
         StatsTab::DBIndices => esindices_all_columns(),
         StatsTab::DBTasks => estasks_all_columns(),
+        StatsTab::DBShards => Vec::new(),
     }
 }
 
@@ -367,6 +368,7 @@ pub fn stats_tab_default_fields(tab: StatsTab) -> Vec<&'static str> {
         StatsTab::DBStats => esnodes_default_fields(),
         StatsTab::DBIndices => esindices_default_fields(),
         StatsTab::DBTasks => estasks_default_fields(),
+        StatsTab::DBShards => Vec::new(),
     }
 }
 
@@ -376,6 +378,7 @@ pub fn stats_tab_shareable_type(tab: StatsTab) -> &'static str {
         StatsTab::DBStats => "esnodes-columns",
         StatsTab::DBIndices => "esindices-columns",
         StatsTab::DBTasks => "estasks-columns",
+        StatsTab::DBShards => "esshards-columns",
     }
 }
 
@@ -934,6 +937,7 @@ pub enum StatsTab {
     DBStats,
     DBIndices,
     DBTasks,
+    DBShards,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -983,7 +987,7 @@ pub const C3_HISTORY_COLUMNS: &[(&str, &str, u16, bool)] = &[
 ];
 
 impl StatsTab {
-    pub const ALL: [StatsTab; 4] = [StatsTab::Capture, StatsTab::DBStats, StatsTab::DBIndices, StatsTab::DBTasks];
+    pub const ALL: [StatsTab; 5] = [StatsTab::Capture, StatsTab::DBStats, StatsTab::DBIndices, StatsTab::DBTasks, StatsTab::DBShards];
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -991,7 +995,54 @@ impl StatsTab {
             StatsTab::DBStats => "DB Nodes",
             StatsTab::DBIndices => "DB Indices",
             StatsTab::DBTasks => "DB Tasks",
+            StatsTab::DBShards => "DB Shards",
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ShardsShow {
+    All,
+    NotStarted,
+    Initializing,
+    Relocating,
+    Unassigned,
+}
+
+impl ShardsShow {
+    pub const ALL: [ShardsShow; 5] = [
+        ShardsShow::All, ShardsShow::NotStarted, ShardsShow::Initializing,
+        ShardsShow::Relocating, ShardsShow::Unassigned,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            ShardsShow::All => "All",
+            ShardsShow::NotStarted => "Not Started",
+            ShardsShow::Initializing => "Initializing",
+            ShardsShow::Relocating => "Relocating",
+            ShardsShow::Unassigned => "Unassigned",
+        }
+    }
+
+    pub fn api_value(&self) -> &'static str {
+        match self {
+            ShardsShow::All => "all",
+            ShardsShow::NotStarted => "notstarted",
+            ShardsShow::Initializing => "INITIALIZING",
+            ShardsShow::Relocating => "RELOCATING",
+            ShardsShow::Unassigned => "UNASSIGNED",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        let idx = Self::ALL.iter().position(|&s| s == *self).unwrap_or(0);
+        Self::ALL[(idx + 1) % Self::ALL.len()]
+    }
+
+    pub fn prev(&self) -> Self {
+        let idx = Self::ALL.iter().position(|&s| s == *self).unwrap_or(0);
+        Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
     }
 }
 
@@ -2083,6 +2134,16 @@ pub struct ViewerState {
     pub stats_layout_delete_name: String,
     pub stats_layout_filter: String,
     pub stats_layout_filter_cursor: usize,
+    /// DB Shards state (custom grid view, not table-based)
+    pub shards_data: Value,
+    pub shards_nodes: Vec<String>,
+    pub shards_indices: Vec<String>,
+    pub shards_show: ShardsShow,
+    pub shards_selected_row: usize,
+    pub shards_hscroll: usize,
+    pub shards_loaded: bool,
+    pub shards_detail: Option<StatsDetail>,
+    pub shards_sub_detail: Option<StatsDetail>,
     /// Files tab state
     pub files_data: Vec<Value>,
     pub files_total: u64,
@@ -2241,6 +2302,16 @@ impl Default for ViewerState {
             stats_layout_delete_name: String::new(),
             stats_layout_filter: String::new(),
             stats_layout_filter_cursor: 0,
+            // DB Shards
+            shards_data: Value::Null,
+            shards_nodes: Vec::new(),
+            shards_indices: Vec::new(),
+            shards_show: ShardsShow::NotStarted,
+            shards_selected_row: 0,
+            shards_hscroll: 0,
+            shards_loaded: false,
+            shards_detail: None,
+            shards_sub_detail: None,
             // Files tab
             files_data: Vec::new(),
             files_total: 0,

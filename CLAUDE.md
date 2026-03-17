@@ -103,7 +103,8 @@ src/
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
 - `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
 - `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
-- `StatsTab` — Enum: `Capture` | `DBStats` | `DBIndices`. Sub-tabs within Stats tab. DBStats labeled "DB Nodes".
+- `StatsTab` — Enum: `Capture` | `DBStats` | `DBIndices` | `DBTasks` | `DBShards`. Sub-tabs within Stats tab. DBStats labeled "DB Nodes".
+- `ShardsShow` — Enum: `All` | `NotStarted` | `Initializing` | `Relocating` | `Unassigned`. Filter mode for DB Shards sub-tab. Has `label()`, `api_value()`, `next()`.
 - `StatsView` — Enum: `List` | `Detail`. Controls which stats sub-view renders.
 - `StatsDetail` — Holds detail data + scroll position for stats detail overlay.
 - `GraphType` — Enum: `Sessions` | `Packets` | `Bytes`. Selects which histogram to display.
@@ -171,7 +172,7 @@ src/
 | G | Cycle graph type: Sessions → Packets → Bytes (sessions); cycle bar chart metric (arkime) |
 | a | Session action menu (download pcap, add/remove tags) |
 | A | All sessions action menu (download pcap, export csv, add/remove tags) — pcap/csv show Visible/Matching scope selector |
-| 1 / 2 / 3 / 4 | Switch stats sub-tab (Capture/DB Nodes/DB Indices/DB Tasks) |
+| 1 / 2 / 3 / 4 / 5 | Switch stats sub-tab (Capture/DB Nodes/DB Indices/DB Tasks/DB Shards) |
 | f | Open field selector (arkime tab) |
 | p | View packet hex dump (session list or detail) |
 | c | Columns & layouts menu |
@@ -183,6 +184,8 @@ src/
 | e | Toggle exclude/include node (DB Nodes); confirm dialog |
 | x | Toggle exclude/include IP (DB Nodes); confirm dialog |
 | X | Cancel all cancellable tasks (DB Tasks); confirm dialog |
+| m | Cycle shard show mode (DB Shards): All/Not Started/Initializing/Relocating/Unassigned |
+| ← / → | Scroll nodes left/right (DB Shards) |
 | D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
 | h / ? | Show context-sensitive help overlay |
 | q | Quit |
@@ -301,7 +304,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ## Stats tab
 
-- Has 4 sub-tabs switchable with `1/2/3/4` keys: Capture Stats, DB Nodes, DB Indices, DB Tasks
+- Has 5 sub-tabs switchable with `1/2/3/4/5` keys: Capture Stats, DB Nodes, DB Indices, DB Tasks, DB Shards
 - Each sub-tab has dynamic columns defined by `StatsColumnDef` (field, sort, label, width, format)
 - `StatsFormat` enum controls cell rendering: String, Number, Bytes, BytesPerSec, MegaBytes, Percent, EpochSecs, EpochMs, Boolean, PercentSuffix, SizeString, Nanos
 - `c` opens column/layout popup (same pattern as session columns): Edit Columns, Save Layout, Default, saved layouts
@@ -326,6 +329,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - **DB Nodes** (10 default, 27 total): name, docs, storeSize, freeSize, heapSize, load, cpu, read, write, searches (+ 17 more)
 - **DB Indices** (9 default, 16 total): index, docs.count, store.size, pri, segmentsCount, rep, memoryTotal, health, status (+ 7 more)
 - **DB Tasks** (6 default, 11 total): action, description, start_time_in_millis, running_time_in_nanos, childrenCount, user (+ 5 more: cancellable, id, node, taskId, type)
+- **DB Shards**: Custom grid/matrix view (not table-based). Nodes as columns, indices as rows. Shard numbers shown with color coding: blue=primary started, gray=replica started, red=not started. 5 show modes: All, Not Started, Initializing, Relocating, Unassigned. `m` cycles mode, `←/→` scrolls nodes, `Shift+←/→` fast scroll.
 
 ### Shareable API (stats column layouts)
 - `GET /api/shareables?type={tab}-columns` — list saved layouts (no cookie needed)
