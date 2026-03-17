@@ -846,14 +846,18 @@ fn draw_capture_graphs(f: &mut Frame, app: &mut App, area: Rect) {
             break;
         }
 
+        // Alternating subtle background for row separation
+        let row_bg = if i % 2 == 1 { Some(Color::Rgb(25, 25, 35)) } else { None };
+
         // Node name label
         let label_text = if node.node_name.len() > label_width as usize {
             &node.node_name[..label_width as usize]
         } else {
             &node.node_name
         };
-        let label = Paragraph::new(label_text.to_string())
-            .style(Style::default().fg(Color::Yellow));
+        let mut label_style = Style::default().fg(Color::Yellow);
+        if let Some(bg) = row_bg { label_style = label_style.bg(bg); }
+        let label = Paragraph::new(label_text.to_string()).style(label_style);
         f.render_widget(label, Rect::new(inner.x, y, label_width, 1));
 
         // Downsample values to graph_data_width points
@@ -883,10 +887,9 @@ fn draw_capture_graphs(f: &mut Frame, app: &mut App, area: Rect) {
             let ch = braille_from_heights(left_h, right_h);
             let color = band_colors[left_band.max(right_band) as usize];
 
-            spans.push(Span::styled(
-                String::from(ch),
-                Style::default().fg(color),
-            ));
+            let mut style = Style::default().fg(color);
+            if let Some(bg) = row_bg { style = style.bg(bg); }
+            spans.push(Span::styled(String::from(ch), style));
         }
 
         let graph_area = Rect::new(inner.x + label_width, y, graph_char_width as u16, 1);
