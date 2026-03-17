@@ -492,6 +492,14 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 continue;
             }
 
+            if app.viewer.pending_stats_fetch {
+                app.viewer.pending_stats_fetch = false;
+                app.vr_fetch_stats().await;
+                app.show_loading = false;
+                needs_redraw = true;
+                continue;
+            }
+
             if app.viewer.pending_summary_fetch {
                 app.viewer.pending_summary_fetch = false;
                 let field = app.viewer.summary_field.clone();
@@ -568,7 +576,8 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
                 && app.input_mode == app::InputMode::Normal
                 && app.viewer.stats_last_refresh.elapsed() >= Duration::from_secs(30)
             {
-                app.vr_fetch_stats().await;
+                // Silent refresh — no loading overlay
+                app.viewer.pending_stats_fetch = true;
                 needs_redraw = true;
             }
         }

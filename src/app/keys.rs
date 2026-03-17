@@ -260,7 +260,7 @@ impl App {
                 } else if is_stats {
                     self.viewer.stats_filter = self.viewer.stats_filter_edit.clone();
                     self.input_mode = InputMode::Normal;
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 } else if is_files {
                     self.viewer.files_filter = self.viewer.files_filter_edit.clone();
                     self.input_mode = InputMode::Normal;

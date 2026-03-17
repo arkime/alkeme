@@ -1099,7 +1099,7 @@ impl App {
                         self.vr_load_stats_state(StatsTab::Capture).await;
                         self.viewer.stats_state_loaded[0] = true;
                     }
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
             }
             KeyCode::Char('2') => {
@@ -1109,7 +1109,7 @@ impl App {
                         self.vr_load_stats_state(StatsTab::DBStats).await;
                         self.viewer.stats_state_loaded[1] = true;
                     }
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
             }
             KeyCode::Char('3') => {
@@ -1119,7 +1119,7 @@ impl App {
                         self.vr_load_stats_state(StatsTab::DBIndices).await;
                         self.viewer.stats_state_loaded[2] = true;
                     }
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
             }
             KeyCode::Char('4') => {
@@ -1129,14 +1129,14 @@ impl App {
                         self.vr_load_stats_state(StatsTab::DBTasks).await;
                         self.viewer.stats_state_loaded[3] = true;
                     }
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
             }
             KeyCode::Char('5') => {
                 if self.viewer.stats_tab != StatsTab::DBShards {
                     self.viewer.stats_tab = StatsTab::DBShards;
                     if !self.viewer.shards_loaded {
-                        self.vr_fetch_shards().await;
+                        self.vr_request_stats_fetch();
                     }
                 }
             }
@@ -1147,7 +1147,7 @@ impl App {
                         self.vr_load_stats_state(StatsTab::DBRecovery).await;
                         self.viewer.stats_state_loaded[4] = true;
                     }
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
             }
             // --- DB Shards-specific keys ---
@@ -1171,7 +1171,7 @@ impl App {
                 self.vr_open_stats_detail();
             }
             KeyCode::Char('r') => {
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
                 self.viewer.stats_filter_edit = self.viewer.stats_filter.clone();
@@ -1181,12 +1181,12 @@ impl App {
             KeyCode::Char('s') => {
                 let num_cols = self.vr_stats_active_columns().len();
                 self.viewer.stats_sort_column = (self.viewer.stats_sort_column + 1) % num_cols;
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
                 self.vr_save_stats_state().await;
             }
             KeyCode::Char('S') => {
                 self.viewer.stats_sort_desc = !self.viewer.stats_sort_desc;
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
                 self.vr_save_stats_state().await;
             }
             KeyCode::Char('d') if self.viewer.stats_tab == StatsTab::DBIndices => {
@@ -1297,7 +1297,7 @@ impl App {
             }
             KeyCode::Char('m') if self.viewer.stats_tab == StatsTab::DBRecovery => {
                 self.viewer.recovery_show_all = !self.viewer.recovery_show_all;
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;
@@ -1329,13 +1329,13 @@ impl App {
             Some("apply") => {
                 self.vr_stats_apply_column_editor();
                 self.viewer.stats_show_column_editor = false;
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
                 self.vr_save_stats_state().await;
             }
             Some("default") => {
                 self.vr_stats_reset_default_columns();
                 self.viewer.stats_show_column_editor = false;
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
                 self.vr_save_stats_state().await;
             }
             _ => {}
@@ -1367,7 +1367,7 @@ impl App {
                 self.viewer.stats_show_column_editor = true;
             } else if cmd == "default" {
                 self.vr_stats_reset_default_columns();
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
                 self.vr_save_stats_state().await;
             } else if cmd.starts_with("confirm_delete:") {
                 // For stats, we need the shareable ID, which we find by name
@@ -1385,7 +1385,7 @@ impl App {
                 if let Ok(idx) = idx_str.parse::<usize>() {
                     if let Some(shareable) = self.viewer.stats_saved_shareables.get(idx).cloned() {
                         self.vr_stats_apply_shareable(&shareable);
-                        self.vr_fetch_stats().await;
+                        self.vr_request_stats_fetch();
                         self.vr_save_stats_state().await;
                     }
                 }
@@ -1534,7 +1534,7 @@ impl App {
                     self.vr_load_stats_state(StatsTab::Capture).await;
                     self.viewer.stats_state_loaded[0] = true;
                 }
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
             }
             KeyCode::Char('2') => {
                 self.viewer.stats_tab = StatsTab::DBStats;
@@ -1542,7 +1542,7 @@ impl App {
                     self.vr_load_stats_state(StatsTab::DBStats).await;
                     self.viewer.stats_state_loaded[1] = true;
                 }
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
             }
             KeyCode::Char('3') => {
                 self.viewer.stats_tab = StatsTab::DBIndices;
@@ -1550,7 +1550,7 @@ impl App {
                     self.vr_load_stats_state(StatsTab::DBIndices).await;
                     self.viewer.stats_state_loaded[2] = true;
                 }
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
             }
             KeyCode::Char('4') => {
                 self.viewer.stats_tab = StatsTab::DBTasks;
@@ -1558,7 +1558,7 @@ impl App {
                     self.vr_load_stats_state(StatsTab::DBTasks).await;
                     self.viewer.stats_state_loaded[3] = true;
                 }
-                self.vr_fetch_stats().await;
+                self.vr_request_stats_fetch();
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.viewer.shards_selected_row = (self.viewer.shards_selected_row + self.visible_rows).min(self.viewer.shards_indices.len().saturating_sub(1));
@@ -1600,14 +1600,14 @@ impl App {
             }
             KeyCode::Char('m') => {
                 self.viewer.shards_show = self.viewer.shards_show.next();
-                self.vr_fetch_shards().await;
+                self.vr_request_stats_fetch();
             }
             KeyCode::Char('M') => {
                 self.viewer.shards_show = self.viewer.shards_show.prev();
-                self.vr_fetch_shards().await;
+                self.vr_request_stats_fetch();
             }
             KeyCode::Char('r') => {
-                self.vr_fetch_shards().await;
+                self.vr_request_stats_fetch();
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
                 self.viewer.stats_filter_edit = self.viewer.stats_filter.clone();

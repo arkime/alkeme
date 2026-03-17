@@ -12,7 +12,13 @@ impl App {
                 self.viewer.stats_state_loaded[idx] = true;
             }
         }
-        self.vr_fetch_stats().await;
+        self.vr_request_stats_fetch();
+    }
+
+    /// Request a stats fetch (sets pending flag + loading overlay)
+    pub fn vr_request_stats_fetch(&mut self) {
+        self.viewer.pending_stats_fetch = true;
+        self.show_loading = true;
     }
 
     /// Load user state and fetch data when first visiting Files tab

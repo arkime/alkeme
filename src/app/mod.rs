@@ -283,7 +283,7 @@ impl App {
             match self.client.vr_delete_esindex(index).await {
                 Ok(_) => {
                     self.status_msg = format!("Deleted index '{index}'");
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
                 Err(e) => self.status_msg = format!("Error deleting index: {e}"),
             }
@@ -291,7 +291,7 @@ impl App {
             match self.client.vr_esindex_action(index, "optimize").await {
                 Ok(_) => {
                     self.status_msg = format!("Force merge started for '{index}'");
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
                 Err(e) => self.status_msg = format!("Error force merging index: {e}"),
             }
@@ -299,7 +299,7 @@ impl App {
             match self.client.vr_esindex_action(index, "close").await {
                 Ok(_) => {
                     self.status_msg = format!("Closed index '{index}'");
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
                 Err(e) => self.status_msg = format!("Error closing index: {e}"),
             }
@@ -307,7 +307,7 @@ impl App {
             match self.client.vr_esindex_action(index, "open").await {
                 Ok(_) => {
                     self.status_msg = format!("Opened index '{index}'");
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
                 Err(e) => self.status_msg = format!("Error opening index: {e}"),
             }
@@ -344,7 +344,7 @@ impl App {
             match self.client.vr_cancel_estask(task_id).await {
                 Ok(_) => {
                     self.status_msg = format!("Cancel requested for task '{task_id}'");
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
                 Err(e) => self.status_msg = format!("Error cancelling task: {e}"),
             }
@@ -352,7 +352,7 @@ impl App {
             match self.client.vr_cancel_all_estasks().await {
                 Ok(_) => {
                     self.status_msg = "Cancel requested for all cancellable tasks".into();
-                    self.vr_fetch_stats().await;
+                    self.vr_request_stats_fetch();
                 }
                 Err(e) => self.status_msg = format!("Error cancelling tasks: {e}"),
             }

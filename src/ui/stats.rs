@@ -360,14 +360,34 @@ fn draw_stats_shards(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let index_col_width: u16 = 36;
-    let node_col_width: u16 = 18;
-    let visible_width = area.width.saturating_sub(index_col_width + 3); // borders + index col
-    let max_visible_nodes = (visible_width / node_col_width) as usize;
+    // Compute index column width: longest index name + 1, min 8
+    let index_col_width: u16 = indices.iter()
+        .map(|n| n.len() as u16)
+        .max()
+        .unwrap_or(5)
+        .saturating_add(1)
+        .max(8);
+
+    // Compute node column widths based on name lengths + 1, min 6
+    let node_widths: Vec<u16> = nodes.iter()
+        .map(|n| (n.len() as u16).saturating_add(1).max(6))
+        .collect();
+
+    // Figure out how many nodes fit in the visible area
+    let available_width = area.width.saturating_sub(index_col_width + 3); // borders + index col
+    let mut max_visible_nodes = 0;
+    let mut used_width: u16 = 0;
+    for w in node_widths.iter().skip(app.viewer.shards_hscroll) {
+        if used_width + w > available_width { break; }
+        used_width += w;
+        max_visible_nodes += 1;
+    }
+    if max_visible_nodes == 0 && !nodes.is_empty() { max_visible_nodes = 1; }
     let hscroll = app.viewer.shards_hscroll.min(nodes.len().saturating_sub(max_visible_nodes));
     app.viewer.shards_hscroll = hscroll;
 
     let visible_nodes: Vec<&String> = nodes.iter().skip(hscroll).take(max_visible_nodes).collect();
+    let visible_node_widths: Vec<u16> = node_widths.iter().skip(hscroll).take(max_visible_nodes).copied().collect();
     let visible_rows = area.height.saturating_sub(4) as usize; // borders + header + mode bar
     let scroll_top = if app.viewer.shards_selected_row >= visible_rows {
         app.viewer.shards_selected_row - visible_rows + 1
@@ -395,17 +415,12 @@ fn draw_stats_shards(f: &mut Frame, app: &mut App, area: Rect) {
             .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
     ];
     for node_name in &visible_nodes {
-        let label = if node_name.len() > (node_col_width as usize - 1) {
-            format!("{}…", &node_name[..node_col_width as usize - 2])
-        } else {
-            node_name.to_string()
-        };
         let style = if node_name.as_str() == "Unassigned" {
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         };
-        header_cells.push(Cell::from(label).style(style));
+        header_cells.push(Cell::from(node_name.as_str()).style(style));
     }
     let header = Row::new(header_cells).height(1);
 
@@ -419,13 +434,8 @@ fn draw_stats_shards(f: &mut Frame, app: &mut App, area: Rect) {
         .take(visible_rows)
         .map(|(row_idx, index_name)| {
             let mut cells = vec![
-                Cell::from(
-                    if index_name.len() > index_col_width as usize - 1 {
-                        format!("{}…", &index_name[..index_col_width as usize - 2])
-                    } else {
-                        index_name.clone()
-                    }
-                ).style(Style::default().fg(Color::White)),
+                Cell::from(index_name.as_str())
+                    .style(Style::default().fg(Color::White)),
             ];
 
             // Find this index in the data
@@ -485,8 +495,8 @@ fn draw_stats_shards(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Build column widths
     let mut widths = vec![Constraint::Length(index_col_width)];
-    for _ in &visible_nodes {
-        widths.push(Constraint::Length(node_col_width));
+    for w in &visible_node_widths {
+        widths.push(Constraint::Length(*w));
     }
 
     let table = Table::new(rows, widths)
