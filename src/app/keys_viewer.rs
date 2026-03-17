@@ -1109,6 +1109,16 @@ impl App {
                     self.vr_fetch_stats().await;
                 }
             }
+            KeyCode::Char('4') => {
+                if self.viewer.stats_tab != StatsTab::DBTasks {
+                    self.viewer.stats_tab = StatsTab::DBTasks;
+                    if !self.viewer.stats_state_loaded[3] {
+                        self.vr_load_stats_state(StatsTab::DBTasks).await;
+                        self.viewer.stats_state_loaded[3] = true;
+                    }
+                    self.vr_fetch_stats().await;
+                }
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.viewer.stats_data.is_empty() {
                     self.viewer.stats_selected = (self.viewer.stats_selected + 1).min(self.viewer.stats_data.len() - 1);
@@ -1228,6 +1238,26 @@ impl App {
                         });
                     }
                 }
+            }
+            KeyCode::Char('d') if self.viewer.stats_tab == StatsTab::DBTasks => {
+                if let Some(row) = self.viewer.stats_data.get(self.viewer.stats_selected) {
+                    let task_id = crate::api::str_val(row, "taskId");
+                    let action = crate::api::str_val(row, "action");
+                    if !task_id.is_empty() {
+                        self.confirm_dialog = Some(ConfirmDialog {
+                            title: "Cancel Task".into(),
+                            message: format!("Cancel task '{action}' ({task_id})?"),
+                            action: format!("cancel_estask:{task_id}"),
+                        });
+                    }
+                }
+            }
+            KeyCode::Char('X') if self.viewer.stats_tab == StatsTab::DBTasks => {
+                self.confirm_dialog = Some(ConfirmDialog {
+                    title: "Cancel All Tasks".into(),
+                    message: "Cancel all cancellable tasks?".into(),
+                    action: "cancel_all_estasks".into(),
+                });
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;

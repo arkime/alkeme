@@ -118,6 +118,7 @@ pub enum StatsFormat {
     SizeString,
     Boolean,
     PercentSuffix,
+    Nanos,
 }
 
 #[derive(Clone)]
@@ -285,6 +286,31 @@ pub fn esindices_default_fields() -> Vec<&'static str> {
     ]
 }
 
+pub fn estasks_all_columns() -> Vec<StatsColumnDef> {
+    use StatsFormat::*;
+    vec![
+        StatsColumnDef::new("action", "action", "Action", 30, String),
+        StatsColumnDef::new("description", "description", "Description", 50, String),
+        StatsColumnDef::new("start_time_in_millis", "start_time_in_millis", "Start Time", 20, EpochMs),
+        StatsColumnDef::new("running_time_in_nanos", "running_time_in_nanos", "Running Time", 14, Nanos),
+        StatsColumnDef::new("childrenCount", "childrenCount", "Children", 10, Number),
+        StatsColumnDef::new("user", "user", "User", 16, String),
+        // non-default
+        StatsColumnDef::new("cancellable", "cancellable", "Cancellable", 12, Boolean),
+        StatsColumnDef::new("id", "id", "ID", 24, String),
+        StatsColumnDef::new("node", "node", "Node", 20, String),
+        StatsColumnDef::new("taskId", "taskId", "Task ID", 30, String),
+        StatsColumnDef::new("type", "type", "Type", 14, String),
+    ]
+}
+
+pub fn estasks_default_fields() -> Vec<&'static str> {
+    vec![
+        "action", "description", "start_time_in_millis", "running_time_in_nanos",
+        "childrenCount", "user",
+    ]
+}
+
 pub fn files_all_columns() -> Vec<StatsColumnDef> {
     use StatsFormat::*;
     vec![
@@ -331,6 +357,7 @@ pub fn stats_tab_all_columns(tab: StatsTab) -> Vec<StatsColumnDef> {
         StatsTab::Capture => capture_all_columns(),
         StatsTab::DBStats => esnodes_all_columns(),
         StatsTab::DBIndices => esindices_all_columns(),
+        StatsTab::DBTasks => estasks_all_columns(),
     }
 }
 
@@ -339,6 +366,7 @@ pub fn stats_tab_default_fields(tab: StatsTab) -> Vec<&'static str> {
         StatsTab::Capture => capture_default_fields(),
         StatsTab::DBStats => esnodes_default_fields(),
         StatsTab::DBIndices => esindices_default_fields(),
+        StatsTab::DBTasks => estasks_default_fields(),
     }
 }
 
@@ -347,6 +375,7 @@ pub fn stats_tab_shareable_type(tab: StatsTab) -> &'static str {
         StatsTab::Capture => "capture-columns",
         StatsTab::DBStats => "esnodes-columns",
         StatsTab::DBIndices => "esindices-columns",
+        StatsTab::DBTasks => "estasks-columns",
     }
 }
 
@@ -904,6 +933,7 @@ pub enum StatsTab {
     Capture,
     DBStats,
     DBIndices,
+    DBTasks,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -953,13 +983,14 @@ pub const C3_HISTORY_COLUMNS: &[(&str, &str, u16, bool)] = &[
 ];
 
 impl StatsTab {
-    pub const ALL: [StatsTab; 3] = [StatsTab::Capture, StatsTab::DBStats, StatsTab::DBIndices];
+    pub const ALL: [StatsTab; 4] = [StatsTab::Capture, StatsTab::DBStats, StatsTab::DBIndices, StatsTab::DBTasks];
 
     pub fn name(&self) -> &'static str {
         match self {
             StatsTab::Capture => "Capture Stats",
             StatsTab::DBStats => "DB Nodes",
             StatsTab::DBIndices => "DB Indices",
+            StatsTab::DBTasks => "DB Tasks",
         }
     }
 }
@@ -2032,9 +2063,9 @@ pub struct ViewerState {
     pub stats_sort_desc: bool,
     pub stats_last_refresh: std::time::Instant,
     /// Per-tab dynamic stats columns
-    pub stats_columns: [Vec<StatsColumnDef>; 3],
+    pub stats_columns: [Vec<StatsColumnDef>; 4],
     /// Whether user state has been loaded for each stats sub-tab
-    pub stats_state_loaded: [bool; 3],
+    pub stats_state_loaded: [bool; 4],
     /// Stats column editor
     pub stats_show_column_editor: bool,
     pub stats_column_editor_selected: usize,
@@ -2192,8 +2223,9 @@ impl Default for ViewerState {
             stats_columns_from_fields(&capture_default_fields(), &capture_all_columns()),
             stats_columns_from_fields(&esnodes_default_fields(), &esnodes_all_columns()),
             stats_columns_from_fields(&esindices_default_fields(), &esindices_all_columns()),
+            stats_columns_from_fields(&estasks_default_fields(), &estasks_all_columns()),
             ],
-            stats_state_loaded: [false; 3],
+            stats_state_loaded: [false; 4],
             stats_show_column_editor: false,
             stats_column_editor_selected: 0,
             stats_column_editor_mode: ColumnEditorMode::Browse,

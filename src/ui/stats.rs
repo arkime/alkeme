@@ -4,7 +4,7 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
     let toolbar_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(52), // sub-tabs
+            Constraint::Length(66), // sub-tabs
             Constraint::Min(0),    // filter
         ])
         .split(area);
@@ -167,6 +167,20 @@ pub(super) fn format_stats_cell_dynamic(col: &StatsColumnDef, val: &serde_json::
         }
         StatsFormat::PercentSuffix => {
             val.as_f64().map(|v| format!("{:.1}%", v)).unwrap_or_else(|| "-".into())
+        }
+        StatsFormat::Nanos => {
+            val.as_f64().map(|nanos| {
+                let secs = nanos / 1_000_000_000.0;
+                if secs >= 3600.0 {
+                    format!("{:.0}h {:.0}m", (secs / 3600.0).floor(), ((secs % 3600.0) / 60.0).floor())
+                } else if secs >= 60.0 {
+                    format!("{:.0}m {:.0}s", (secs / 60.0).floor(), (secs % 60.0).floor())
+                } else if secs >= 1.0 {
+                    format!("{:.1}s", secs)
+                } else {
+                    format!("{:.0}ms", nanos / 1_000_000.0)
+                }
+            }).unwrap_or_else(|| "-".into())
         }
     }
 }

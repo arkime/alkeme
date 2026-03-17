@@ -340,6 +340,22 @@ impl App {
                     }
                 }
             }
+        } else if let Some(task_id) = action.strip_prefix("cancel_estask:") {
+            match self.client.vr_cancel_estask(task_id).await {
+                Ok(_) => {
+                    self.status_msg = format!("Cancel requested for task '{task_id}'");
+                    self.vr_fetch_stats().await;
+                }
+                Err(e) => self.status_msg = format!("Error cancelling task: {e}"),
+            }
+        } else if action == "cancel_all_estasks" {
+            match self.client.vr_cancel_all_estasks().await {
+                Ok(_) => {
+                    self.status_msg = "Cancel requested for all cancellable tasks".into();
+                    self.vr_fetch_stats().await;
+                }
+                Err(e) => self.status_msg = format!("Error cancelling tasks: {e}"),
+            }
         } else if let Some(user_id) = action.strip_prefix("delete_user:") {
             let prefix = self.us_api_prefix().to_string();
             match self.client.delete_user(&prefix, user_id).await {

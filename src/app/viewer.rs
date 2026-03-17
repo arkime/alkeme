@@ -541,6 +541,7 @@ impl App {
             StatsTab::Capture => self.client.vr_get_stats(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc).await,
             StatsTab::DBStats => self.client.vr_get_esstats(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc).await,
             StatsTab::DBIndices => self.client.vr_get_esindices(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc).await,
+            StatsTab::DBTasks => self.client.vr_get_estasks(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc).await,
         };
 
         match result {
@@ -625,6 +626,7 @@ impl App {
             StatsTab::Capture => "captureStatsCols",
             StatsTab::DBStats => "esNodesCols",
             StatsTab::DBIndices => "esIndicesCols",
+            StatsTab::DBTasks => "esTasksCols",
         }
     }
 

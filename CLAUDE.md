@@ -171,17 +171,18 @@ src/
 | G | Cycle graph type: Sessions → Packets → Bytes (sessions); cycle bar chart metric (arkime) |
 | a | Session action menu (download pcap, add/remove tags) |
 | A | All sessions action menu (download pcap, export csv, add/remove tags) — pcap/csv show Visible/Matching scope selector |
-| 1 / 2 / 3 | Switch stats sub-tab (Capture/DB Nodes/DB Indices) |
+| 1 / 2 / 3 / 4 | Switch stats sub-tab (Capture/DB Nodes/DB Indices/DB Tasks) |
 | f | Open field selector (arkime tab) |
 | p | View packet hex dump (session list or detail) |
 | c | Columns & layouts menu |
 | v | Views (select/create/delete views) |
-| d | Delete index (DB Indices); confirm dialog |
+| d | Delete index (DB Indices); cancel task (DB Tasks); confirm dialog |
 | f | Force merge index (DB Indices); confirm dialog |
 | C | Close open index (DB Indices); confirm dialog |
 | O | Open closed index (DB Indices); confirm dialog |
 | e | Toggle exclude/include node (DB Nodes); confirm dialog |
 | x | Toggle exclude/include IP (DB Nodes); confirm dialog |
+| X | Cancel all cancellable tasks (DB Tasks); confirm dialog |
 | D | HTTP debug log overlay (↑/↓ navigate, Enter expand, Esc collapse) |
 | h / ? | Show context-sensitive help overlay |
 | q | Quit |
@@ -300,11 +301,11 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ## Stats tab
 
-- Has 3 sub-tabs switchable with `1/2/3` keys: Capture Stats, DB Nodes, DB Indices
+- Has 4 sub-tabs switchable with `1/2/3/4` keys: Capture Stats, DB Nodes, DB Indices, DB Tasks
 - Each sub-tab has dynamic columns defined by `StatsColumnDef` (field, sort, label, width, format)
-- `StatsFormat` enum controls cell rendering: String, Number, Bytes, BytesPerSec, MegaBytes, Percent, EpochSecs, EpochMs, Boolean, PercentSuffix, SizeString
+- `StatsFormat` enum controls cell rendering: String, Number, Bytes, BytesPerSec, MegaBytes, Percent, EpochSecs, EpochMs, Boolean, PercentSuffix, SizeString, Nanos
 - `c` opens column/layout popup (same pattern as session columns): Edit Columns, Save Layout, Default, saved layouts
-- Column layouts saved via shareable API with types: `capture-columns`, `esnodes-columns`, `esindices-columns`
+- Column layouts saved via shareable API with types: `capture-columns`, `esnodes-columns`, `esindices-columns`, `estasks-columns`
 - Stats tab has its own layout: no time range picker, no graph — just sub-tab bar + filter + table
 - Filter (`/`) is passed as `filter` query param to the API (server-side filtering)
 - Auto-refreshes every 30 seconds when on the Stats tab
@@ -316,6 +317,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - DB Indices detail supports `d` (delete), `f` (force merge), `C` (close), `O` (open) operations
 - DB Nodes list and detail support `e` (toggle node exclude/include) and `x` (toggle IP exclude/include) via `POST /api/esshards/:type/:value/:action`
 - DB Indices list supports `d` (delete via `DELETE /api/esindices/:index`), `f` (force merge), `C` (close), `O` (open) via `POST /api/esindices/:index/:action`
+- DB Tasks list supports `d` (cancel task via `POST /api/estasks/:id/cancel`) and `X` (cancel all via `POST /api/estasks/cancel`)
 - All operations use `ConfirmDialog` for confirmation and auto-refresh stats after success
 - Node exclude/include operations refresh detail in-place (preserving scroll and filter)
 
@@ -323,6 +325,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - **Capture Stats** (13 default, 37 total): nodeName, currentTime, monitoring, freeSpaceM, cpu, memory, packetQueue, diskQueue, esQueue, deltaPackets, deltaBytesPerSec, deltaSessions, deltaDropped (+ 24 more)
 - **DB Nodes** (10 default, 27 total): name, docs, storeSize, freeSize, heapSize, load, cpu, read, write, searches (+ 17 more)
 - **DB Indices** (9 default, 16 total): index, docs.count, store.size, pri, segmentsCount, rep, memoryTotal, health, status (+ 7 more)
+- **DB Tasks** (6 default, 11 total): action, description, start_time_in_millis, running_time_in_nanos, childrenCount, user (+ 5 more: cancellable, id, node, taskId, type)
 
 ### Shareable API (stats column layouts)
 - `GET /api/shareables?type={tab}-columns` — list saved layouts (no cookie needed)

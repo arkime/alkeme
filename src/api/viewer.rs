@@ -75,6 +75,30 @@ impl ArkimeClient {
         self.vr_get_sorted_filtered("esindices", filter, sort_field, sort_desc).await
     }
 
+    pub async fn vr_get_estasks(&self, filter: &str, sort_field: &str, sort_desc: bool) -> Result<Value> {
+        let desc = if sort_desc { "true" } else { "false" };
+        let mut url = format!(
+            "{}/api/estasks?sortField={}&desc={}&size=1000",
+            self.base_url, urlencoding::encode(sort_field), desc
+        );
+        if !filter.is_empty() {
+            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
+        }
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    pub async fn vr_cancel_estask(&self, task_id: &str) -> Result<Value> {
+        let url = format!("{}/api/estasks/{}/cancel", self.base_url, urlencoding::encode(task_id));
+        self.authenticated_post_json(&url, &serde_json::json!({})).await
+    }
+
+    pub async fn vr_cancel_all_estasks(&self) -> Result<Value> {
+        let url = format!("{}/api/estasks/cancel", self.base_url);
+        self.authenticated_post_json(&url, &serde_json::json!({})).await
+    }
+
     pub async fn vr_get_files(&self, filter: &str, sort_field: &str, sort_desc: bool, start: usize, length: usize) -> Result<Value> {
         let desc = if sort_desc { "true" } else { "false" };
         let mut url = format!(
