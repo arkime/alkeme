@@ -544,6 +544,9 @@ impl App {
         if self.viewer.stats_tab == StatsTab::DBShards {
             return self.vr_fetch_shards().await;
         }
+        if self.viewer.stats_tab == StatsTab::CaptureGraphs {
+            return self.vr_fetch_capture_graphs().await;
+        }
         self.status_msg = format!("Fetching {}...", self.viewer.stats_tab.name());
         let sort_field = self.vr_stats_sort_field().to_string();
 
@@ -556,7 +559,7 @@ impl App {
                 let show = if self.viewer.recovery_show_all { "all" } else { "notdone" };
                 self.client.vr_get_esrecovery(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc, show).await
             }
-            StatsTab::DBShards => unreachable!(),
+            StatsTab::CaptureGraphs | StatsTab::DBShards => unreachable!(),
         };
 
         match result {
@@ -730,6 +733,71 @@ impl App {
         }
     }
 
+    pub async fn vr_fetch_capture_graphs(&mut self) {
+        use crate::app::types::CAPTURE_GRAPH_METRICS;
+
+        let metric = CAPTURE_GRAPH_METRICS[self.viewer.cg_metric_index].field;
+        let interval = self.viewer.cg_interval.seconds();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        // Query window: match cubism's 1440 data points
+        let duration = interval * 1440;
+        let start = now.saturating_sub(duration);
+        let stop = now;
+
+        self.status_msg = format!(
+            "Fetching Capture Graphs ({})...",
+            CAPTURE_GRAPH_METRICS[self.viewer.cg_metric_index].label
+        );
+
+        // First get node list with hide/filter
+        let hide = self.viewer.cg_hide.api_value();
+        let filter = self.viewer.stats_filter.clone();
+        let nodes_result = self.client.vr_get_stats_nodes(&filter, hide).await;
+        let node_list = match nodes_result {
+            Ok(nodes) => nodes,
+            Err(e) => {
+                self.status_msg = format!("Error fetching nodes: {e}");
+                return;
+            }
+        };
+
+        // Fetch dstats per node
+        let mut nodes_data = Vec::new();
+        for node_name in &node_list {
+            match self.client.vr_get_dstats(node_name, metric, interval, start, stop).await {
+                Ok(values) => {
+                    nodes_data.push(CaptureGraphNodeData {
+                        node_name: node_name.clone(),
+                        values,
+                    });
+                }
+                Err(e) => {
+                    self.status_msg = format!("Error fetching {}: {e}", node_name);
+                    // Continue with other nodes
+                    nodes_data.push(CaptureGraphNodeData {
+                        node_name: node_name.clone(),
+                        values: Vec::new(),
+                    });
+                }
+            }
+        }
+
+        let count = nodes_data.len();
+        self.viewer.cg_nodes = nodes_data;
+        self.viewer.cg_scroll = 0;
+        self.viewer.cg_loaded = true;
+        self.viewer.stats_last_refresh = std::time::Instant::now();
+        self.status_msg = format!(
+            "Capture Graphs: {} nodes, {} [{}]",
+            count,
+            CAPTURE_GRAPH_METRICS[self.viewer.cg_metric_index].label,
+            self.viewer.cg_interval.label()
+        );
+    }
+
     pub fn vr_request_summary_fetch(&mut self) {
         if self.viewer.summary_field.is_empty() {
             return;
@@ -776,6 +844,7 @@ impl App {
 
     fn stats_state_name(tab: StatsTab) -> &'static str {
         match tab {
+            StatsTab::CaptureGraphs => "captureGraphsCols",
             StatsTab::Capture => "captureStatsCols",
             StatsTab::DBStats => "esNodesCols",
             StatsTab::DBIndices => "esIndicesCols",

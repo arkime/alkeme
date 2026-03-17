@@ -103,7 +103,11 @@ src/
 - `TimeRange` — Enum: Minutes15..All. Has `label()`, `date_value()`, `next()`, `prev()`.
 - `InputMode` — Enum: `Normal` | `Expression` | `ActionPrompt` | `DetailFilter` | `FieldSelector`. Controls where key input is routed.
 - `SessionView` — Enum: `List` | `Detail`. Controls which session sub-view renders.
-- `StatsTab` — Enum: `Capture` | `DBStats` | `DBIndices` | `DBTasks` | `DBShards`. Sub-tabs within Stats tab. DBStats labeled "DB Nodes".
+- `StatsTab` — Enum: `CaptureGraphs` | `Capture` | `DBStats` | `DBIndices` | `DBTasks` | `DBShards` | `DBRecovery`. Sub-tabs within Stats tab. DBStats labeled "DB Nodes".
+- `CaptureGraphMetric` — Struct: `field` (&str, API field name), `label` (&str, display name). 33 metrics in `CAPTURE_GRAPH_METRICS` constant.
+- `CaptureGraphInterval` — Enum: `FiveSec` | `OneMin` | `TenMin`. Has `seconds()` and `next()`.
+- `CaptureGraphHide` — Enum: `None` | `Old` | `NoSessions` | `Both`. Has `api_value()` and `next()`.
+- `CaptureGraphNodeData` — Per-node graph data: `node_name` (String), `values` (Vec<f64>).
 - `ShardsShow` — Enum: `All` | `NotStarted` | `Initializing` | `Relocating` | `Unassigned`. Filter mode for DB Shards sub-tab. Has `label()`, `api_value()`, `next()`.
 - `StatsView` — Enum: `List` | `Detail`. Controls which stats sub-view renders.
 - `StatsDetail` — Holds detail data + scroll position for stats detail overlay.
@@ -172,7 +176,7 @@ src/
 | G | Cycle graph type: Sessions → Packets → Bytes (sessions); cycle bar chart metric (arkime) |
 | a | Session action menu (download pcap, add/remove tags) |
 | A | All sessions action menu (download pcap, export csv, add/remove tags) — pcap/csv show Visible/Matching scope selector |
-| 1 / 2 / 3 / 4 / 5 | Switch stats sub-tab (Capture/DB Nodes/DB Indices/DB Tasks/DB Shards) |
+| 1 / 2 / 3 / 4 / 5 / 6 / 7 | Switch stats sub-tab (Capture Graphs/Capture Stats/DB Nodes/DB Indices/DB Tasks/DB Shards/DB Recovery) |
 | f | Open field selector (arkime tab) |
 | p | View packet hex dump (session list or detail) |
 | c | Columns & layouts menu |
@@ -304,7 +308,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 
 ## Stats tab
 
-- Has 5 sub-tabs switchable with `1/2/3/4/5` keys: Capture Stats, DB Nodes, DB Indices, DB Tasks, DB Shards
+- Has 7 sub-tabs switchable with `1/2/3/4/5/6/7` keys: Capture Graphs, Capture Stats, DB Nodes, DB Indices, DB Tasks, DB Shards, DB Recovery
 - Each sub-tab has dynamic columns defined by `StatsColumnDef` (field, sort, label, width, format)
 - `StatsFormat` enum controls cell rendering: String, Number, Bytes, BytesPerSec, MegaBytes, Percent, EpochSecs, EpochMs, Boolean, PercentSuffix, SizeString, Nanos
 - `c` opens column/layout popup (same pattern as session columns): Edit Columns, Save Layout, Default, saved layouts
@@ -325,6 +329,7 @@ Columns are now dynamic via `ColumnDef` struct and `App.columns: Vec<ColumnDef>`
 - Node exclude/include operations refresh detail in-place (preserving scroll and filter)
 
 ### Stats columns per sub-tab
+- **Capture Graphs**: Braille Canvas time-series graphs per node. 33 metrics (Packet/s, Bytes/s, CPU, Memory, etc.). 3 intervals: 5s, 1m, 10m. 4 hide modes: None, Old, No Sessions, Both. `m` opens metric selector, `i` cycles interval, `H` cycles hide mode, `↑/↓` scroll nodes, `/` filters by node name. Each node gets a 3-line-high graph. API: `GET /api/dstats`.
 - **Capture Stats** (13 default, 37 total): nodeName, currentTime, monitoring, freeSpaceM, cpu, memory, packetQueue, diskQueue, esQueue, deltaPackets, deltaBytesPerSec, deltaSessions, deltaDropped (+ 24 more)
 - **DB Nodes** (10 default, 27 total): name, docs, storeSize, freeSize, heapSize, load, cpu, read, write, searches (+ 17 more)
 - **DB Indices** (9 default, 16 total): index, docs.count, store.size, pri, segmentsCount, rep, memoryTotal, health, status (+ 7 more)

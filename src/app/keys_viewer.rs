@@ -1093,6 +1093,14 @@ impl App {
                 }
             }
             KeyCode::Char('1') => {
+                if self.viewer.stats_tab != StatsTab::CaptureGraphs {
+                    self.viewer.stats_tab = StatsTab::CaptureGraphs;
+                    if !self.viewer.cg_loaded {
+                        self.vr_request_stats_fetch();
+                    }
+                }
+            }
+            KeyCode::Char('2') => {
                 if self.viewer.stats_tab != StatsTab::Capture {
                     self.viewer.stats_tab = StatsTab::Capture;
                     if !self.viewer.stats_state_loaded[0] {
@@ -1102,7 +1110,7 @@ impl App {
                     self.vr_request_stats_fetch();
                 }
             }
-            KeyCode::Char('2') => {
+            KeyCode::Char('3') => {
                 if self.viewer.stats_tab != StatsTab::DBStats {
                     self.viewer.stats_tab = StatsTab::DBStats;
                     if !self.viewer.stats_state_loaded[1] {
@@ -1112,7 +1120,7 @@ impl App {
                     self.vr_request_stats_fetch();
                 }
             }
-            KeyCode::Char('3') => {
+            KeyCode::Char('4') => {
                 if self.viewer.stats_tab != StatsTab::DBIndices {
                     self.viewer.stats_tab = StatsTab::DBIndices;
                     if !self.viewer.stats_state_loaded[2] {
@@ -1122,7 +1130,7 @@ impl App {
                     self.vr_request_stats_fetch();
                 }
             }
-            KeyCode::Char('4') => {
+            KeyCode::Char('5') => {
                 if self.viewer.stats_tab != StatsTab::DBTasks {
                     self.viewer.stats_tab = StatsTab::DBTasks;
                     if !self.viewer.stats_state_loaded[3] {
@@ -1132,7 +1140,7 @@ impl App {
                     self.vr_request_stats_fetch();
                 }
             }
-            KeyCode::Char('5') => {
+            KeyCode::Char('6') => {
                 if self.viewer.stats_tab != StatsTab::DBShards {
                     self.viewer.stats_tab = StatsTab::DBShards;
                     if !self.viewer.shards_loaded {
@@ -1140,7 +1148,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('6') => {
+            KeyCode::Char('7') => {
                 if self.viewer.stats_tab != StatsTab::DBRecovery {
                     self.viewer.stats_tab = StatsTab::DBRecovery;
                     if !self.viewer.stats_state_loaded[4] {
@@ -1149,6 +1157,11 @@ impl App {
                     }
                     self.vr_request_stats_fetch();
                 }
+            }
+            // --- CaptureGraphs-specific keys ---
+            _ if self.viewer.stats_tab == StatsTab::CaptureGraphs => {
+                self.handle_capture_graphs_key(key).await;
+                return;
             }
             // --- DB Shards-specific keys ---
             _ if self.viewer.stats_tab == StatsTab::DBShards => {
@@ -1393,6 +1406,121 @@ impl App {
         }
         // Sync delete name back for UI display
         self.viewer.stats_layout_delete_name = delete_name_for_id;
+    }
+
+    pub(crate) async fn handle_capture_graphs_key(&mut self, key: KeyEvent) {
+        use crate::app::types::CAPTURE_GRAPH_METRICS;
+
+        // Metric popup is open
+        if self.viewer.cg_show_metric_popup {
+            match key.code {
+                KeyCode::Esc => {
+                    self.viewer.cg_show_metric_popup = false;
+                    self.viewer.cg_metric_popup_filter.clear();
+                    self.viewer.cg_metric_popup_filter_cursor = 0;
+                }
+                KeyCode::Enter => {
+                    // Apply the selected metric
+                    let filtered: Vec<usize> = CAPTURE_GRAPH_METRICS.iter().enumerate()
+                        .filter(|(_, m)| {
+                            if self.viewer.cg_metric_popup_filter.is_empty() {
+                                true
+                            } else {
+                                let f = self.viewer.cg_metric_popup_filter.to_lowercase();
+                                m.label.to_lowercase().contains(&f) || m.field.to_lowercase().contains(&f)
+                            }
+                        })
+                        .map(|(i, _)| i)
+                        .collect();
+                    if let Some(&idx) = filtered.get(self.viewer.cg_metric_popup_selected) {
+                        self.viewer.cg_metric_index = idx;
+                        self.viewer.cg_show_metric_popup = false;
+                        self.viewer.cg_metric_popup_filter.clear();
+                        self.viewer.cg_metric_popup_filter_cursor = 0;
+                        self.vr_request_stats_fetch();
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let count = self.cg_filtered_metric_count();
+                    if count > 0 {
+                        self.viewer.cg_metric_popup_selected = (self.viewer.cg_metric_popup_selected + 1).min(count - 1);
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.viewer.cg_metric_popup_selected = self.viewer.cg_metric_popup_selected.saturating_sub(1);
+                }
+                _ => {
+                    if handle_text_input_key(key.code, &mut self.viewer.cg_metric_popup_filter, &mut self.viewer.cg_metric_popup_filter_cursor) {
+                        self.viewer.cg_metric_popup_selected = 0;
+                    }
+                }
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Char('m') => {
+                // Open metric selector popup
+                self.viewer.cg_show_metric_popup = true;
+                self.viewer.cg_metric_popup_selected = self.viewer.cg_metric_index;
+                self.viewer.cg_metric_popup_filter.clear();
+                self.viewer.cg_metric_popup_filter_cursor = 0;
+            }
+            KeyCode::Char('i') => {
+                // Cycle interval
+                self.viewer.cg_interval = self.viewer.cg_interval.next();
+                self.vr_request_stats_fetch();
+            }
+            KeyCode::Char('H') => {
+                // Cycle hide mode
+                self.viewer.cg_hide = self.viewer.cg_hide.next();
+                self.vr_request_stats_fetch();
+            }
+            KeyCode::Char('r') => {
+                self.vr_request_stats_fetch();
+            }
+            KeyCode::Char('/') | KeyCode::Char('E') => {
+                self.viewer.stats_filter_edit = self.viewer.stats_filter.clone();
+                self.expression_cursor = self.viewer.stats_filter_edit.len();
+                self.input_mode = InputMode::Expression;
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                let page = (self.visible_rows / 3).max(1);
+                self.viewer.cg_scroll = (self.viewer.cg_scroll + page).min(self.viewer.cg_nodes.len().saturating_sub(1));
+            }
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                let page = (self.visible_rows / 3).max(1);
+                self.viewer.cg_scroll = self.viewer.cg_scroll.saturating_sub(page);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let max = self.viewer.cg_nodes.len().saturating_sub(1);
+                if self.viewer.cg_scroll < max {
+                    self.viewer.cg_scroll += 1;
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.viewer.cg_scroll = self.viewer.cg_scroll.saturating_sub(1);
+            }
+            KeyCode::Left | KeyCode::Home => {
+                self.viewer.cg_scroll = 0;
+            }
+            KeyCode::Right | KeyCode::End => {
+                self.viewer.cg_scroll = self.viewer.cg_nodes.len().saturating_sub(1);
+            }
+            _ => {}
+        }
+    }
+
+    fn cg_filtered_metric_count(&self) -> usize {
+        use crate::app::types::CAPTURE_GRAPH_METRICS;
+        if self.viewer.cg_metric_popup_filter.is_empty() {
+            CAPTURE_GRAPH_METRICS.len()
+        } else {
+            let f = self.viewer.cg_metric_popup_filter.to_lowercase();
+            CAPTURE_GRAPH_METRICS.iter()
+                .filter(|m| m.label.to_lowercase().contains(&f) || m.field.to_lowercase().contains(&f))
+                .count()
+        }
     }
 
     pub(crate) async fn handle_shards_key(&mut self, key: KeyEvent) {

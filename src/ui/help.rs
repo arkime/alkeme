@@ -71,7 +71,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             blank(),
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
-            Line::from(vec![key("1 / 2 / 3 / 4 / 5 / 6"), Span::raw("Switch sub-tab")]),
+            Line::from(vec![key("1 / 2 / 3 / 4 / 5 / 6 / 7"), Span::raw("Switch sub-tab")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
@@ -84,6 +84,17 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![key("r"), Span::raw("Refresh")]),
             Line::from(vec![key("Esc"), Span::raw("Close overlay")]),
         ];
+        if app.viewer.stats_tab == StatsTab::CaptureGraphs {
+            lines.push(blank());
+            lines.push(hdr!("Capture Graphs"));
+            lines.push(blank());
+            lines.push(Line::from(vec![key("m"), Span::raw("Select metric")]));
+            lines.push(Line::from(vec![key("i"), Span::raw("Cycle interval (5s / 1m / 10m)")]));
+            lines.push(Line::from(vec![key("H"), Span::raw("Cycle hide mode (None / Old / No Sessions / Both)")]));
+            lines.push(Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Scroll through nodes")]));
+            lines.push(Line::from(vec![key("← / Home"), Span::raw("Jump to top")]));
+            lines.push(Line::from(vec![key("→ / End"), Span::raw("Jump to bottom")]));
+        }
         if app.viewer.stats_tab == StatsTab::DBIndices {
             lines.push(blank());
             lines.push(hdr!("Index Operations"));

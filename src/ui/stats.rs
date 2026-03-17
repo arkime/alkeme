@@ -4,7 +4,7 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
     let toolbar_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(96), // sub-tabs
+            Constraint::Length(112), // sub-tabs (7 tabs)
             Constraint::Min(0),    // filter
         ])
         .split(area);
@@ -33,6 +33,10 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(super) fn draw_stats(f: &mut Frame, app: &mut App, area: Rect) {
+    if app.viewer.stats_tab == StatsTab::CaptureGraphs {
+        draw_capture_graphs(f, app, area);
+        return;
+    }
     if app.viewer.stats_tab == StatsTab::DBShards {
         draw_stats_shards(f, app, area);
         return;
@@ -753,4 +757,201 @@ fn draw_shards_sub_detail(f: &mut Frame, app: &App, area: Rect) {
         .scroll((scroll as u16, 0));
 
     f.render_widget(paragraph, popup_area);
+}
+
+fn draw_capture_graphs(f: &mut Frame, app: &mut App, area: Rect) {
+    if app.viewer.cg_nodes.is_empty() {
+        let msg = if app.viewer.cg_loaded {
+            "No nodes found"
+        } else {
+            "Press 'r' to fetch data or wait for auto-load"
+        };
+        let block = Block::default().borders(Borders::ALL).title(" Capture Graphs ");
+        let paragraph = Paragraph::new(msg)
+            .block(block)
+            .alignment(Alignment::Center);
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let metric = CAPTURE_GRAPH_METRICS[app.viewer.cg_metric_index];
+    let graph_height: u16 = 3; // each node graph is 3 lines
+    let node_count = app.viewer.cg_nodes.len();
+
+    // Compute how many nodes fit in the area (accounting for border)
+    let inner_height = area.height.saturating_sub(2); // top+bottom border
+    let visible_count = (inner_height / graph_height).max(1) as usize;
+    let scroll = app.viewer.cg_scroll.min(node_count.saturating_sub(visible_count));
+    app.viewer.cg_scroll = scroll;
+
+    // Find the label width (longest node name)
+    let label_width = app.viewer.cg_nodes.iter()
+        .map(|n| n.node_name.len())
+        .max()
+        .unwrap_or(8)
+        .max(8) as u16 + 1;
+
+    // Build mode bar spans for bottom border
+    let mode_spans = vec![
+        Span::styled(
+            format!(" m:{} ", metric.label),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" "),
+        Span::styled(
+            format!("i:{}", app.viewer.cg_interval.label()),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" "),
+        Span::styled(
+            format!("H:{}", app.viewer.cg_hide.label()),
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!(" {}-{} of {} ", scroll + 1, (scroll + visible_count).min(node_count), node_count)),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" Capture Graphs: {} ", metric.label))
+        .title_bottom(Line::from(mode_spans).alignment(Alignment::Left))
+        .border_style(Style::default().fg(Color::White));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Determine the graph width (inner width minus label column)
+    let graph_width = inner.width.saturating_sub(label_width) as usize;
+    if graph_width < 2 {
+        return;
+    }
+
+    // Draw each visible node
+    let visible_nodes = &app.viewer.cg_nodes[scroll..(scroll + visible_count).min(node_count)];
+
+    for (i, node) in visible_nodes.iter().enumerate() {
+        let y = inner.y + (i as u16) * graph_height;
+        if y + graph_height > inner.y + inner.height {
+            break;
+        }
+
+        // Label area
+        let label_area = Rect::new(inner.x, y, label_width, graph_height);
+        let label_text = if node.node_name.len() > label_width as usize {
+            &node.node_name[..label_width as usize]
+        } else {
+            &node.node_name
+        };
+        // Center the label vertically in the 3-row area
+        let label_y_offset = graph_height / 2;
+        let label = Paragraph::new(label_text.to_string())
+            .style(Style::default().fg(Color::Yellow));
+        f.render_widget(label, Rect::new(label_area.x, label_area.y + label_y_offset, label_area.width, 1));
+
+        // Graph area
+        let graph_area = Rect::new(inner.x + label_width, y, graph_width as u16, graph_height);
+
+        // Downsample values to graph_width columns
+        let values = &node.values;
+        let num_points = values.len();
+        let mut columns = vec![0.0f64; graph_width];
+        if num_points > 0 {
+            for (ci, col) in columns.iter_mut().enumerate() {
+                let start_idx = ci * num_points / graph_width;
+                let end_idx = ((ci + 1) * num_points / graph_width).min(num_points);
+                if end_idx > start_idx {
+                    let sum: f64 = values[start_idx..end_idx].iter().sum();
+                    *col = sum / (end_idx - start_idx) as f64;
+                }
+            }
+        }
+
+        // Find max value for normalization
+        let max_val = columns.iter().cloned().fold(0.0f64, f64::max);
+        if max_val <= 0.0 {
+            // Empty graph - just draw the border
+            let empty_block = Block::default().borders(Borders::NONE);
+            f.render_widget(empty_block, graph_area);
+            continue;
+        }
+
+        let x_max = (graph_width as f64 - 1.0).max(1.0);
+        let pts: Vec<(f64, f64)> = columns.iter().enumerate()
+            .map(|(x, &v)| (x as f64, (v / max_val) * 100.0))
+            .collect();
+
+        let canvas = Canvas::default()
+            .marker(Marker::Braille)
+            .x_bounds([0.0, x_max])
+            .y_bounds([0.0, 100.0])
+            .paint(move |ctx| {
+                for &(x, y) in &pts {
+                    if y > 0.0 {
+                        ctx.draw(&CanvasLine {
+                            x1: x, y1: 0.0,
+                            x2: x, y2: y,
+                            color: Color::Cyan,
+                        });
+                    }
+                }
+            });
+
+        f.render_widget(canvas, graph_area);
+    }
+
+    // Draw metric popup if open
+    if app.viewer.cg_show_metric_popup {
+        draw_metric_popup(f, app, area);
+    }
+}
+
+fn draw_metric_popup(f: &mut Frame, app: &App, area: Rect) {
+    let popup_width = 40u16;
+    let popup_height = 20u16.min(area.height.saturating_sub(4));
+    let popup_area = center_popup(popup_width, popup_height, area);
+
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Select Metric ")
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    // Filter input at top
+    let filter_area = Rect::new(inner.x, inner.y, inner.width, 1);
+    let list_area = Rect::new(inner.x, inner.y + 1, inner.width, inner.height.saturating_sub(1));
+
+    let filter_text = if app.viewer.cg_metric_popup_filter.is_empty() {
+        Span::styled("Type to filter...", Style::default().fg(Color::DarkGray))
+    } else {
+        Span::styled(&app.viewer.cg_metric_popup_filter, Style::default().fg(Color::White))
+    };
+    f.render_widget(Paragraph::new(filter_text), filter_area);
+
+    // Filtered metrics list
+    let filtered: Vec<(usize, &CaptureGraphMetric)> = CAPTURE_GRAPH_METRICS.iter().enumerate()
+        .filter(|(_, m)| {
+            if app.viewer.cg_metric_popup_filter.is_empty() {
+                true
+            } else {
+                let f = app.viewer.cg_metric_popup_filter.to_lowercase();
+                m.label.to_lowercase().contains(&f) || m.field.to_lowercase().contains(&f)
+            }
+        })
+        .collect();
+
+    let items: Vec<ListItem> = filtered.iter().enumerate()
+        .map(|(i, (orig_idx, m))| {
+            let marker = if *orig_idx == app.viewer.cg_metric_index { "● " } else { "  " };
+            let style = if i == app.viewer.cg_metric_popup_selected {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            ListItem::new(format!("{}{}", marker, m.label)).style(style)
+        })
+        .collect();
+
+    let list = List::new(items);
+    f.render_widget(list, list_area);
 }

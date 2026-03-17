@@ -136,6 +136,49 @@ impl ArkimeClient {
         Ok(parsed)
     }
 
+    /// Fetch detailed stats for a single node for capture graphs.
+    pub async fn vr_get_dstats(&self, node: &str, metric: &str, interval: u64, start: u64, stop: u64) -> Result<Vec<f64>> {
+        let step = interval;
+        let url = format!(
+            "{}/api/dstats?nodeName={}&name={}&interval={}&start={}&stop={}&step={}",
+            self.base_url,
+            urlencoding::encode(node),
+            urlencoding::encode(metric),
+            interval, start, stop, step
+        );
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let values = parsed.as_array()
+            .map(|arr| arr.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect())
+            .unwrap_or_default();
+        Ok(values)
+    }
+
+    /// Fetch node list for capture graphs (uses /api/stats with hide filter)
+    pub async fn vr_get_stats_nodes(&self, filter: &str, hide: &str) -> Result<Vec<String>> {
+        let mut url = format!(
+            "{}/api/stats?sortField=nodeName&desc=false&start=0&length=1000",
+            self.base_url
+        );
+        if !filter.is_empty() {
+            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
+        }
+        if hide != "none" {
+            url.push_str(&format!("&hide={}", urlencoding::encode(hide)));
+        }
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        let nodes = parsed["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v["id"].as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(nodes)
+    }
+
     pub async fn vr_get_files(&self, filter: &str, sort_field: &str, sort_desc: bool, start: usize, length: usize) -> Result<Value> {
         let desc = if sort_desc { "true" } else { "false" };
         let mut url = format!(

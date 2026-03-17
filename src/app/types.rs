@@ -393,7 +393,7 @@ pub fn stats_tab_all_columns(tab: StatsTab) -> Vec<StatsColumnDef> {
         StatsTab::DBIndices => esindices_all_columns(),
         StatsTab::DBTasks => estasks_all_columns(),
         StatsTab::DBRecovery => esrecovery_all_columns(),
-        StatsTab::DBShards => Vec::new(),
+        StatsTab::CaptureGraphs | StatsTab::DBShards => Vec::new(),
     }
 }
 
@@ -404,7 +404,7 @@ pub fn stats_tab_default_fields(tab: StatsTab) -> Vec<&'static str> {
         StatsTab::DBIndices => esindices_default_fields(),
         StatsTab::DBTasks => estasks_default_fields(),
         StatsTab::DBRecovery => esrecovery_default_fields(),
-        StatsTab::DBShards => Vec::new(),
+        StatsTab::CaptureGraphs | StatsTab::DBShards => Vec::new(),
     }
 }
 
@@ -415,6 +415,7 @@ pub fn stats_tab_shareable_type(tab: StatsTab) -> &'static str {
         StatsTab::DBIndices => "esindices-columns",
         StatsTab::DBTasks => "estasks-columns",
         StatsTab::DBRecovery => "esrecovery-columns",
+        StatsTab::CaptureGraphs => "capturegraphs-columns",
         StatsTab::DBShards => "esshards-columns",
     }
 }
@@ -970,6 +971,7 @@ impl SummarySort {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum StatsTab {
+    CaptureGraphs,
     Capture,
     DBStats,
     DBIndices,
@@ -1025,10 +1027,11 @@ pub const C3_HISTORY_COLUMNS: &[(&str, &str, u16, bool)] = &[
 ];
 
 impl StatsTab {
-    pub const ALL: [StatsTab; 6] = [StatsTab::Capture, StatsTab::DBStats, StatsTab::DBIndices, StatsTab::DBTasks, StatsTab::DBShards, StatsTab::DBRecovery];
+    pub const ALL: [StatsTab; 7] = [StatsTab::CaptureGraphs, StatsTab::Capture, StatsTab::DBStats, StatsTab::DBIndices, StatsTab::DBTasks, StatsTab::DBShards, StatsTab::DBRecovery];
 
     pub fn name(&self) -> &'static str {
         match self {
+            StatsTab::CaptureGraphs => "Capture Graphs",
             StatsTab::Capture => "Capture Stats",
             StatsTab::DBStats => "DB Nodes",
             StatsTab::DBIndices => "DB Indices",
@@ -1039,7 +1042,7 @@ impl StatsTab {
     }
 
     /// Array index for column-based tabs (stats_columns/stats_state_loaded arrays).
-    /// DBShards is not column-based and returns None.
+    /// DBShards and CaptureGraphs are not column-based and return None.
     pub fn col_index(&self) -> Option<usize> {
         match self {
             StatsTab::Capture => Some(0),
@@ -1047,7 +1050,7 @@ impl StatsTab {
             StatsTab::DBIndices => Some(2),
             StatsTab::DBTasks => Some(3),
             StatsTab::DBRecovery => Some(4),
-            StatsTab::DBShards => None,
+            StatsTab::CaptureGraphs | StatsTab::DBShards => None,
         }
     }
 }
@@ -1096,6 +1099,133 @@ impl ShardsShow {
         let idx = Self::ALL.iter().position(|&s| s == *self).unwrap_or(0);
         Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
     }
+}
+
+/// Capture graph metric definition
+#[derive(Clone, Copy, PartialEq)]
+pub struct CaptureGraphMetric {
+    pub field: &'static str,
+    pub label: &'static str,
+}
+
+pub const CAPTURE_GRAPH_METRICS: &[CaptureGraphMetric] = &[
+    CaptureGraphMetric { field: "deltaPacketsPerSec", label: "Packet/s" },
+    CaptureGraphMetric { field: "deltaBytesPerSec", label: "Bytes/s" },
+    CaptureGraphMetric { field: "deltaBitsPerSec", label: "Bits/Sec" },
+    CaptureGraphMetric { field: "deltaSessionsPerSec", label: "Sessions/s" },
+    CaptureGraphMetric { field: "deltaDroppedPerSec", label: "Packet Drops/s" },
+    CaptureGraphMetric { field: "monitoring", label: "Sessions" },
+    CaptureGraphMetric { field: "tcpSessions", label: "Active TCP Sessions" },
+    CaptureGraphMetric { field: "udpSessions", label: "Active UDP Sessions" },
+    CaptureGraphMetric { field: "icmpSessions", label: "Active ICMP Sessions" },
+    CaptureGraphMetric { field: "sctpSessions", label: "Active SCTP Sessions" },
+    CaptureGraphMetric { field: "espSessions", label: "Active ESP Sessions" },
+    CaptureGraphMetric { field: "usedSpaceM", label: "Used Space" },
+    CaptureGraphMetric { field: "freeSpaceM", label: "Free Space" },
+    CaptureGraphMetric { field: "freeSpaceP", label: "Free Space %" },
+    CaptureGraphMetric { field: "memory", label: "Memory" },
+    CaptureGraphMetric { field: "memoryP", label: "Memory %" },
+    CaptureGraphMetric { field: "cpu", label: "CPU" },
+    CaptureGraphMetric { field: "diskQueue", label: "Disk Q" },
+    CaptureGraphMetric { field: "esQueue", label: "ES Q" },
+    CaptureGraphMetric { field: "deltaESDroppedPerSec", label: "ES Drops/s" },
+    CaptureGraphMetric { field: "esHealthMS", label: "ES Health Response MS" },
+    CaptureGraphMetric { field: "packetQueue", label: "Packet Q" },
+    CaptureGraphMetric { field: "closeQueue", label: "Closing Q" },
+    CaptureGraphMetric { field: "needSave", label: "Waiting Q" },
+    CaptureGraphMetric { field: "frags", label: "Active Fragments" },
+    CaptureGraphMetric { field: "deltaFragsDroppedPerSec", label: "Fragments Dropped/Sec" },
+    CaptureGraphMetric { field: "deltaOverloadDroppedPerSec", label: "Overload Drops/s" },
+    CaptureGraphMetric { field: "deltaDupDroppedPerSec", label: "Dup Drops/s" },
+    CaptureGraphMetric { field: "deltaTotalDroppedPerSec", label: "Total Dropped/Sec" },
+    CaptureGraphMetric { field: "deltaSessionBytesPerSec", label: "ES Session Bytes/Sec" },
+    CaptureGraphMetric { field: "sessionSizePerSec", label: "ES Session Size/Sec" },
+    CaptureGraphMetric { field: "deltaWrittenBytesPerSec", label: "Written Bytes/s" },
+    CaptureGraphMetric { field: "deltaUnwrittenBytesPerSec", label: "Unwritten Bytes/s" },
+];
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum CaptureGraphInterval {
+    FiveSec,
+    OneMin,
+    TenMin,
+}
+
+impl CaptureGraphInterval {
+    #[allow(dead_code)]
+    pub const ALL: [CaptureGraphInterval; 3] = [
+        CaptureGraphInterval::FiveSec,
+        CaptureGraphInterval::OneMin,
+        CaptureGraphInterval::TenMin,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            CaptureGraphInterval::FiveSec => "5 sec",
+            CaptureGraphInterval::OneMin => "1 min",
+            CaptureGraphInterval::TenMin => "10 min",
+        }
+    }
+
+    pub fn seconds(&self) -> u64 {
+        match self {
+            CaptureGraphInterval::FiveSec => 5,
+            CaptureGraphInterval::OneMin => 60,
+            CaptureGraphInterval::TenMin => 600,
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            CaptureGraphInterval::FiveSec => CaptureGraphInterval::OneMin,
+            CaptureGraphInterval::OneMin => CaptureGraphInterval::TenMin,
+            CaptureGraphInterval::TenMin => CaptureGraphInterval::FiveSec,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum CaptureGraphHide {
+    None,
+    Old,
+    NoSessions,
+    Both,
+}
+
+impl CaptureGraphHide {
+    pub fn label(&self) -> &'static str {
+        match self {
+            CaptureGraphHide::None => "None",
+            CaptureGraphHide::Old => "Old",
+            CaptureGraphHide::NoSessions => "No Sessions",
+            CaptureGraphHide::Both => "Both",
+        }
+    }
+
+    pub fn api_value(&self) -> &'static str {
+        match self {
+            CaptureGraphHide::None => "none",
+            CaptureGraphHide::Old => "old",
+            CaptureGraphHide::NoSessions => "nosession",
+            CaptureGraphHide::Both => "both",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            CaptureGraphHide::None => CaptureGraphHide::Old,
+            CaptureGraphHide::Old => CaptureGraphHide::NoSessions,
+            CaptureGraphHide::NoSessions => CaptureGraphHide::Both,
+            CaptureGraphHide::Both => CaptureGraphHide::None,
+        }
+    }
+}
+
+/// Per-node graph data from /api/dstats
+#[derive(Clone)]
+pub struct CaptureGraphNodeData {
+    pub node_name: String,
+    pub values: Vec<f64>,
 }
 
 #[derive(PartialEq)]
@@ -2199,6 +2329,17 @@ pub struct ViewerState {
     pub shards_sub_detail: Option<StatsDetail>,
     /// Recovery show mode: false = "notdone" (active only), true = "all"
     pub recovery_show_all: bool,
+    /// Capture Graphs state
+    pub cg_metric_index: usize,
+    pub cg_interval: CaptureGraphInterval,
+    pub cg_hide: CaptureGraphHide,
+    pub cg_nodes: Vec<CaptureGraphNodeData>,
+    pub cg_scroll: usize,
+    pub cg_show_metric_popup: bool,
+    pub cg_metric_popup_selected: usize,
+    pub cg_metric_popup_filter: String,
+    pub cg_metric_popup_filter_cursor: usize,
+    pub cg_loaded: bool,
     /// Files tab state
     pub files_data: Vec<Value>,
     pub files_total: u64,
@@ -2323,7 +2464,7 @@ impl Default for ViewerState {
             graph_type: GraphType::Sessions,
             graph_data: None,
             // Stats tab state
-            stats_tab: StatsTab::Capture,
+            stats_tab: StatsTab::CaptureGraphs,
             stats_data: Vec::new(),
             stats_total: 0,
             stats_filtered: 0,
@@ -2370,6 +2511,17 @@ impl Default for ViewerState {
             shards_detail: None,
             shards_sub_detail: None,
             recovery_show_all: false,
+            // Capture Graphs
+            cg_metric_index: 0,
+            cg_interval: CaptureGraphInterval::OneMin,
+            cg_hide: CaptureGraphHide::None,
+            cg_nodes: Vec::new(),
+            cg_scroll: 0,
+            cg_show_metric_popup: false,
+            cg_metric_popup_selected: 0,
+            cg_metric_popup_filter: String::new(),
+            cg_metric_popup_filter_cursor: 0,
+            cg_loaded: false,
             // Files tab
             files_data: Vec::new(),
             files_total: 0,
