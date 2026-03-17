@@ -332,4 +332,21 @@ impl ArkimeClient {
         let url = format!("{}/api/shareable/{}", self.base_url, urlencoding::encode(id));
         self.authenticated_delete(&url).await
     }
+
+    // User state API (column persistence)
+    pub async fn get_user_state(&self, name: &str) -> Result<Value> {
+        let url = format!("{}/api/user/state/{}", self.base_url, urlencoding::encode(name));
+        let body = self.authenticated_get_with_cookie(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
+    pub async fn save_user_state(&self, name: &str, data: &Value) -> Result<()> {
+        let url = format!("{}/api/user/state/{}", self.base_url, urlencoding::encode(name));
+        let val = self.authenticated_post_json(&url, data).await?;
+        if !val.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+            anyhow::bail!("{}", val.get("text").and_then(|v| v.as_str()).unwrap_or("state save failed"));
+        }
+        Ok(())
+    }
 }

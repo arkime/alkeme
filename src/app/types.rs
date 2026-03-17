@@ -2033,6 +2033,8 @@ pub struct ViewerState {
     pub stats_last_refresh: std::time::Instant,
     /// Per-tab dynamic stats columns
     pub stats_columns: [Vec<StatsColumnDef>; 3],
+    /// Whether user state has been loaded for each stats sub-tab
+    pub stats_state_loaded: [bool; 3],
     /// Stats column editor
     pub stats_show_column_editor: bool,
     pub stats_column_editor_selected: usize,
@@ -2063,6 +2065,8 @@ pub struct ViewerState {
     pub files_page_start: usize,
     pub files_page_size: usize,
     pub files_columns: Vec<StatsColumnDef>,
+    /// Whether user state has been loaded for files tab
+    pub files_state_loaded: bool,
     /// Files column editor
     pub files_show_column_editor: bool,
     pub files_column_editor_selected: usize,
@@ -2189,6 +2193,7 @@ impl Default for ViewerState {
             stats_columns_from_fields(&esnodes_default_fields(), &esnodes_all_columns()),
             stats_columns_from_fields(&esindices_default_fields(), &esindices_all_columns()),
             ],
+            stats_state_loaded: [false; 3],
             stats_show_column_editor: false,
             stats_column_editor_selected: 0,
             stats_column_editor_mode: ColumnEditorMode::Browse,
@@ -2217,6 +2222,7 @@ impl Default for ViewerState {
             files_page_start: 0,
             files_page_size: 100,
             files_columns: stats_columns_from_fields(&files_default_fields(), &files_all_columns()),
+            files_state_loaded: false,
             files_show_column_editor: false,
             files_column_editor_selected: 0,
             files_column_editor_mode: ColumnEditorMode::Browse,

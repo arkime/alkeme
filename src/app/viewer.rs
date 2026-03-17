@@ -4,6 +4,25 @@ use serde_json::Value;
 
 impl App {
 
+    /// Load user state and fetch data when first visiting Stats tab
+    pub async fn vr_init_stats_tab(&mut self) {
+        let idx = StatsTab::ALL.iter().position(|&t| t == self.viewer.stats_tab).unwrap_or(0);
+        if !self.viewer.stats_state_loaded[idx] {
+            self.vr_load_stats_state(self.viewer.stats_tab).await;
+            self.viewer.stats_state_loaded[idx] = true;
+        }
+        self.vr_fetch_stats().await;
+    }
+
+    /// Load user state and fetch data when first visiting Files tab
+    pub async fn vr_init_files_tab(&mut self) {
+        if !self.viewer.files_state_loaded {
+            self.vr_load_files_state().await;
+            self.viewer.files_state_loaded = true;
+        }
+        self.vr_fetch_files().await;
+    }
+
     /// Rebuild session_fields from columns
     pub fn vr_sync_session_fields(&mut self) {
         self.viewer.session_fields = self.viewer.columns.iter().map(|c| c.field.clone()).collect();
@@ -596,6 +615,110 @@ impl App {
                 .filter(|f| f.is_visible())
                 .filter(|f| f.exp.to_lowercase().contains(&filter) || f.friendly_name.to_lowercase().contains(&filter))
                 .collect()
+        }
+    }
+
+    // --- User state persistence (column/sort for Stats & Files) ---
+
+    fn stats_state_name(tab: StatsTab) -> &'static str {
+        match tab {
+            StatsTab::Capture => "captureStatsCols",
+            StatsTab::DBStats => "esNodesCols",
+            StatsTab::DBIndices => "esIndicesCols",
+        }
+    }
+
+    /// Build the state JSON for the current stats tab
+    fn vr_stats_state_json(&self) -> Value {
+        let cols = self.vr_stats_active_columns();
+        let headers: Vec<&str> = cols.iter().map(|c| c.field.as_str()).collect();
+        let sort_field = self.vr_stats_sort_field();
+        let sort_dir = if self.viewer.stats_sort_desc { "desc" } else { "asc" };
+        serde_json::json!({
+            "order": [[sort_field, sort_dir]],
+            "visibleHeaders": headers
+        })
+    }
+
+    /// Build the state JSON for files tab
+    fn vr_files_state_json(&self) -> Value {
+        let headers: Vec<&str> = self.viewer.files_columns.iter().map(|c| c.field.as_str()).collect();
+        let sort_field = self.vr_files_sort_field();
+        let sort_dir = if self.viewer.files_sort_desc { "desc" } else { "asc" };
+        serde_json::json!({
+            "order": [[sort_field, sort_dir]],
+            "visibleHeaders": headers
+        })
+    }
+
+    /// Save current stats tab column state to server
+    pub async fn vr_save_stats_state(&self) {
+        let name = Self::stats_state_name(self.viewer.stats_tab);
+        let data = self.vr_stats_state_json();
+        let _ = self.client.save_user_state(name, &data).await;
+    }
+
+    /// Save current files column state to server
+    pub async fn vr_save_files_state(&self) {
+        let data = self.vr_files_state_json();
+        let _ = self.client.save_user_state("fieldsCols", &data).await;
+    }
+
+    /// Load stats column state from server for the given tab
+    pub async fn vr_load_stats_state(&mut self, tab: StatsTab) {
+        let name = Self::stats_state_name(tab);
+        let state = match self.client.get_user_state(name).await {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        let headers = match state.get("visibleHeaders").and_then(|v| v.as_array()) {
+            Some(arr) => arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
+            None => return,
+        };
+        if headers.is_empty() { return; }
+        let all = stats_tab_all_columns(tab);
+        let new_cols = stats_columns_from_fields(&headers, &all);
+        if new_cols.is_empty() { return; }
+        let idx = StatsTab::ALL.iter().position(|&t| t == tab).unwrap_or(0);
+        self.viewer.stats_columns[idx] = new_cols;
+        // Apply sort from state
+        if let Some(order) = state.get("order").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.as_array()) {
+            let sort_field = order.first().and_then(|v| v.as_str()).unwrap_or("");
+            let sort_dir = order.get(1).and_then(|v| v.as_str()).unwrap_or("asc");
+            if !sort_field.is_empty() {
+                if let Some(pos) = self.viewer.stats_columns[idx].iter().position(|c| c.sort == sort_field || c.field == sort_field) {
+                    self.viewer.stats_sort_column = pos;
+                    self.viewer.stats_sort_desc = sort_dir == "desc";
+                }
+            }
+        }
+    }
+
+    /// Load files column state from server
+    pub async fn vr_load_files_state(&mut self) {
+        let state = match self.client.get_user_state("fieldsCols").await {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        let headers = match state.get("visibleHeaders").and_then(|v| v.as_array()) {
+            Some(arr) => arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
+            None => return,
+        };
+        if headers.is_empty() { return; }
+        let all = files_all_columns();
+        let new_cols = stats_columns_from_fields(&headers, &all);
+        if new_cols.is_empty() { return; }
+        self.viewer.files_columns = new_cols;
+        // Apply sort from state
+        if let Some(order) = state.get("order").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.as_array()) {
+            let sort_field = order.first().and_then(|v| v.as_str()).unwrap_or("");
+            let sort_dir = order.get(1).and_then(|v| v.as_str()).unwrap_or("asc");
+            if !sort_field.is_empty() {
+                if let Some(pos) = self.viewer.files_columns.iter().position(|c| c.sort == sort_field || c.field == sort_field) {
+                    self.viewer.files_sort_column = pos;
+                    self.viewer.files_sort_desc = sort_dir == "desc";
+                }
+            }
         }
     }
 }

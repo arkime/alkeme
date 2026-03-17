@@ -42,19 +42,19 @@ impl App {
             KeyCode::Tab => {
                 self.next_tab();
                 if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
-                    self.vr_fetch_stats().await;
+                    self.vr_init_stats_tab().await;
                 }
                 if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
-                    self.vr_fetch_files().await;
+                    self.vr_init_files_tab().await;
                 }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
                 if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
-                    self.vr_fetch_stats().await;
+                    self.vr_init_stats_tab().await;
                 }
                 if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
-                    self.vr_fetch_files().await;
+                    self.vr_init_files_tab().await;
                 }
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -1070,36 +1070,42 @@ impl App {
             KeyCode::Tab => {
                 self.next_tab();
                 if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
-                    self.vr_fetch_files().await;
+                    self.vr_init_files_tab().await;
                 }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
                 if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
-                    self.vr_fetch_files().await;
+                    self.vr_init_files_tab().await;
                 }
             }
             KeyCode::Char('1') => {
                 if self.viewer.stats_tab != StatsTab::Capture {
                     self.viewer.stats_tab = StatsTab::Capture;
-                    self.viewer.stats_sort_column = 0;
-                    self.viewer.stats_sort_desc = false;
+                    if !self.viewer.stats_state_loaded[0] {
+                        self.vr_load_stats_state(StatsTab::Capture).await;
+                        self.viewer.stats_state_loaded[0] = true;
+                    }
                     self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Char('2') => {
                 if self.viewer.stats_tab != StatsTab::DBStats {
                     self.viewer.stats_tab = StatsTab::DBStats;
-                    self.viewer.stats_sort_column = 0;
-                    self.viewer.stats_sort_desc = false;
+                    if !self.viewer.stats_state_loaded[1] {
+                        self.vr_load_stats_state(StatsTab::DBStats).await;
+                        self.viewer.stats_state_loaded[1] = true;
+                    }
                     self.vr_fetch_stats().await;
                 }
             }
             KeyCode::Char('3') => {
                 if self.viewer.stats_tab != StatsTab::DBIndices {
                     self.viewer.stats_tab = StatsTab::DBIndices;
-                    self.viewer.stats_sort_column = 0;
-                    self.viewer.stats_sort_desc = false;
+                    if !self.viewer.stats_state_loaded[2] {
+                        self.vr_load_stats_state(StatsTab::DBIndices).await;
+                        self.viewer.stats_state_loaded[2] = true;
+                    }
                     self.vr_fetch_stats().await;
                 }
             }
@@ -1130,10 +1136,12 @@ impl App {
                 let num_cols = self.vr_stats_active_columns().len();
                 self.viewer.stats_sort_column = (self.viewer.stats_sort_column + 1) % num_cols;
                 self.vr_fetch_stats().await;
+                self.vr_save_stats_state().await;
             }
             KeyCode::Char('S') => {
                 self.viewer.stats_sort_desc = !self.viewer.stats_sort_desc;
                 self.vr_fetch_stats().await;
+                self.vr_save_stats_state().await;
             }
             KeyCode::Char('d') if self.viewer.stats_tab == StatsTab::DBIndices => {
                 if let Some(row) = self.viewer.stats_data.get(self.viewer.stats_selected) {
@@ -1252,11 +1260,13 @@ impl App {
                 self.vr_stats_apply_column_editor();
                 self.viewer.stats_show_column_editor = false;
                 self.vr_fetch_stats().await;
+                self.vr_save_stats_state().await;
             }
             Some("default") => {
                 self.vr_stats_reset_default_columns();
                 self.viewer.stats_show_column_editor = false;
                 self.vr_fetch_stats().await;
+                self.vr_save_stats_state().await;
             }
             _ => {}
         }
@@ -1288,6 +1298,7 @@ impl App {
             } else if cmd == "default" {
                 self.vr_stats_reset_default_columns();
                 self.vr_fetch_stats().await;
+                self.vr_save_stats_state().await;
             } else if cmd.starts_with("confirm_delete:") {
                 // For stats, we need the shareable ID, which we find by name
                 if let Some(s) = self.viewer.stats_saved_shareables.iter().find(|s| s.name == delete_name_for_id) {
@@ -1305,6 +1316,7 @@ impl App {
                     if let Some(shareable) = self.viewer.stats_saved_shareables.get(idx).cloned() {
                         self.vr_stats_apply_shareable(&shareable);
                         self.vr_fetch_stats().await;
+                        self.vr_save_stats_state().await;
                     }
                 }
             }
@@ -1415,19 +1427,19 @@ impl App {
             KeyCode::Tab => {
                 self.next_tab();
                 if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
-                    self.vr_fetch_stats().await;
+                    self.vr_init_stats_tab().await;
                 }
                 if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
-                    self.vr_fetch_files().await;
+                    self.vr_init_files_tab().await;
                 }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
                 if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
-                    self.vr_fetch_stats().await;
+                    self.vr_init_stats_tab().await;
                 }
                 if self.active_tab == Tab::Files && self.viewer.files_data.is_empty() {
-                    self.vr_fetch_files().await;
+                    self.vr_init_files_tab().await;
                 }
             }
             KeyCode::Char('/') | KeyCode::Char('E') => {
@@ -1572,13 +1584,13 @@ impl App {
             KeyCode::Tab => {
                 self.next_tab();
                 if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
-                    self.vr_fetch_stats().await;
+                    self.vr_init_stats_tab().await;
                 }
             }
             KeyCode::BackTab => {
                 self.prev_tab();
                 if self.active_tab == Tab::Stats && self.viewer.stats_data.is_empty() {
-                    self.vr_fetch_stats().await;
+                    self.vr_init_stats_tab().await;
                 }
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -1643,12 +1655,14 @@ impl App {
                 self.viewer.files_page_start = 0;
                 self.viewer.files_selected = 0;
                 self.vr_fetch_files().await;
+                self.vr_save_files_state().await;
             }
             KeyCode::Char('S') => {
                 self.viewer.files_sort_desc = !self.viewer.files_sort_desc;
                 self.viewer.files_page_start = 0;
                 self.viewer.files_selected = 0;
                 self.vr_fetch_files().await;
+                self.vr_save_files_state().await;
             }
             KeyCode::Char('c') => {
                 self.vr_files_fetch_shareables().await;
@@ -1683,6 +1697,7 @@ impl App {
                 self.viewer.files_page_start = 0;
                 self.viewer.files_selected = 0;
                 self.vr_fetch_files().await;
+                self.vr_save_files_state().await;
             }
             Some("default") => {
                 self.vr_files_reset_default_columns();
@@ -1690,6 +1705,7 @@ impl App {
                 self.viewer.files_page_start = 0;
                 self.viewer.files_selected = 0;
                 self.vr_fetch_files().await;
+                self.vr_save_files_state().await;
             }
             _ => {}
         }
@@ -1722,6 +1738,7 @@ impl App {
                 self.viewer.files_page_start = 0;
                 self.viewer.files_selected = 0;
                 self.vr_fetch_files().await;
+                self.vr_save_files_state().await;
             } else if cmd.starts_with("confirm_delete:") {
                 if let Some(s) = self.viewer.files_saved_shareables.iter().find(|s| s.name == delete_name_for_id) {
                     let id = s.id.clone();
@@ -1740,6 +1757,7 @@ impl App {
                         self.viewer.files_page_start = 0;
                         self.viewer.files_selected = 0;
                         self.vr_fetch_files().await;
+                        self.vr_save_files_state().await;
                     }
                 }
             }
