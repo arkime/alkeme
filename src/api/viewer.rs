@@ -122,6 +122,20 @@ impl ArkimeClient {
         Ok(parsed)
     }
 
+    pub async fn vr_get_esrecovery(&self, filter: &str, sort_field: &str, sort_desc: bool, show: &str) -> Result<Value> {
+        let desc = if sort_desc { "true" } else { "false" };
+        let mut url = format!(
+            "{}/api/esrecovery?sortField={}&desc={}&show={}",
+            self.base_url, urlencoding::encode(sort_field), desc, urlencoding::encode(show)
+        );
+        if !filter.is_empty() {
+            url.push_str(&format!("&filter={}", urlencoding::encode(filter)));
+        }
+        let body = self.authenticated_get(&url).await?;
+        let parsed: Value = serde_json::from_str(&body)?;
+        Ok(parsed)
+    }
+
     pub async fn vr_get_files(&self, filter: &str, sort_field: &str, sort_desc: bool, start: usize, length: usize) -> Result<Value> {
         let desc = if sort_desc { "true" } else { "false" };
         let mut url = format!(

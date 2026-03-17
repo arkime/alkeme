@@ -1140,6 +1140,16 @@ impl App {
                     }
                 }
             }
+            KeyCode::Char('6') => {
+                if self.viewer.stats_tab != StatsTab::DBRecovery {
+                    self.viewer.stats_tab = StatsTab::DBRecovery;
+                    if !self.viewer.stats_state_loaded[4] {
+                        self.vr_load_stats_state(StatsTab::DBRecovery).await;
+                        self.viewer.stats_state_loaded[4] = true;
+                    }
+                    self.vr_fetch_stats().await;
+                }
+            }
             // --- DB Shards-specific keys ---
             _ if self.viewer.stats_tab == StatsTab::DBShards => {
                 self.handle_shards_key(key).await;
@@ -1284,6 +1294,10 @@ impl App {
                     message: "Cancel all cancellable tasks?".into(),
                     action: "cancel_all_estasks".into(),
                 });
+            }
+            KeyCode::Char('m') if self.viewer.stats_tab == StatsTab::DBRecovery => {
+                self.viewer.recovery_show_all = !self.viewer.recovery_show_all;
+                self.vr_fetch_stats().await;
             }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.show_help = true;

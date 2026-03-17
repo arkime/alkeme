@@ -311,6 +311,40 @@ pub fn estasks_default_fields() -> Vec<&'static str> {
     ]
 }
 
+pub fn esrecovery_all_columns() -> Vec<StatsColumnDef> {
+    use StatsFormat::*;
+    vec![
+        StatsColumnDef::new("index", "index", "Index", 30, String),
+        StatsColumnDef::new("shard", "shard", "Shard", 6, Number),
+        StatsColumnDef::new("time", "time", "Time", 10, String),
+        StatsColumnDef::new("type", "type", "Type", 14, String),
+        StatsColumnDef::new("stage", "stage", "Stage", 12, String),
+        StatsColumnDef::new("source_host", "source_host", "Source Host", 16, String),
+        StatsColumnDef::new("source_node", "source_node", "Source Node", 18, String),
+        StatsColumnDef::new("target_host", "target_host", "Target Host", 16, String),
+        StatsColumnDef::new("target_node", "target_node", "Target Node", 18, String),
+        StatsColumnDef::new("files", "files", "Files", 8, Number),
+        StatsColumnDef::new("files_recovered", "files_recovered", "Files Recov", 12, Number),
+        StatsColumnDef::new("files_percent", "files_percent", "Files %", 8, PercentSuffix),
+        StatsColumnDef::new("files_total", "files_total", "Files Total", 12, Number),
+        StatsColumnDef::new("bytes", "bytes", "Bytes", 12, Bytes),
+        StatsColumnDef::new("bytes_recovered", "bytes_recovered", "Bytes Recov", 12, Bytes),
+        StatsColumnDef::new("bytes_percent", "bytes_percent", "Bytes %", 8, PercentSuffix),
+        StatsColumnDef::new("bytes_total", "bytes_total", "Bytes Total", 12, Bytes),
+        StatsColumnDef::new("translog_ops", "translog_ops", "Translog Ops", 12, Number),
+        StatsColumnDef::new("translog_ops_recovered", "translog_ops_recovered", "TLog Recov", 12, Number),
+        StatsColumnDef::new("translog_ops_percent", "translog_ops_percent", "TLog %", 8, PercentSuffix),
+    ]
+}
+
+pub fn esrecovery_default_fields() -> Vec<&'static str> {
+    vec![
+        "index", "shard", "time", "type", "stage",
+        "source_node", "target_node",
+        "files_percent", "bytes_percent", "translog_ops_percent",
+    ]
+}
+
 pub fn files_all_columns() -> Vec<StatsColumnDef> {
     use StatsFormat::*;
     vec![
@@ -358,6 +392,7 @@ pub fn stats_tab_all_columns(tab: StatsTab) -> Vec<StatsColumnDef> {
         StatsTab::DBStats => esnodes_all_columns(),
         StatsTab::DBIndices => esindices_all_columns(),
         StatsTab::DBTasks => estasks_all_columns(),
+        StatsTab::DBRecovery => esrecovery_all_columns(),
         StatsTab::DBShards => Vec::new(),
     }
 }
@@ -368,6 +403,7 @@ pub fn stats_tab_default_fields(tab: StatsTab) -> Vec<&'static str> {
         StatsTab::DBStats => esnodes_default_fields(),
         StatsTab::DBIndices => esindices_default_fields(),
         StatsTab::DBTasks => estasks_default_fields(),
+        StatsTab::DBRecovery => esrecovery_default_fields(),
         StatsTab::DBShards => Vec::new(),
     }
 }
@@ -378,6 +414,7 @@ pub fn stats_tab_shareable_type(tab: StatsTab) -> &'static str {
         StatsTab::DBStats => "esnodes-columns",
         StatsTab::DBIndices => "esindices-columns",
         StatsTab::DBTasks => "estasks-columns",
+        StatsTab::DBRecovery => "esrecovery-columns",
         StatsTab::DBShards => "esshards-columns",
     }
 }
@@ -938,6 +975,7 @@ pub enum StatsTab {
     DBIndices,
     DBTasks,
     DBShards,
+    DBRecovery,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -987,7 +1025,7 @@ pub const C3_HISTORY_COLUMNS: &[(&str, &str, u16, bool)] = &[
 ];
 
 impl StatsTab {
-    pub const ALL: [StatsTab; 5] = [StatsTab::Capture, StatsTab::DBStats, StatsTab::DBIndices, StatsTab::DBTasks, StatsTab::DBShards];
+    pub const ALL: [StatsTab; 6] = [StatsTab::Capture, StatsTab::DBStats, StatsTab::DBIndices, StatsTab::DBTasks, StatsTab::DBShards, StatsTab::DBRecovery];
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -996,6 +1034,20 @@ impl StatsTab {
             StatsTab::DBIndices => "DB Indices",
             StatsTab::DBTasks => "DB Tasks",
             StatsTab::DBShards => "DB Shards",
+            StatsTab::DBRecovery => "DB Recovery",
+        }
+    }
+
+    /// Array index for column-based tabs (stats_columns/stats_state_loaded arrays).
+    /// DBShards is not column-based and returns None.
+    pub fn col_index(&self) -> Option<usize> {
+        match self {
+            StatsTab::Capture => Some(0),
+            StatsTab::DBStats => Some(1),
+            StatsTab::DBIndices => Some(2),
+            StatsTab::DBTasks => Some(3),
+            StatsTab::DBRecovery => Some(4),
+            StatsTab::DBShards => None,
         }
     }
 }
@@ -2114,9 +2166,9 @@ pub struct ViewerState {
     pub stats_sort_desc: bool,
     pub stats_last_refresh: std::time::Instant,
     /// Per-tab dynamic stats columns
-    pub stats_columns: [Vec<StatsColumnDef>; 4],
+    pub stats_columns: [Vec<StatsColumnDef>; 5],
     /// Whether user state has been loaded for each stats sub-tab
-    pub stats_state_loaded: [bool; 4],
+    pub stats_state_loaded: [bool; 5],
     /// Stats column editor
     pub stats_show_column_editor: bool,
     pub stats_column_editor_selected: usize,
@@ -2144,6 +2196,8 @@ pub struct ViewerState {
     pub shards_loaded: bool,
     pub shards_detail: Option<StatsDetail>,
     pub shards_sub_detail: Option<StatsDetail>,
+    /// Recovery show mode: false = "notdone" (active only), true = "all"
+    pub recovery_show_all: bool,
     /// Files tab state
     pub files_data: Vec<Value>,
     pub files_total: u64,
@@ -2285,8 +2339,9 @@ impl Default for ViewerState {
             stats_columns_from_fields(&esnodes_default_fields(), &esnodes_all_columns()),
             stats_columns_from_fields(&esindices_default_fields(), &esindices_all_columns()),
             stats_columns_from_fields(&estasks_default_fields(), &estasks_all_columns()),
+            stats_columns_from_fields(&esrecovery_default_fields(), &esrecovery_all_columns()),
             ],
-            stats_state_loaded: [false; 4],
+            stats_state_loaded: [false; 5],
             stats_show_column_editor: false,
             stats_column_editor_selected: 0,
             stats_column_editor_mode: ColumnEditorMode::Browse,
@@ -2312,6 +2367,7 @@ impl Default for ViewerState {
             shards_loaded: false,
             shards_detail: None,
             shards_sub_detail: None,
+            recovery_show_all: false,
             // Files tab
             files_data: Vec::new(),
             files_total: 0,

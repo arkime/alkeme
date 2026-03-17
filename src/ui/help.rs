@@ -71,7 +71,7 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             blank(),
             Line::from(vec![key("Tab / Shift+Tab"), Span::raw("Switch tabs")]),
             Line::from(vec![key("j / k / ↑ / ↓"), Span::raw("Navigate rows")]),
-            Line::from(vec![key("1 / 2 / 3 / 4 / 5"), Span::raw("Switch sub-tab")]),
+            Line::from(vec![key("1 / 2 / 3 / 4 / 5 / 6"), Span::raw("Switch sub-tab")]),
             Line::from(vec![key("q"), Span::raw("Quit")]),
             blank(),
             hdr!("Actions"),
@@ -116,6 +116,12 @@ pub(super) fn draw_help(f: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(vec![key("Home"), Span::raw("Top + reset scroll")]));
             lines.push(Line::from(vec![key("End"), Span::raw("Jump to bottom")]));
             lines.push(Line::from(vec![key("m"), Span::raw("Cycle show mode (All/Not Started/...)")]));
+        }
+        if app.viewer.stats_tab == StatsTab::DBRecovery {
+            lines.push(blank());
+            lines.push(hdr!("Recovery"));
+            lines.push(blank());
+            lines.push(Line::from(vec![key("m"), Span::raw("Toggle show mode (Active / All)")]));
         }
         ("Stats", lines)
     } else if app.active_tab == Tab::Files {

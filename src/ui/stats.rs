@@ -4,7 +4,7 @@ pub(super) fn draw_stats_toolbar(f: &mut Frame, app: &App, area: Rect) {
     let toolbar_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(80), // sub-tabs
+            Constraint::Length(96), // sub-tabs
             Constraint::Min(0),    // filter
         ])
         .split(area);
@@ -92,6 +92,26 @@ fn draw_stats_list(f: &mut Frame, app: &mut App, area: Rect) {
         .row_highlight_style(Style::default().bg(Color::DarkGray));
 
     f.render_stateful_widget(table, area, &mut app.viewer.stats_table_state);
+
+    // Render mode bar on bottom border for DB Recovery
+    if app.viewer.stats_tab == StatsTab::DBRecovery {
+        let modes = [("Active", false), ("All", true)];
+        let mode_spans: Vec<Span> = modes.iter().flat_map(|(label, is_all)| {
+            let style = if *is_all == app.viewer.recovery_show_all {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            vec![Span::styled(format!(" {} ", label), style), Span::raw("│")]
+        }).collect();
+        let mode_area = Rect {
+            x: area.x + 1,
+            y: area.y + area.height.saturating_sub(1),
+            width: area.width.saturating_sub(2).min(30),
+            height: 1,
+        };
+        f.render_widget(Line::from(mode_spans), mode_area);
+    }
 }
 
 pub(super) fn get_nested_value<'a>(item: &'a serde_json::Value, field: &str) -> &'a serde_json::Value {

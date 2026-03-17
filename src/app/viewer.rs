@@ -6,10 +6,11 @@ impl App {
 
     /// Load user state and fetch data when first visiting Stats tab
     pub async fn vr_init_stats_tab(&mut self) {
-        let idx = StatsTab::ALL.iter().position(|&t| t == self.viewer.stats_tab).unwrap_or(0);
-        if !self.viewer.stats_state_loaded[idx] {
-            self.vr_load_stats_state(self.viewer.stats_tab).await;
-            self.viewer.stats_state_loaded[idx] = true;
+        if let Some(idx) = self.viewer.stats_tab.col_index() {
+            if !self.viewer.stats_state_loaded[idx] {
+                self.vr_load_stats_state(self.viewer.stats_tab).await;
+                self.viewer.stats_state_loaded[idx] = true;
+            }
         }
         self.vr_fetch_stats().await;
     }
@@ -180,7 +181,7 @@ impl App {
 
     /// Get the active columns for the current stats tab
     pub fn vr_stats_active_columns(&self) -> &Vec<StatsColumnDef> {
-        let idx = StatsTab::ALL.iter().position(|&t| t == self.viewer.stats_tab).unwrap_or(0);
+        let idx = self.viewer.stats_tab.col_index().unwrap_or(0);
         &self.viewer.stats_columns[idx]
     }
 
@@ -236,7 +237,7 @@ impl App {
             }
         }
         if !new_cols.is_empty() {
-            let idx = StatsTab::ALL.iter().position(|&t| t == self.viewer.stats_tab).unwrap_or(0);
+            let idx = self.viewer.stats_tab.col_index().unwrap_or(0);
             self.viewer.stats_columns[idx] = new_cols;
             self.viewer.stats_sort_column = 0;
         }
@@ -246,7 +247,7 @@ impl App {
     pub fn vr_stats_reset_default_columns(&mut self) {
         let defaults = stats_tab_default_fields(self.viewer.stats_tab);
         let all = stats_tab_all_columns(self.viewer.stats_tab);
-        let idx = StatsTab::ALL.iter().position(|&t| t == self.viewer.stats_tab).unwrap_or(0);
+        let idx = self.viewer.stats_tab.col_index().unwrap_or(0);
         self.viewer.stats_columns[idx] = stats_columns_from_fields(&defaults, &all);
         self.viewer.stats_sort_column = 0;
     }
@@ -257,7 +258,7 @@ impl App {
         let field_refs: Vec<&str> = shareable.columns.iter().map(|s| s.as_str()).collect();
         let new_cols = stats_columns_from_fields(&field_refs, &all);
         if !new_cols.is_empty() {
-            let idx = StatsTab::ALL.iter().position(|&t| t == self.viewer.stats_tab).unwrap_or(0);
+            let idx = self.viewer.stats_tab.col_index().unwrap_or(0);
             self.viewer.stats_columns[idx] = new_cols;
             // Apply sort
             if !shareable.sort_field.is_empty() {
@@ -545,6 +546,10 @@ impl App {
             StatsTab::DBStats => self.client.vr_get_esstats(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc).await,
             StatsTab::DBIndices => self.client.vr_get_esindices(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc).await,
             StatsTab::DBTasks => self.client.vr_get_estasks(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc).await,
+            StatsTab::DBRecovery => {
+                let show = if self.viewer.recovery_show_all { "all" } else { "notdone" };
+                self.client.vr_get_esrecovery(&self.viewer.stats_filter, &sort_field, self.viewer.stats_sort_desc, show).await
+            }
             StatsTab::DBShards => unreachable!(),
         };
 
@@ -770,6 +775,7 @@ impl App {
             StatsTab::DBIndices => "esIndicesCols",
             StatsTab::DBTasks => "esTasksCols",
             StatsTab::DBShards => "esShardsCols",
+            StatsTab::DBRecovery => "esRecoveryCols",
         }
     }
 
@@ -824,7 +830,7 @@ impl App {
         let all = stats_tab_all_columns(tab);
         let new_cols = stats_columns_from_fields(&headers, &all);
         if new_cols.is_empty() { return; }
-        let idx = StatsTab::ALL.iter().position(|&t| t == tab).unwrap_or(0);
+        let idx = tab.col_index().unwrap_or(0);
         self.viewer.stats_columns[idx] = new_cols;
         // Apply sort from state
         if let Some(order) = state.get("order").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.as_array()) {
