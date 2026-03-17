@@ -2525,7 +2525,7 @@ impl Default for ViewerState {
             recovery_show_all: false,
             // Capture Graphs
             cg_metric_index: 0,
-            cg_interval: CaptureGraphInterval::OneMin,
+            cg_interval: CaptureGraphInterval::FiveSec,
             cg_hide: CaptureGraphHide::None,
             cg_nodes: Vec::new(),
             cg_scroll: 0,
